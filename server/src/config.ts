@@ -26,4 +26,7 @@ export const config = {
   sessionMaxAgeMs: 30 * 24 * 60 * 60 * 1000,
   /** How long an unused family invite link stays valid. */
   inviteMaxAgeMs: 14 * 24 * 60 * 60 * 1000,
+  /** How long a password recovery link stays valid. Shorter than an invite:
+   *  it grants access to an existing account rather than creating a new one. */
+  passwordResetMaxAgeMs: 24 * 60 * 60 * 1000,
 } as const;

@@ -68,6 +68,9 @@ export default function LoginPage() {
         <p className="small muted">
           Starting fresh? <Link to="/register">Create a household</Link>
         </p>
+        <p className="small muted" style={{ marginTop: '-0.5rem' }}>
+          Forgotten your password? Ask the household owner to send you a reset link.
+        </p>
       </form>
     </div>
   );

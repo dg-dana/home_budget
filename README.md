@@ -36,6 +36,8 @@ Two kinds of people use it:
 
 **Household**
 - Single-use invite links to add family members (expire after 14 days, revocable)
+- Change your own password; changing it signs out every other device
+- Owner can issue a single-use recovery link for anyone locked out of their account
 - Owner can rename the household, change currency, manage categories and remove members
 - Members can record expenses and use lists; only the owner manages the household itself
 
@@ -80,7 +82,7 @@ categories are created with it.
 ### Tests
 
 ```bash
-npm test          # server integration suite (108 tests, Vitest)
+npm test          # server integration suite (126 tests, Vitest)
 npm run test:e2e  # guest-flow browser smoke test (6 tests, Playwright)
 npm run test:all  # both
 ```
@@ -94,6 +96,9 @@ The Playwright suite builds the app and drives the production build in a browser
 covering the guest flow end to end: sharing a list, a guest with no account adding
 and ticking off items, view-only enforcement, and instant revocation. Other parts
 of the frontend have no browser coverage yet. See `ARCHITECTURE.md` §10.
+
+Every push runs typecheck and both suites in GitHub Actions
+(`.github/workflows/ci.yml`).
 
 ### Production
 
@@ -141,6 +146,10 @@ everything else requires the session cookie.
 | POST   | `/household/invites`              | owner          |
 | DELETE | `/household/invites/:token`       | owner          |
 | DELETE | `/household/members/:id`          | owner          |
+| POST   | `/household/members/:id/reset-password` | owner    |
+| POST   | `/auth/password`                  | member         |
+| GET    | `/auth/reset/:token`              | anyone         |
+| POST   | `/auth/reset`                     | anyone         |
 | CRUD   | `/categories`                     | member         |
 | CRUD   | `/expenses`                       | member         |
 | GET    | `/expenses/summary?month=YYYY-MM` | member         |
@@ -165,6 +174,7 @@ household cannot be used to read or change another's data.
 - Sessions are JWTs in an httpOnly, SameSite=Lax cookie — not readable from JavaScript
 - Invite and share tokens are 24 random bytes from `crypto.randomBytes`
 - Sign-in and the guest share endpoints are rate limited per IP
+- Changing a password invalidates that account's other sessions immediately
 - Guest mutations are rejected as soon as the owner switches a list to view-only or
   revokes the link
 

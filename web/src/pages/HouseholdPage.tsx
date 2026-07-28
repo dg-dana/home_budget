@@ -18,6 +18,9 @@ export default function HouseholdPage() {
   const [newCategory, setNewCategory] = useState({ name: '', color: '#0f766e', budget: '' });
   const [error, setError] = useState('');
   const [copiedToken, setCopiedToken] = useState('');
+  const [passwords, setPasswords] = useState({ current: '', next: '' });
+  const [passwordNotice, setPasswordNotice] = useState('');
+  const [resetLinks, setResetLinks] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
     const [memberList, categoryList] = await Promise.all([
@@ -56,6 +59,38 @@ export default function HouseholdPage() {
       window.setTimeout(() => setCopiedToken(''), 2000);
     } catch {
       setError('Could not copy automatically — select the link and copy it manually.');
+    }
+  };
+
+  const handleChangePassword = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setError('');
+    setPasswordNotice('');
+    try {
+      await api.post('/auth/password', {
+        currentPassword: passwords.current,
+        newPassword: passwords.next,
+      });
+      setPasswords({ current: '', next: '' });
+      setPasswordNotice('Password changed. Any other device using this account was signed out.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not change the password');
+    }
+  };
+
+  /** Owner action: mint a recovery link for someone who is locked out. */
+  const handleIssueReset = async (member: Member) => {
+    setError('');
+    try {
+      const issued = await api.post<{ token: string }>(
+        `/household/members/${member.id}/reset-password`,
+      );
+      setResetLinks((previous) => ({
+        ...previous,
+        [member.id]: `${window.location.origin}/reset/${issued.token}`,
+      }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not create a reset link');
     }
   };
 
@@ -128,6 +163,16 @@ export default function HouseholdPage() {
                     <span className="tag">{member.role}</span>
                   </div>
                 </div>
+                {isOwner && (
+                  <button
+                    type="button"
+                    className="button secondary small"
+                    title={`Create a password reset link for ${member.name}`}
+                    onClick={() => handleIssueReset(member)}
+                  >
+                    Reset password
+                  </button>
+                )}
                 {isOwner && member.id !== user?.id && (
                   <button
                     type="button"
@@ -145,6 +190,38 @@ export default function HouseholdPage() {
               </li>
             ))}
           </ul>
+
+          {Object.entries(resetLinks).length > 0 && (
+            <div className="stack" style={{ gap: '0.5rem' }}>
+              <h3 className="muted small">Reset links</h3>
+              {Object.entries(resetLinks).map(([memberId, url]) => (
+                <div key={memberId}>
+                  <p className="small muted" style={{ margin: '0 0 0.25rem' }}>
+                    For {members.find((m) => m.id === memberId)?.name ?? 'member'} — send it to them
+                    directly. It works once, expires in 24 hours, and signs out their other devices.
+                  </p>
+                  <div className="share-box">
+                    <code>{url}</code>
+                    <button
+                      type="button"
+                      className="button small"
+                      onClick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(url);
+                          setCopiedToken(memberId);
+                          window.setTimeout(() => setCopiedToken(''), 2000);
+                        } catch {
+                          setError('Could not copy automatically — select the link and copy it manually.');
+                        }
+                      }}
+                    >
+                      {copiedToken === memberId ? 'Copied' : 'Copy'}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
 
           {isOwner && (
             <>
@@ -202,6 +279,7 @@ export default function HouseholdPage() {
           )}
         </div>
 
+        <div className="stack">
         <div className="card stack">
           <div className="card-title">
             <h2>Settings</h2>
@@ -241,6 +319,49 @@ export default function HouseholdPage() {
           ) : (
             <p className="muted small">Only the household owner can change these settings.</p>
           )}
+        </div>
+
+        <div className="card stack">
+          <div className="card-title">
+            <h2>Your password</h2>
+          </div>
+
+          {passwordNotice && <div className="alert info">{passwordNotice}</div>}
+
+          <form className="stack" onSubmit={handleChangePassword}>
+            <div>
+              <label htmlFor="currentPassword">Current password</label>
+              <input
+                id="currentPassword"
+                type="password"
+                required
+                autoComplete="current-password"
+                value={passwords.current}
+                onChange={(event) => setPasswords({ ...passwords, current: event.target.value })}
+              />
+            </div>
+            <div>
+              <label htmlFor="newPassword">New password</label>
+              <input
+                id="newPassword"
+                type="password"
+                required
+                minLength={8}
+                autoComplete="new-password"
+                value={passwords.next}
+                onChange={(event) => setPasswords({ ...passwords, next: event.target.value })}
+              />
+            </div>
+            <div>
+              <button type="submit" className="button">
+                Change password
+              </button>
+            </div>
+            <p className="small muted" style={{ margin: 0 }}>
+              Changing it signs out every other device using your account.
+            </p>
+          </form>
+        </div>
         </div>
       </div>
 

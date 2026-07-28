@@ -57,6 +57,7 @@ export function resetDatabase(): void {
     'recurring_expenses',
     'categories',
     'invites',
+    'password_resets',
     'users',
     'households',
   ]) {

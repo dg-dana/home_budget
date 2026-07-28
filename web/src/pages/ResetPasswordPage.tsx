@@ -1,0 +1,115 @@
+import { useEffect, useState } from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import { api, type Household, type SessionUser } from '../api';
+import { useSession } from '../session';
+
+/**
+ * Reached through a recovery link. No session is required — holding the link
+ * is the proof — and redeeming it signs the person straight in.
+ */
+export default function ResetPasswordPage() {
+  const { token = '' } = useParams();
+  const { setSession } = useSession();
+  const navigate = useNavigate();
+
+  const [account, setAccount] = useState<{ name: string; email: string } | null>(null);
+  const [loadError, setLoadError] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmation, setConfirmation] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    api
+      .get<{ name: string; email: string }>(`/auth/reset/${encodeURIComponent(token)}`)
+      .then(setAccount)
+      .catch((err: Error) => setLoadError(err.message));
+  }, [token]);
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (password !== confirmation) {
+      setError('The two passwords do not match');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      await api.post<{ user: SessionUser }>('/auth/reset', { token, password });
+      const me = await api.get<{ user: SessionUser; household: Household }>('/auth/me');
+      setSession(me);
+      navigate('/', { replace: true });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not set the new password');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (loadError) {
+    return (
+      <div className="auth-page">
+        <div className="card auth-card stack">
+          <h1>Link not usable</h1>
+          <div className="alert">{loadError}</div>
+          <p className="small muted">
+            Ask the household owner for a fresh link, or <Link to="/login">sign in</Link>.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!account) return <div className="empty">Checking link…</div>;
+
+  return (
+    <div className="auth-page">
+      <form className="card auth-card stack" onSubmit={handleSubmit}>
+        <div>
+          <h1>Choose a new password</h1>
+          <p className="muted">
+            For {account.name} ({account.email}).
+          </p>
+        </div>
+
+        {error && <div className="alert">{error}</div>}
+
+        <div>
+          <label htmlFor="password">New password</label>
+          <input
+            id="password"
+            type="password"
+            required
+            minLength={8}
+            autoComplete="new-password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+          />
+          <p className="small muted" style={{ margin: '0.3rem 0 0' }}>
+            At least 8 characters.
+          </p>
+        </div>
+
+        <div>
+          <label htmlFor="confirmation">Repeat it</label>
+          <input
+            id="confirmation"
+            type="password"
+            required
+            autoComplete="new-password"
+            value={confirmation}
+            onChange={(event) => setConfirmation(event.target.value)}
+          />
+        </div>
+
+        <button type="submit" className="button" disabled={busy}>
+          {busy ? 'Saving…' : 'Set password and sign in'}
+        </button>
+
+        <p className="small muted">
+          This will sign out any device already using this account.
+        </p>
+      </form>
+    </div>
+  );
+}

@@ -19,7 +19,7 @@ export const hashPassword = (plain: string) => bcrypt.hash(plain, BCRYPT_ROUNDS)
 export const verifyPassword = (plain: string, hash: string) => bcrypt.compare(plain, hash);
 
 export function issueSession(res: Parameters<RequestHandler>[1], user: UserRow) {
-  const token = jwt.sign({ sub: user.id }, config.jwtSecret, {
+  const token = jwt.sign({ sub: user.id, gen: user.session_generation }, config.jwtSecret, {
     expiresIn: Math.floor(config.sessionMaxAgeMs / 1000),
   });
   res.cookie(COOKIE_NAME, token, {
@@ -46,15 +46,41 @@ export const toSessionUser = (row: UserRow): SessionUser => ({
 function readSessionUser(cookieValue: unknown): SessionUser | null {
   if (typeof cookieValue !== 'string' || !cookieValue) return null;
   let userId: string;
+  let generation: unknown;
   try {
     const payload = jwt.verify(cookieValue, config.jwtSecret) as jwt.JwtPayload;
     if (typeof payload.sub !== 'string') return null;
     userId = payload.sub;
+    generation = payload.gen;
   } catch {
     return null;
   }
+
   const row = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as UserRow | undefined;
-  return row ? toSessionUser(row) : null;
+  if (!row) return null;
+
+  // A password change bumps the generation, so cookies handed out before it
+  // stop working — otherwise resetting a compromised password would leave the
+  // attacker's stolen session alive until it expired on its own. Tokens minted
+  // before this field existed carry no `gen` and are refused.
+  if (generation !== row.session_generation) return null;
+
+  return toSessionUser(row);
+}
+
+/**
+ * Sets a new password and invalidates every existing session for that user.
+ *
+ * Bumping the generation is exact — unlike a timestamp cutoff, it cannot be
+ * defeated by two events landing in the same second. Re-read the user
+ * afterwards before issuing a replacement cookie, so the new token carries the
+ * new generation.
+ */
+export async function setPassword(userId: string, plainPassword: string): Promise<void> {
+  const hash = await hashPassword(plainPassword);
+  db.prepare(
+    'UPDATE users SET password_hash = ?, session_generation = session_generation + 1 WHERE id = ?',
+  ).run(hash, userId);
 }
 
 /** Attaches `req.user` when a valid session cookie is present, otherwise 401s. */

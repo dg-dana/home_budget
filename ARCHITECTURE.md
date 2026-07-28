@@ -45,6 +45,7 @@ Reference for how this app is put together and why. Read this before extending i
 - `recurring_expenses` — per household. A rule (amount, frequency, start/end) plus `last_generated_on`, the marker that makes generation idempotent.
 - `shopping_lists` — per household. Holds the nullable `share_token` and the `share_can_edit` flag.
 - `shopping_items` — per list. Records `added_by_name` and `checked_by_name` as **plain text, not FKs** — because a guest with no account may have set them.
+- `password_resets` — single-use recovery tokens. Cascades with the user, so a link cannot resurrect a deleted account.
 
 ### Deletion behaviour (deliberate)
 
@@ -66,9 +67,17 @@ Reference for how this app is put together and why. Read this before extending i
 
 - Passwords: **bcrypt, 12 rounds** (`bcryptjs`, pure JS — no native build step).
 - Sessions: **JWT in an httpOnly cookie** named `hb_session`, `SameSite=Lax`, `Secure` in production, 30-day expiry. Not readable from JavaScript; there is no token in `localStorage`.
-- The JWT carries only `sub` (user id). **The user row is re-read from the DB on every request**, so role changes and member removal take effect immediately rather than waiting for the token to expire.
+- The JWT carries `sub` (user id) and `gen` (session generation). **The user row is re-read from the DB on every request**, so role changes and member removal take effect immediately rather than waiting for the token to expire.
 - Login returns an identical error for unknown-email and wrong-password, so the endpoint cannot be used to enumerate accounts.
 - `NODE_ENV=production` **refuses to boot** without a real `JWT_SECRET`.
+
+### Passwords and session invalidation
+
+- Two ways to change a password: **self-service** (`POST /auth/password`, requires the current one) and an **owner-issued recovery link** for someone locked out (`POST /household/members/:id/reset-password` → `/reset/:token`).
+- There is no email provider, so the owner passes the recovery link on themselves — the same shape as invites. Links are single-use, expire in 24 hours, and issuing a new one retires any outstanding link for that person.
+- **Changing a password invalidates every existing session for that user.** `users.session_generation` is bumped, and a token whose `gen` no longer matches is refused. Without this, resetting a compromised password would leave the attacker's stolen cookie working until it expired on its own.
+- **It is a counter, not a timestamp.** A JWT's `iat` has one-second resolution, so a timestamp cutoff cannot tell the session being issued *by* the password change from one stolen a moment earlier — the first implementation did use a timestamp, and it produced a genuinely flaky test. A counter removes the clock from the question entirely.
+- The device doing the change is handed a fresh cookie in the same response, so it stays signed in while every other device is evicted.
 
 ### Middleware (`server/src/auth.ts`)
 
@@ -144,7 +153,7 @@ so the UI can badge them.
 - `db.ts` — connection + the migration runner.
 - `migrations.ts` — the ordered, append-only migration list.
 - `recurring.ts` — recurrence date maths (pure) and materialisation.
-- `auth.ts` — hashing, cookies, id/token generation, auth middleware.
+- `auth.ts` — hashing, cookies, id/token generation, auth middleware, `setPassword`.
 - `http.ts` — `HttpError` + status helpers, `asyncHandler`, `parseBody`, error middleware.
 - `rateLimit.ts` — in-process fixed-window limiter.
 - `shoppingItems.ts` — **item operations shared by both the member and guest routes.** Both paths call the same functions with a different `actorName`, so guest and member edits can never diverge in behaviour.
@@ -198,6 +207,7 @@ Two suites, run together with `npm run test:all`.
 - `household.test.ts` — owner vs member permissions, cascade behaviour, list mechanics.
 - `recurring.test.ts` — recurrence date maths as a pure function (month-end clamping, leap years, rollovers), then catch-up, idempotency, pause/resume.
 - `migrations.test.ts` — fresh builds, repeat runs being no-ops, and the pre-migration-system adoption path.
+- `password.test.ts` — self-service change, owner-issued recovery, and that both evict other devices.
 
 ### Browser smoke test — Playwright, `e2e/`
 
@@ -229,7 +239,15 @@ Five deliberate regressions were introduced, and each was caught by a failing te
 
 ---
 
-## 11. Cross-cutting decisions worth remembering
+## 11. Continuous integration
+
+- `.github/workflows/ci.yml` runs on every push and pull request: `npm ci`, typecheck, the server suite, then the Playwright suite.
+- Chromium is installed with `npx playwright install --with-deps chromium`. The Playwright config only pins an `executablePath` when the sandbox's prebuilt browser exists, so CI falls through to the normally installed one.
+- Runs for the same branch cancel each other, and a failed run uploads the Playwright HTML report as an artifact.
+
+---
+
+## 12. Cross-cutting decisions worth remembering
 
 - **Rate limiting** is per-IP, fixed window, in-process: `/api/auth` 60 req / 15 min, `/api/share` 120 req / min. It is single-instance only — running more than one process needs a shared store.
 - `trust proxy` is set to `1`, so `req.ip` is the client IP behind exactly one reverse proxy. Wrong proxy depth = wrong rate-limit keying.
@@ -240,19 +258,20 @@ Five deliberate regressions were introduced, and each was caught by a failing te
 
 ---
 
-## 12. Known rough edges
+## 13. Known rough edges
 
 Honest list — these are real, and none is currently blocking.
 
 - **Frontend coverage is the guest flow only.** The expenses dashboard, budgets, invites and household settings have no browser tests — changes there still need checking by hand.
-- **Invites are generated, not delivered.** The owner copies a link and sends it themselves; there is no email integration.
+- **Links are generated, not delivered.** Invites and password recovery links are copied by the owner and sent by hand; there is no email integration. This is why recovery is owner-issued rather than self-service "forgot password".
+- **The app has never been deployed.** There is no Dockerfile, host, or backup story for `data/` yet.
 - **The guest list page polls every 15 s; the member list page does not poll at all.** So a member can be looking at a stale list while a guest shops. Unifying this — or moving both to SSE/WebSocket — is the natural fix.
-- Rate limiting is in-process and will not survive horizontal scaling (see §11).
+- Rate limiting is in-process and will not survive horizontal scaling (see §12).
 - `npm audit` flags `react-router` for an **RSC-mode** CSRF issue. This app is a client-side SPA and does not use RSC mode. The only version npm offers as a "fix" is 7.11.0, which reintroduces an open redirect that *does* affect `<Link>`/`useNavigate`. Staying on 7.18.1 is the deliberate, better trade.
 
 ---
 
-## 13. Adding a feature — the checklist
+## 14. Adding a feature — the checklist
 
 1. Does it belong to a household, or is it guest-reachable? That answer decides which router it goes in.
 2. Add a **new** migration to `server/src/migrations.ts`. Never edit one that has shipped.

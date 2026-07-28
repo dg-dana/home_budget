@@ -8,12 +8,13 @@ import {
   newId,
   nowIso,
   requireAuth,
+  setPassword,
   toSessionUser,
   verifyPassword,
 } from '../auth.js';
 import { db } from '../db.js';
 import { asyncHandler, badRequest, conflict, parseBody, unauthorized } from '../http.js';
-import type { HouseholdRow, InviteRow, UserRow } from '../types.js';
+import type { HouseholdRow, InviteRow, PasswordResetRow, UserRow } from '../types.js';
 
 export const authRouter = Router();
 
@@ -171,6 +172,77 @@ authRouter.post('/logout', (_req, res) => {
   clearSession(res);
   res.status(204).end();
 });
+
+const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1, 'Enter your current password'),
+  newPassword: password,
+});
+
+const resetSchema = z.object({ token: z.string().min(1), password });
+
+/**
+ * Changing your own password. Requires the current one, so someone who walks
+ * up to an unlocked browser cannot lock the owner out of their own household.
+ */
+authRouter.post(
+  '/password',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const session = currentUser(req);
+    const input = parseBody(changePasswordSchema, req.body);
+    const user = getUser(session.id);
+
+    if (!(await verifyPassword(input.currentPassword, user.password_hash))) {
+      throw badRequest('That is not your current password');
+    }
+
+    await setPassword(user.id, input.newPassword);
+    // Every other device is signed out; this one gets a fresh cookie.
+    issueSession(res, getUser(user.id));
+    res.status(204).end();
+  }),
+);
+
+/** Public preview of a reset link, so the page can greet the right person. */
+authRouter.get(
+  '/reset/:token',
+  asyncHandler((req, res) => {
+    const reset = db
+      .prepare('SELECT * FROM password_resets WHERE token = ?')
+      .get(req.params.token) as PasswordResetRow | undefined;
+
+    if (!reset || reset.used_at || new Date(reset.expires_at) < new Date()) {
+      throw badRequest('This reset link is invalid or has expired');
+    }
+    const user = getUser(reset.user_id);
+    res.json({ name: user.name, email: user.email });
+  }),
+);
+
+/**
+ * Redeems a reset link. Holding the link is the proof, so the person is signed
+ * in afterwards — and every session that existed beforehand is invalidated.
+ */
+authRouter.post(
+  '/reset',
+  asyncHandler(async (req, res) => {
+    const input = parseBody(resetSchema, req.body);
+    const reset = db
+      .prepare('SELECT * FROM password_resets WHERE token = ?')
+      .get(input.token) as PasswordResetRow | undefined;
+
+    if (!reset || reset.used_at || new Date(reset.expires_at) < new Date()) {
+      throw badRequest('This reset link is invalid or has expired');
+    }
+
+    await setPassword(reset.user_id, input.password);
+    db.prepare('UPDATE password_resets SET used_at = ? WHERE token = ?').run(nowIso(), reset.token);
+
+    const user = getUser(reset.user_id);
+    issueSession(res, user);
+    res.status(201).json({ user: toSessionUser(user) });
+  }),
+);
 
 /** Current session plus the household context the frontend renders around. */
 authRouter.get(

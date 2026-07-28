@@ -14,6 +14,17 @@ export interface UserRow {
   name: string;
   password_hash: string;
   role: Role;
+  /** Bumped on password change; session tokens carrying an older value are refused. */
+  session_generation: number;
+  created_at: string;
+}
+
+export interface PasswordResetRow {
+  token: string;
+  user_id: string;
+  created_by: string | null;
+  expires_at: string;
+  used_at: string | null;
   created_at: string;
 }
 

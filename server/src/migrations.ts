@@ -130,4 +130,27 @@ CREATE INDEX IF NOT EXISTS idx_recurring_household ON recurring_expenses(househo
 ALTER TABLE expenses ADD COLUMN recurring_id TEXT REFERENCES recurring_expenses(id) ON DELETE SET NULL;
 `),
   },
+
+  {
+    id: '003-password-resets',
+    up: exec(`
+CREATE TABLE IF NOT EXISTS password_resets (
+  token       TEXT PRIMARY KEY,
+  user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_by  TEXT REFERENCES users(id) ON DELETE SET NULL,
+  expires_at  TEXT NOT NULL,
+  used_at     TEXT,
+  created_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_password_resets_user ON password_resets(user_id);
+
+-- Bumped on every password change. The value is baked into each session token,
+-- and a token whose generation no longer matches is refused — which is what
+-- makes a password change actually evict an attacker holding a stolen cookie.
+-- A counter rather than a timestamp, because a JWT's iat claim has only
+-- second resolution: a timestamp cutoff cannot distinguish the session being
+-- issued by the password change from one stolen moments earlier.
+ALTER TABLE users ADD COLUMN session_generation INTEGER NOT NULL DEFAULT 0;
+`),
+  },
 ];

@@ -350,6 +350,9 @@ input[type='checkbox'] {
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--surface);
+  /* Rows carry a variable number of action buttons; wrap rather than overflow
+     the card on narrow screens. */
+  flex-wrap: wrap;
 }
 .item.checked { opacity: 0.6; }
 .item.checked .item-name { text-decoration: line-through; }

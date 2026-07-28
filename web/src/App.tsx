@@ -8,6 +8,7 @@ import ListsPage from './pages/ListsPage';
 import LoginPage from './pages/LoginPage';
 import RecurringPage from './pages/RecurringPage';
 import RegisterPage from './pages/RegisterPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
 import SharedListPage from './pages/SharedListPage';
 import { useSession } from './session';
 
@@ -50,6 +51,7 @@ export default function App() {
         }
       />
       <Route path="/join/:token" element={<JoinPage />} />
+      <Route path="/reset/:token" element={<ResetPasswordPage />} />
 
       <Route
         element={

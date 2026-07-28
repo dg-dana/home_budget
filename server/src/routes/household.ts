@@ -81,6 +81,41 @@ householdRouter.delete(
   }),
 );
 
+/**
+ * Issues a recovery link for a member who is locked out. There is no email
+ * provider wired up, so the owner passes the link on themselves — the same
+ * shape as invites. The owner can do this for anyone in the household,
+ * including themselves.
+ */
+householdRouter.post(
+  '/members/:id/reset-password',
+  requireOwner,
+  asyncHandler((req, res) => {
+    const user = currentUser(req);
+    const member = db
+      .prepare('SELECT id FROM users WHERE id = ? AND household_id = ?')
+      .get(req.params.id, user.householdId) as { id: string } | undefined;
+    if (!member) throw notFound('That member does not exist');
+
+    const token = newToken();
+    const expiresAt = new Date(Date.now() + config.passwordResetMaxAgeMs).toISOString();
+
+    db.transaction(() => {
+      // Only the newest link should work, so retire any outstanding ones.
+      db.prepare('UPDATE password_resets SET used_at = ? WHERE user_id = ? AND used_at IS NULL').run(
+        nowIso(),
+        member.id,
+      );
+      db.prepare(
+        `INSERT INTO password_resets (token, user_id, created_by, expires_at, created_at)
+         VALUES (?, ?, ?, ?, ?)`,
+      ).run(token, member.id, user.id, expiresAt, nowIso());
+    })();
+
+    res.status(201).json({ token, expires_at: expiresAt });
+  }),
+);
+
 /** Pending (unused, unexpired) invites for the household. */
 householdRouter.get(
   '/invites',
