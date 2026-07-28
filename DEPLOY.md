@@ -39,11 +39,15 @@ Lightsail has a browser SSH client — the **Connect using SSH** button on the
 instance page. It works on an iPad. Click it and run:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/<branch>/deploy/bootstrap.sh | bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/dg-dana/home_budget/refs/heads/claude/expenses-shopping-app-4bmukm/deploy/bootstrap.sh)"
 ```
 
-If the repository is private, open `deploy/bootstrap.sh` on GitHub, copy it,
-and paste it into the terminal instead.
+Copy that shape exactly. The more familiar `curl ... | bash` does not work
+here: it hands bash the script on standard input, so the domain prompt reads
+the script's own next line instead of what you type.
+
+If the repository is ever made private, open `deploy/bootstrap.sh` on GitHub,
+copy it, and paste it into the terminal instead.
 
 It installs Docker, creates `/opt/home-budget`, asks for your domain and
 generates the session secret. It is safe to re-run; it will not regenerate a
