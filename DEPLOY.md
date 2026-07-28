@@ -34,6 +34,40 @@ If the org-scoped token turns out not to have the permissions it needs, the
 banner at the top of that page links to the older Access Tokens page, which
 issues a full personal token.
 
+#### If the form keeps coming back blank
+
+Fly blocks **all account-level token creation** if you are a member of any
+organization that requires SSO — including organizations you joined for
+something else entirely. The new token page does not say so; it silently
+re-renders empty. The old Access Tokens page states the real reason:
+
+> Access Tokens cannot be created for your account because an organization you
+> are a member of requires Single Sign On (SSO). Instead, create
+> per-organization tokens by running `flyctl tokens org <organization-name>`
+
+Two ways out:
+
+1. **Leave the SSO organization**, if you do not need it. Check the org
+   switcher for what you are a member of. Account tokens then work normally.
+2. **Mint an org token from a terminal.** If you do not have one — an iPad, for
+   example — GitHub Codespaces gives you one in the browser: **Code →
+   Codespaces → Create codespace**, then:
+
+   ```bash
+   curl -L https://fly.io/install.sh | sh
+   export PATH="$HOME/.fly/bin:$PATH"
+
+   fly auth login            # prints a URL to open in another tab
+   fly orgs list             # confirm the exact org name
+   fly tokens org personal   # prints the token
+   ```
+
+   Copy the token into the GitHub secret below, then delete the codespace.
+   Everything afterwards runs from the Actions tab.
+
+   An org token is what the deploy workflow wants in any case: org-scoped, so
+   it can create the app.
+
 **When this token expires, the nightly backup stops as well as the deploy** —
 they share it. GitHub emails you when a scheduled workflow fails, so you will
 find out, but set a calendar reminder to rotate it if the expiry is short.
