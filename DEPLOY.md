@@ -22,11 +22,18 @@ Fly no longer has a free tier, and this app runs at roughly $2/month.
 
 ### 2. Create an access token
 
-In the Fly dashboard: **Account → Access Tokens → Create token**. Give it a
-name and copy the value — it is shown once.
+In the Fly dashboard: **Account → Access Tokens → Create token**. Copy the
+value — it is shown once.
+
+- **Name**: anything you will recognise later; it is only a label. `github-actions` works, since that is the only thing that uses it.
+- **Expiry**: about a year is a sensible middle (some versions of the field want hours — 8760h). Shorter means rotating more often; longer means a long-lived credential sitting in your GitHub secrets.
 
 Use a full account token, not an app-scoped deploy token: the first run has to
 create the app, which an app-scoped token cannot do.
+
+**When this token expires, the nightly backup stops as well as the deploy** —
+they share it. GitHub emails you when a scheduled workflow fails, so you will
+find out, but set a calendar reminder to rotate it if the expiry is short.
 
 ### 3. Give the token to GitHub
 
@@ -150,6 +157,12 @@ workflow, so it starts working as soon as that is set — nothing else to do.
 
 Artifacts expire after 90 days. Download one occasionally if you want a copy
 that outlives that.
+
+**GitHub pauses scheduled workflows after 60 days without repository
+activity.** If you deploy this and then leave the repo alone for two months,
+the nightly backup quietly stops until you open the Actions tab and re-enable
+it. Nothing to do with Fly, but it affects the same safety net — so glance at
+the Actions tab occasionally, or push a trivial commit now and then.
 
 ### Restore
 
