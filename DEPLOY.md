@@ -10,84 +10,103 @@ diverging copy of your data, and nothing would warn you. Never
 
 ---
 
-## First deploy
+## Deploying from a browser (no terminal needed)
 
-### 1. Install flyctl and sign in
+Everything below works on an iPad, a phone, or any machine where you would
+rather not install anything. GitHub Actions runs `flyctl` on your behalf.
+
+### 1. Create a Fly account
+
+Sign up at [fly.io](https://fly.io). You will need to add a payment method —
+Fly no longer has a free tier, and this app runs at roughly $2/month.
+
+### 2. Create an access token
+
+In the Fly dashboard: **Account → Access Tokens → Create token**. Give it a
+name and copy the value — it is shown once.
+
+Use a full account token, not an app-scoped deploy token: the first run has to
+create the app, which an app-scoped token cannot do.
+
+### 3. Give the token to GitHub
+
+In this repository: **Settings → Secrets and variables → Actions → New
+repository secret**.
+
+- Name: `FLY_API_TOKEN`
+- Value: the token you just copied
+
+The nightly backup workflow uses the same secret, so this enables both.
+
+### 4. Choose your app name and region
+
+Edit `fly.toml` on GitHub — open the file and press the pencil icon, or press
+`.` on the repository to get a full editor in the browser.
+
+```toml
+app = 'my-home-budget'      # must be globally unique
+primary_region = 'ams'      # pick the one nearest you
+```
+
+Common regions: `ams` Amsterdam, `lhr` London, `fra` Frankfurt, `cdg` Paris,
+`iad` Virginia, `lax` Los Angeles, `syd` Sydney, `nrt` Tokyo.
+
+Commit the change.
+
+### 5. Run the deploy
+
+**Actions → Deploy to Fly.io → Run workflow.**
+
+It typechecks, runs the test suite, then creates the app, the volume and the
+session secret if they are missing, and deploys. When it finishes, the run
+summary shows your URL: `https://<your-app>.fly.dev`.
+
+Open it and create your household. The first account is the owner.
+
+The workflow is safe to re-run — it never recreates the volume or rotates the
+secret, so your data and everyone's sessions survive.
+
+### Deploying again later
+
+Same thing: **Actions → Deploy to Fly.io → Run workflow**. Deploys replace the
+machine but not the volume, so the database is untouched. Migrations run
+automatically on boot (`ARCHITECTURE.md` §3).
+
+---
+
+## Deploying from a terminal (alternative)
+
+If you do have a machine with a shell:
 
 ```bash
 curl -L https://fly.io/install.sh | sh     # or: brew install flyctl
-fly auth signup                            # or: fly auth login
-```
+fly auth login
 
-### 2. Create the app
-
-Pick a globally unique name, then put it in `fly.toml`.
-
-```bash
-fly apps create my-home-budget
-```
-
-Edit `fly.toml`:
-
-```toml
-app = 'my-home-budget'
-primary_region = 'ams'      # pick the region nearest you: fly platform regions
-```
-
-### 3. Create the volume
-
-The database lives here and survives deploys and restarts. 1 GB is far more
-than enough — a decade of data measured at under 6 MB.
-
-```bash
+fly apps create my-home-budget             # then set this name in fly.toml
 fly volumes create data --size 1 --region ams --app my-home-budget
-```
-
-The name `data` must match `[mounts] source` in `fly.toml`.
-
-### 4. Set the session secret
-
-The app **refuses to boot** in production without this, on purpose.
-
-```bash
 fly secrets set JWT_SECRET="$(node -e "console.log(require('crypto').randomBytes(48).toString('hex'))")" --app my-home-budget
-```
-
-Keep it stable. Changing it signs everyone out, since sessions are JWTs.
-
-### 5. Deploy
-
-```bash
 fly deploy
 fly open
 ```
-
-Create your household on the sign-up page. That first account is the owner.
 
 ---
 
 ## Checking it worked
 
+From a browser: the Fly dashboard shows the machine, its logs and its volume.
+Look for `Applied N migration(s)` in the logs on the first boot, and confirm
+there is exactly **one** machine.
+
+From a terminal:
+
 ```bash
 fly status                      # one machine, "started"
-fly logs                        # look for "Applied N migration(s)" on first boot
+fly logs
 fly ssh console -C "ls -la /data"
 ```
 
-`fly status` showing more than one machine means the split-brain risk above —
-scale back to 1 immediately.
-
----
-
-## Everyday deploys
-
-```bash
-git push          # CI runs typecheck and both test suites
-fly deploy        # after CI is green
-```
-
-Deploys replace the machine but not the volume, so the database is untouched.
-Migrations run automatically on boot; see `ARCHITECTURE.md` §3.
+More than one machine means the split-brain risk described above — scale back
+to 1 immediately.
 
 ---
 
@@ -96,7 +115,12 @@ Migrations run automatically on boot; see `ARCHITECTURE.md` §3.
 This is the part that actually matters. A lost provider account or a fumbled
 command is recoverable from a backup; nothing else recovers your data.
 
-### Take one by hand
+### Take one on demand, from a browser
+
+**Actions → Nightly backup → Run workflow.** It takes a snapshot and attaches
+it to the run, so you can download the file from the run page.
+
+### Take one from a terminal
 
 ```bash
 fly ssh console -C "node /app/server/dist/backup.js"
@@ -121,19 +145,18 @@ Get a copy off the machine.
 ### Automatic daily off-site copies
 
 `.github/workflows/backup.yml` runs a backup every night and stores it as a
-GitHub artifact. To enable it:
+GitHub artifact. It uses the same `FLY_API_TOKEN` secret as the deploy
+workflow, so it starts working as soon as that is set — nothing else to do.
 
-```bash
-fly tokens create deploy --app my-home-budget      # copy the output
-```
-
-Add it as a repository secret named `FLY_API_TOKEN`
-(Settings → Secrets and variables → Actions).
-
-Artifacts expire after 90 days, so download one occasionally if you want
-something permanent.
+Artifacts expire after 90 days. Download one occasionally if you want a copy
+that outlives that.
 
 ### Restore
+
+**This currently needs a terminal.** If you only have a tablet or a phone,
+that is a real gap: the nightly artifact gives you the data, but putting it
+back requires `fly ssh`. Worth knowing before you need it — a
+browser-driven restore workflow can be added if you want one.
 
 ```bash
 fly ssh sftp shell

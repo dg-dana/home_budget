@@ -32,6 +32,8 @@ npm run backup     # consistent SQLite snapshot (online backup API, not cp)
 
 Fly.io, one container, one machine, one volume — see `DEPLOY.md` for the runbook and `ARCHITECTURE.md` §11 for why.
 
+Deploys run from GitHub Actions (**Actions → Deploy to Fly.io → Run workflow**), not from a local terminal, so the whole thing is drivable from a browser. The workflow is idempotent and never rotates `JWT_SECRET` or recreates the volume.
+
 **Never run more than one machine.** All state is a single SQLite file on the volume; a second machine would silently diverge. `JWT_SECRET` must stay stable across deploys or every session is invalidated.
 
 ## Schema changes

@@ -1,0 +1,130 @@
+name: Deploy to Fly.io
+
+# Runs flyctl for you, so the whole deployment can be driven from a browser —
+# no terminal, no local install. Start it from the Actions tab.
+#
+# Safe to re-run: the app, volume and session secret are only created if they
+# are missing. Everything after that is an ordinary deploy.
+#
+# Requires a repository secret FLY_API_TOKEN. See DEPLOY.md.
+
+on:
+  workflow_dispatch:
+    inputs:
+      skip_tests:
+        description: 'Deploy without running tests first (not recommended)'
+        type: boolean
+        default: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the token is configured
+        run: |
+          if [ -z "${{ secrets.FLY_API_TOKEN }}" ]; then
+            echo "::error::FLY_API_TOKEN is not set. Add it under Settings -> Secrets and variables -> Actions. See DEPLOY.md."
+            exit 1
+          fi
+
+      - uses: actions/setup-node@v4
+        if: ${{ !inputs.skip_tests }}
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        if: ${{ !inputs.skip_tests }}
+        run: npm ci
+
+      - name: Typecheck
+        if: ${{ !inputs.skip_tests }}
+        run: npm run typecheck
+
+      - name: Server tests
+        if: ${{ !inputs.skip_tests }}
+        run: npm test
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Read the app name and region from fly.toml
+        id: config
+        run: |
+          set -euo pipefail
+          APP=$(grep -m1 "^app" fly.toml | cut -d"'" -f2)
+          REGION=$(grep -m1 "^primary_region" fly.toml | cut -d"'" -f2)
+
+          if [ -z "$APP" ] || [ "$APP" = "home-budget" ]; then
+            echo "::error::Set a unique app name in fly.toml (the default 'home-budget' is taken). Edit it on GitHub and commit."
+            exit 1
+          fi
+
+          echo "app=$APP"       >> "$GITHUB_OUTPUT"
+          echo "region=$REGION" >> "$GITHUB_OUTPUT"
+          echo "Deploying '$APP' to '$REGION'."
+
+      - name: Create the app if it does not exist
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          APP: ${{ steps.config.outputs.app }}
+        run: |
+          if fly status --app "$APP" > /dev/null 2>&1; then
+            echo "App '$APP' already exists."
+          else
+            echo "Creating app '$APP'."
+            fly apps create "$APP" --org personal
+          fi
+
+      - name: Create the volume if it does not exist
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          APP: ${{ steps.config.outputs.app }}
+          REGION: ${{ steps.config.outputs.region }}
+        run: |
+          set -euo pipefail
+          # The name must match [mounts] source in fly.toml.
+          if fly volumes list --app "$APP" 2>/dev/null | grep -qw data; then
+            echo "Volume 'data' already exists — leaving it alone (it holds the database)."
+          else
+            echo "Creating a 1 GB volume 'data' in $REGION."
+            fly volumes create data --size 1 --region "$REGION" --app "$APP" --yes
+          fi
+
+      - name: Set the session secret if it is not set
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          APP: ${{ steps.config.outputs.app }}
+        run: |
+          set -euo pipefail
+          # Generated once and left alone. Rotating it signs everybody out,
+          # because sessions are JWTs.
+          if fly secrets list --app "$APP" 2>/dev/null | grep -q JWT_SECRET; then
+            echo "JWT_SECRET already set — not touching it."
+          else
+            echo "Generating JWT_SECRET."
+            fly secrets set JWT_SECRET="$(openssl rand -hex 48)" --app "$APP" --stage
+          fi
+
+      - name: Deploy
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          APP: ${{ steps.config.outputs.app }}
+        run: fly deploy --app "$APP" --remote-only --wait-timeout 600
+
+      - name: Report where it is
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          APP: ${{ steps.config.outputs.app }}
+        run: |
+          fly status --app "$APP" || true
+          {
+            echo "### Deployed"
+            echo ""
+            echo "Your app: https://$APP.fly.dev"
+            echo ""
+            echo "Open it and create your household — the first account is the owner."
+          } >> "$GITHUB_STEP_SUMMARY"

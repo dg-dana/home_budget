@@ -245,6 +245,7 @@ Five deliberate regressions were introduced, and each was caught by a failing te
 ## 11. Deployment
 
 - **Target: Fly.io.** One container, one machine, one volume. `DEPLOY.md` has the runbook.
+- **Deploys run from GitHub Actions** (`.github/workflows/deploy.yml`, manual trigger), not from a laptop. That is deliberate: it means the whole deployment can be driven from a browser on a tablet or phone, and it keeps `flyctl` out of anyone's local setup. The workflow is idempotent — it creates the app, volume and session secret only when missing, so re-running never destroys data or rotates the secret.
 - The `Dockerfile` is a three-stage build: compile with dev dependencies, install production dependencies separately, then copy only `node_modules`, `server/dist` and `web/dist` into a `node:22-slim` runtime. Result is ~36 MB of application layer.
 - **Debian, not Alpine**, deliberately: `better-sqlite3` is a native module and the glibc prebuilds mean no compiler in the image.
 - The runtime image must keep the source tree's shape — `/app/server/dist` and `/app/web/dist` — because `config.ts` resolves the repo root two levels up from the compiled server directory.
