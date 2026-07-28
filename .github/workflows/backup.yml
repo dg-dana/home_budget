@@ -1,0 +1,61 @@
+name: Nightly backup
+
+# Takes a consistent SQLite snapshot on the Fly machine and pulls it down as a
+# GitHub artifact, so a copy of the data exists somewhere other than the volume
+# it came from.
+#
+# Requires a repository secret FLY_API_TOKEN:
+#   fly tokens create deploy --app <your-app>
+#
+# Does nothing until that secret exists — the job exits cleanly rather than
+# failing every night with a red cross.
+
+on:
+  schedule:
+    - cron: '17 3 * * *' # 03:17 UTC daily
+  workflow_dispatch: # also runnable on demand
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check the token is configured
+        id: guard
+        run: |
+          if [ -z "${{ secrets.FLY_API_TOKEN }}" ]; then
+            echo "FLY_API_TOKEN is not set — skipping. See DEPLOY.md."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install flyctl
+        if: steps.guard.outputs.configured == 'true'
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Take a snapshot on the machine
+        if: steps.guard.outputs.configured == 'true'
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: fly ssh console -C "node /app/server/dist/backup.js"
+
+      - name: Fetch the newest snapshot
+        if: steps.guard.outputs.configured == 'true'
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          newest=$(fly ssh console -C "ls -1 /data/backups" | grep '\.sqlite$' | sort | tail -1 | tr -d '\r')
+          echo "Newest snapshot: $newest"
+          fly ssh sftp get "/data/backups/$newest" ./home-budget-backup.sqlite
+          ls -la ./home-budget-backup.sqlite
+
+      - name: Upload it
+        if: steps.guard.outputs.configured == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: home-budget-backup-${{ github.run_id }}
+          path: home-budget-backup.sqlite
+          retention-days: 90

@@ -33,7 +33,7 @@ Reference for how this app is put together and why. Read this before extending i
 - **Migrations run on every boot**, from the ordered list in `server/src/migrations.ts`. Each one runs inside a transaction and is recorded in `schema_migrations`; a database that is already current does no work beyond one `SELECT`.
   - **Never edit or reorder a migration that has shipped** — add a new one. Ids are what get recorded, so they must stay stable.
   - Migration `001-initial-schema` is the original schema and is entirely `IF NOT EXISTS`. That is deliberate: it means a database created *before* the migration system existed passes over it harmlessly and picks up later migrations cleanly. There is a test for exactly this adoption path.
-- Backups = copy the `data/` directory. It is gitignored.
+- `data/` is gitignored. **Do not back it up with `cp`** — in WAL mode that can produce a snapshot missing recent writes, or a corrupt one. Use `npm run backup` (§11).
 
 ### Tables
 
@@ -239,7 +239,27 @@ Five deliberate regressions were introduced, and each was caught by a failing te
 
 ---
 
-## 11. Continuous integration
+## 11. Deployment
+
+- **Target: Fly.io.** One container, one machine, one volume. `DEPLOY.md` has the runbook.
+- The `Dockerfile` is a three-stage build: compile with dev dependencies, install production dependencies separately, then copy only `node_modules`, `server/dist` and `web/dist` into a `node:22-slim` runtime. Result is ~36 MB of application layer.
+- **Debian, not Alpine**, deliberately: `better-sqlite3` is a native module and the glibc prebuilds mean no compiler in the image.
+- The runtime image must keep the source tree's shape — `/app/server/dist` and `/app/web/dist` — because `config.ts` resolves the repo root two levels up from the compiled server directory.
+- **Exactly one machine, always.** Every byte of state is in one SQLite file on the volume. A second machine gets its own volume and its own diverging copy, silently. This is the single most damaging mistake available here.
+- Sessions are JWTs, so `JWT_SECRET` must stay stable across deploys or everyone is signed out. Production refuses to boot without it.
+- Measured sizing: ~85 MB peak RSS, under 6 MB of data after ten years, ~30 MB/month egress → a 256 MB machine and a 1 GB volume, about $2/month.
+- The app is safe to let sleep when idle: nothing runs in the background, because recurring expenses materialise on read (§7) and catch up on the next request.
+
+### Backups
+
+- `npm run backup` (`server/src/backup.ts`) uses **SQLite's online backup API**, not a file copy. In WAL mode `cp` can capture the main file without its matching WAL contents — a snapshot that silently lacks recent writes, or is corrupt.
+- Verified against a 14,400-expense database: row counts, `integrity_check` and summed totals all match the source.
+- Snapshots are timestamped in `/data/backups`, newest `BACKUP_KEEP` (default 14) retained. Pruning removes `-wal`/`-shm` sidecars alongside each snapshot, or they accumulate on the volume forever.
+- `.github/workflows/backup.yml` runs it nightly and pulls the result down as an artifact, so a copy exists off the volume. It no-ops until `FLY_API_TOKEN` is set.
+
+---
+
+## 12. Continuous integration
 
 - `.github/workflows/ci.yml` runs on every push and pull request: `npm ci`, typecheck, the server suite, then the Playwright suite.
 - Chromium is installed with `npx playwright install --with-deps chromium`. The Playwright config only pins an `executablePath` when the sandbox's prebuilt browser exists, so CI falls through to the normally installed one.
@@ -247,7 +267,7 @@ Five deliberate regressions were introduced, and each was caught by a failing te
 
 ---
 
-## 12. Cross-cutting decisions worth remembering
+## 13. Cross-cutting decisions worth remembering
 
 - **Rate limiting** is per-IP, fixed window, in-process: `/api/auth` 60 req / 15 min, `/api/share` 120 req / min. It is single-instance only — running more than one process needs a shared store.
 - `trust proxy` is set to `1`, so `req.ip` is the client IP behind exactly one reverse proxy. Wrong proxy depth = wrong rate-limit keying.
@@ -258,20 +278,21 @@ Five deliberate regressions were introduced, and each was caught by a failing te
 
 ---
 
-## 13. Known rough edges
+## 14. Known rough edges
 
 Honest list — these are real, and none is currently blocking.
 
 - **Frontend coverage is the guest flow only.** The expenses dashboard, budgets, invites and household settings have no browser tests — changes there still need checking by hand.
 - **Links are generated, not delivered.** Invites and password recovery links are copied by the owner and sent by hand; there is no email integration. This is why recovery is owner-issued rather than self-service "forgot password".
-- **The app has never been deployed.** There is no Dockerfile, host, or backup story for `data/` yet.
 - **The guest list page polls every 15 s; the member list page does not poll at all.** So a member can be looking at a stale list while a guest shops. Unifying this — or moving both to SSE/WebSocket — is the natural fix.
-- Rate limiting is in-process and will not survive horizontal scaling (see §12).
+- Rate limiting is in-process and will not survive horizontal scaling (see §13) — moot while the deployment is deliberately one machine.
+- **API responses are not compressed.** There is no `compression` middleware, so a month of expenses ships as ~47 kB rather than ~5 kB. Cheap to fix and noticeable on a phone.
+- **The container runs as root.** Fly volumes mount root-owned, and dropping privileges needs a startup chown dance that was not worth the risk of an unverifiable failure. Worth hardening later.
 - `npm audit` flags `react-router` for an **RSC-mode** CSRF issue. This app is a client-side SPA and does not use RSC mode. The only version npm offers as a "fix" is 7.11.0, which reintroduces an open redirect that *does* affect `<Link>`/`useNavigate`. Staying on 7.18.1 is the deliberate, better trade.
 
 ---
 
-## 14. Adding a feature — the checklist
+## 15. Adding a feature — the checklist
 
 1. Does it belong to a household, or is it guest-reachable? That answer decides which router it goes in.
 2. Add a **new** migration to `server/src/migrations.ts`. Never edit one that has shipped.

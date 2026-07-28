@@ -2,7 +2,7 @@
 
 Household expenses tracker + shared shopping lists. npm workspace: `server/` (Express + SQLite) and `web/` (React + Vite).
 
-**Read `ARCHITECTURE.md` before making changes.** It covers the data model, the two-tier access model, and the invariants that are easy to break. The checklist in §14 is the short version.
+**Read `ARCHITECTURE.md` before making changes.** It covers the data model, the two-tier access model, and the invariants that are easy to break. The checklist in §15 is the short version.
 
 ## Commands
 
@@ -15,6 +15,7 @@ npm run test:all   # both
 npm run typecheck  # both workspaces + e2e/
 npm run build      # server/dist + web/dist
 npm start          # production: one process, serves API + built frontend
+npm run backup     # consistent SQLite snapshot (online backup API, not cp)
 ```
 
 ## Testing
@@ -26,6 +27,12 @@ npm start          # production: one process, serves API + built frontend
 - Coverage gap: everything in `web/` except the guest flow — the expenses dashboard, budgets, invites, settings. Changes there still need checking by hand.
 - Adding a route means adding cases to `isolation.test.ts` (if household-scoped) and `share.test.ts` (if guest-reachable).
 - **Break the code once and watch the new test fail before trusting it.** A test that has never failed has not been shown to test anything.
+
+## Deployment
+
+Fly.io, one container, one machine, one volume — see `DEPLOY.md` for the runbook and `ARCHITECTURE.md` §11 for why.
+
+**Never run more than one machine.** All state is a single SQLite file on the volume; a second machine would silently diverge. `JWT_SECRET` must stay stable across deploys or every session is invalidated.
 
 ## Schema changes
 
