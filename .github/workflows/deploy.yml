@@ -11,6 +11,10 @@ name: Deploy to Fly.io
 on:
   workflow_dispatch:
     inputs:
+      org:
+        description: 'Fly organization to create the app in (usually "personal")'
+        type: string
+        default: 'personal'
       skip_tests:
         description: 'Deploy without running tests first (not recommended)'
         type: boolean
@@ -71,12 +75,20 @@ jobs:
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
           APP: ${{ steps.config.outputs.app }}
+          ORG: ${{ inputs.org }}
         run: |
           if fly status --app "$APP" > /dev/null 2>&1; then
             echo "App '$APP' already exists."
-          else
-            echo "Creating app '$APP'."
-            fly apps create "$APP" --org personal
+            exit 0
+          fi
+
+          echo "Organizations this token can see:"
+          fly orgs list || true
+
+          echo "Creating app '$APP' in org '$ORG'."
+          if ! fly apps create "$APP" --org "$ORG"; then
+            echo "::error::Could not create '$APP' in org '$ORG'. Check the org name in the list above and re-run with the right value, or pick a different app name if that one is taken."
+            exit 1
           fi
 
       - name: Create the volume if it does not exist

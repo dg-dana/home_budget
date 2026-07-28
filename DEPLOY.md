@@ -25,11 +25,14 @@ Fly no longer has a free tier, and this app runs at roughly $2/month.
 In the Fly dashboard: **Account → Access Tokens → Create token**. Copy the
 value — it is shown once.
 
+- **Token Type**: `Org Deploy Token`. It is scoped to the organisation rather than one app, so it can create the app on the first run — an *app*-scoped token cannot.
 - **Name**: anything you will recognise later; it is only a label. `github-actions` works, since that is the only thing that uses it.
-- **Expiry**: about a year is a sensible middle (some versions of the field want hours — 8760h). Shorter means rotating more often; longer means a long-lived credential sitting in your GitHub secrets.
+- **Expiry**: `1y`. The field takes units like `1y6M15d`; leaving it blank defaults to 100 years. Shorter means rotating more often; longer means a long-lived credential sitting in your GitHub secrets.
+- **Organization**: required, and the form silently returns to the same page if you leave it unset. Pick your org — usually `personal`. Note the name: if it is not `personal`, pass it as the `org` input when you run the deploy workflow.
 
-Use a full account token, not an app-scoped deploy token: the first run has to
-create the app, which an app-scoped token cannot do.
+If the org-scoped token turns out not to have the permissions it needs, the
+banner at the top of that page links to the older Access Tokens page, which
+issues a full personal token.
 
 **When this token expires, the nightly backup stops as well as the deploy** —
 they share it. GitHub emails you when a scheduled workflow fails, so you will
