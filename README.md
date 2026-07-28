@@ -68,6 +68,17 @@ Open http://localhost:5173 — Vite proxies `/api` to the backend so cookies sta
 same-origin. Create a household from the sign-up page to get started; seven default
 categories are created with it.
 
+### Tests
+
+```bash
+npm test
+```
+
+75 integration tests run the real app over HTTP against a real SQLite database —
+no mocks. They cover cross-household isolation, guest share access, authentication
+and invites, expense arithmetic, and owner/member permissions. See
+`ARCHITECTURE.md` §9. The frontend has no automated tests yet.
+
 ### Production
 
 ```bash

@@ -2,7 +2,6 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { db } from '../db.js';
 import { asyncHandler, forbidden, notFound, parseBody } from '../http.js';
-import { rateLimit } from '../rateLimit.js';
 import {
   addItem,
   clearCheckedItems,
@@ -19,12 +18,11 @@ import type { ShoppingListRow } from '../types.js';
  * unauthenticated: anyone holding the share link can use them, which is the
  * point — a neighbour or babysitter can pick things up without an account.
  * Nothing here exposes expenses, members or any other household data.
+ *
+ * The rate limiter guarding these routes is applied where they are mounted,
+ * in `app.ts`.
  */
 export const shareRouter = Router();
-
-shareRouter.use(
-  rateLimit({ windowMs: 60_000, max: 120, message: 'Too many requests, please wait a moment' }),
-);
 
 const guestNameSchema = z.object({
   guestName: z.string().trim().min(1).max(40).default('Guest'),

@@ -105,7 +105,8 @@ Reference for how this app is put together and why. Read this before extending i
 
 ## 7. Server code map (`server/src/`)
 
-- `index.ts` — app assembly, route mounting, static frontend, error middleware last.
+- `app.ts` — `createApp()`: assembles the Express app (routes, static frontend, error middleware last) **without binding a port**, so tests can mount it on an ephemeral one.
+- `index.ts` — the entry point. Only calls `createApp().listen(...)`.
 - `config.ts` — env parsing, resolves paths relative to repo root, production guardrails.
 - `db.ts` — connection + schema.
 - `auth.ts` — hashing, cookies, id/token generation, auth middleware.
@@ -140,7 +141,36 @@ Reference for how this app is put together and why. Read this before extending i
 
 ---
 
-## 9. Cross-cutting decisions worth remembering
+## 9. Tests
+
+- **Vitest, in `server/test/`.** 75 tests, run with `npm test` from the repo root.
+- They are **integration tests over real HTTP**, not unit tests: each file boots the actual app on an ephemeral port and drives it with a cookie-aware client. There is no mocking of the database, the router or the session.
+- `test/setup.ts` runs before any application module is imported and points `DATABASE_PATH` at a unique temp file. Vitest gives each test file its own module registry, so **every test file gets its own SQLite database** and files can run in parallel.
+- `resetDatabase()` truncates every table in `beforeEach`.
+- `createApp({ enableRateLimits: false })` disables the limiter for tests that would otherwise trip it. This is why the share limiter lives in `app.ts` rather than inside `shareRouter`.
+- `test/helpers.ts` provides the vocabulary: `registerHousehold()`, `addMember()`, `createSharedList()`, `createClient()` (an independent cookie jar = an independent person).
+
+### What the files cover
+
+- `isolation.test.ts` — **the most important file.** Two households, and every route checked to confirm one cannot see or touch the other's rows.
+- `share.test.ts` — guest access: what a guest can do, what the link must never expose, view-only enforcement, revocation, token reuse.
+- `auth.test.ts` — registration, login, forged/expired/tampered cookies, and the full invite lifecycle.
+- `expenses.test.ts` — cents arithmetic, month-boundary maths, summary aggregation, and what survives a category or member deletion.
+- `household.test.ts` — owner vs member permissions, cascade behaviour, list mechanics.
+
+### These tests were verified by breaking the code
+
+Three deliberate regressions were introduced and each was caught by a failing test:
+
+1. Removing the `household_id` filter from the expenses list query → `isolation` failed.
+2. Adding `householdId` to the guest share response → `share` failed.
+3. Removing the view-only check from `editableList()` → `share` failed.
+
+**Keep it that way.** When you add a test for an invariant, break the code once and confirm it fails. A test that has never failed has not been shown to test anything.
+
+---
+
+## 10. Cross-cutting decisions worth remembering
 
 - **Rate limiting** is per-IP, fixed window, in-process: `/api/auth` 60 req / 15 min, `/api/share` 120 req / min. It is single-instance only — running more than one process needs a shared store.
 - `trust proxy` is set to `1`, so `req.ip` is the client IP behind exactly one reverse proxy. Wrong proxy depth = wrong rate-limit keying.
@@ -151,26 +181,28 @@ Reference for how this app is put together and why. Read this before extending i
 
 ---
 
-## 10. Known rough edges
+## 11. Known rough edges
 
 Honest list — these are real, and none is currently blocking.
 
-- **No automated tests in the repo.** The end-to-end run that validated the initial build was a scratchpad script and was not committed. This is the biggest gap.
+- **No frontend tests.** The server suite is solid; React components and pages have no coverage at all. A browser-level smoke test of the guest flow is the obvious next addition.
 - **No migration system** (see §3).
 - **Invites are generated, not delivered.** The owner copies a link and sends it themselves; there is no email integration.
 - **The guest list page polls every 15 s; the member list page does not poll at all.** So a member can be looking at a stale list while a guest shops. Unifying this — or moving both to SSE/WebSocket — is the natural fix.
 - `POST /expenses` defaults `paid_by` to the creating user when it is null, but `PUT /expenses/:id` writes whatever it is given, including null. Slightly inconsistent; decide which behaviour is correct before building on it.
-- Rate limiting is in-process and will not survive horizontal scaling (see §9).
+- Rate limiting is in-process and will not survive horizontal scaling (see §10).
 - `npm audit` flags `react-router` for an **RSC-mode** CSRF issue. This app is a client-side SPA and does not use RSC mode. The only version npm offers as a "fix" is 7.11.0, which reintroduces an open redirect that *does* affect `<Link>`/`useNavigate`. Staying on 7.18.1 is the deliberate, better trade.
 
 ---
 
-## 11. Adding a feature — the checklist
+## 12. Adding a feature — the checklist
 
 1. Does it belong to a household, or is it guest-reachable? That answer decides which router it goes in.
 2. Add/extend the table in `db.ts` (`IF NOT EXISTS`) — and hand-write an `ALTER TABLE` if a live DB already exists.
 3. Add row types to `server/src/types.ts`.
 4. Write the route: `asyncHandler` + Zod via `parseBody` + **`household_id` in the WHERE clause** + `assertOwned` for any client-supplied foreign id.
 5. If guests touch it, put the logic in a shared service (like `shoppingItems.ts`) so both paths cannot drift — and re-check what the guest response exposes.
-6. Add the response type to `web/src/api.ts`, then build the page on the `load()` + refetch pattern.
-7. Money stays in cents end to end.
+6. **Write the tests.** Anything household-scoped gets a case in `isolation.test.ts`; anything guest-reachable gets one in `share.test.ts`. Then break the code once and watch them fail (§9).
+7. Add the response type to `web/src/api.ts`, then build the page on the `load()` + refetch pattern.
+8. Money stays in cents end to end.
+9. Update `ARCHITECTURE.md` and `CLAUDE.md` in the same commit.
