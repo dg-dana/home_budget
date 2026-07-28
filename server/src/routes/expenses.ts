@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { currentUser, newId, nowIso, requireAuth } from '../auth.js';
 import { db } from '../db.js';
 import { asyncHandler, badRequest, notFound, parseBody } from '../http.js';
+import { materialiseDueExpenses } from '../recurring.js';
 
 export const expensesRouter = Router();
 
@@ -16,7 +17,10 @@ const expenseSchema = z.object({
   amount: z.number().positive('Amount must be greater than zero').max(1_000_000_000),
   description: z.string().trim().max(200).default(''),
   categoryId: z.string().uuid().nullable().default(null),
-  paidBy: z.string().uuid().nullable().default(null),
+  // Absent means "me"; an explicit null means "nobody in particular", which is
+  // a real state — it is also what a removed member's expenses fall back to.
+  // Create and update treat this identically.
+  paidBy: z.string().uuid().nullable().optional(),
   spentOn: z.string().regex(DATE_PATTERN, 'Date must be in YYYY-MM-DD format'),
 });
 
@@ -40,8 +44,12 @@ const currentMonth = () => new Date().toISOString().slice(0, 7);
  * Verifies a category / member id belongs to this household before it is
  * stored, so ids cannot be used to point at another household's rows.
  */
-function assertOwned(table: 'categories' | 'users', id: string | null, householdId: string) {
-  if (id === null) return;
+function assertOwned(
+  table: 'categories' | 'users',
+  id: string | null | undefined,
+  householdId: string,
+) {
+  if (id === null || id === undefined) return;
   const row = db
     .prepare(`SELECT id FROM ${table} WHERE id = ? AND household_id = ?`)
     .get(id, householdId);
@@ -51,7 +59,8 @@ function assertOwned(table: 'categories' | 'users', id: string | null, household
 }
 
 const SELECT_EXPENSE = `
-  SELECT e.id, e.amount_cents, e.description, e.spent_on, e.category_id, e.paid_by, e.created_at,
+  SELECT e.id, e.amount_cents, e.description, e.spent_on, e.category_id, e.paid_by,
+         e.recurring_id, e.created_at,
          c.name AS category_name, c.color AS category_color,
          u.name AS paid_by_name
   FROM expenses e
@@ -63,6 +72,8 @@ expensesRouter.get(
   '/',
   asyncHandler((req, res) => {
     const user = currentUser(req);
+    // Recurring rules become real expenses on read; see recurring.ts.
+    materialiseDueExpenses(user.householdId);
     const filters: string[] = ['e.household_id = ?'];
     const params: unknown[] = [user.householdId];
 
@@ -94,6 +105,7 @@ expensesRouter.get(
   '/summary',
   asyncHandler((req, res) => {
     const user = currentUser(req);
+    materialiseDueExpenses(user.householdId);
     const month = typeof req.query.month === 'string' && req.query.month ? req.query.month : currentMonth();
     const { start, end } = monthRange(month);
     const scope = [user.householdId, start, end];
@@ -180,7 +192,7 @@ expensesRouter.post(
       id,
       user.householdId,
       input.categoryId,
-      input.paidBy ?? user.id,
+      input.paidBy === undefined ? user.id : input.paidBy,
       Math.round(input.amount * 100),
       input.description,
       input.spentOn,
@@ -210,7 +222,7 @@ expensesRouter.put(
         Math.round(input.amount * 100),
         input.description,
         input.categoryId,
-        input.paidBy,
+        input.paidBy === undefined ? user.id : input.paidBy,
         input.spentOn,
         req.params.id,
         user.householdId,

@@ -19,6 +19,15 @@ Two kinds of people use it:
 - Breakdown by category and by household member, plus a six-month trend
 - Currency is a household setting (amounts are stored as integer cents, never floats)
 
+**Recurring expenses**
+- Rent, bills and subscriptions repeat weekly, monthly or yearly
+- Optional end date; pause and resume without losing the rule
+- Occurrences are created automatically when due, and caught up if the app was
+  not opened for a while — resuming a paused rule skips the gap rather than
+  back-charging it
+- Generated expenses are marked as repeating but are otherwise ordinary, so they
+  count towards budgets and totals
+
 **Shopping lists**
 - Any number of lists per household, each with items, quantities and notes
 - Tick items off; the list records who added each item and who picked it up
@@ -71,19 +80,20 @@ categories are created with it.
 ### Tests
 
 ```bash
-npm test          # server integration suite (75 tests, Vitest)
+npm test          # server integration suite (108 tests, Vitest)
 npm run test:e2e  # guest-flow browser smoke test (6 tests, Playwright)
 npm run test:all  # both
 ```
 
 The server suite runs the real app over HTTP against a real SQLite database — no
 mocks — covering cross-household isolation, guest share access, authentication and
-invites, expense arithmetic, and owner/member permissions.
+invites, expense arithmetic, recurrence dates and migrations, and owner/member
+permissions.
 
 The Playwright suite builds the app and drives the production build in a browser,
 covering the guest flow end to end: sharing a list, a guest with no account adding
 and ticking off items, view-only enforcement, and instant revocation. Other parts
-of the frontend have no browser coverage yet. See `ARCHITECTURE.md` §9.
+of the frontend have no browser coverage yet. See `ARCHITECTURE.md` §10.
 
 ### Production
 
@@ -109,9 +119,9 @@ All optional except `JWT_SECRET` in production. See `.env.example`.
 | `DATABASE_PATH` | `data/home-budget.sqlite` | SQLite file, relative to repo root |
 | `NODE_ENV`      | `development`             | Set to `production` when deploying |
 
-The database file is created on first boot and the schema is applied idempotently on
-every start, so there is no separate migration step. `data/` is gitignored — back that
-directory up and you have backed up everything.
+The database file is created on first boot and any pending migrations are applied
+automatically on every start, so there is no separate migration step to run. `data/`
+is gitignored — back that directory up and you have backed up everything.
 
 ## API
 
@@ -134,6 +144,8 @@ everything else requires the session cookie.
 | CRUD   | `/categories`                     | member         |
 | CRUD   | `/expenses`                       | member         |
 | GET    | `/expenses/summary?month=YYYY-MM` | member         |
+| CRUD   | `/recurring`                      | member         |
+| POST   | `/recurring/:id/active`           | member         |
 | CRUD   | `/lists`, `/lists/:id/items`      | member         |
 | POST   | `/lists/:id/share`                | member         |
 | DELETE | `/lists/:id/share`                | member         |
@@ -167,18 +179,20 @@ redirect that *does* affect `<Link>`/`useNavigate`, so the app stays on 7.18.1.
 server/src
   index.ts          Express app, route mounting, static frontend in production
   config.ts         Environment configuration
-  db.ts             SQLite connection and schema
+  db.ts             SQLite connection and migration runner
+  migrations.ts     Ordered, append-only schema migrations
+  recurring.ts      Recurrence date maths and materialisation
   auth.ts           Password hashing, session cookies, auth middleware
   http.ts           HttpError, async wrapper, Zod body parsing, error middleware
   rateLimit.ts      In-process fixed-window limiter
   shoppingItems.ts  Item operations shared by the member and guest routes
-  routes/           auth, household, categories, expenses, lists, share
+  routes/           auth, household, categories, expenses, recurring, lists, share
 
 web/src
   api.ts            Typed fetch wrapper and response shapes
   session.tsx       Session context
   format.ts         Money and date formatting
   components/       Layout
-  pages/            Login, Register, Join, Expenses, Lists, ListDetail,
-                    Household, SharedList (the guest view)
+  pages/            Login, Register, Join, Expenses, Recurring, Lists,
+                    ListDetail, Household, SharedList (the guest view)
 ```

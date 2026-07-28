@@ -6,6 +6,7 @@ import JoinPage from './pages/JoinPage';
 import ListDetailPage from './pages/ListDetailPage';
 import ListsPage from './pages/ListsPage';
 import LoginPage from './pages/LoginPage';
+import RecurringPage from './pages/RecurringPage';
 import RegisterPage from './pages/RegisterPage';
 import SharedListPage from './pages/SharedListPage';
 import { useSession } from './session';
@@ -58,6 +59,7 @@ export default function App() {
         }
       >
         <Route path="/" element={<ExpensesPage />} />
+        <Route path="/recurring" element={<RecurringPage />} />
         <Route path="/lists" element={<ListsPage />} />
         <Route path="/lists/:id" element={<ListDetailPage />} />
         <Route path="/household" element={<HouseholdPage />} />

@@ -11,6 +11,7 @@ import { categoriesRouter } from './routes/categories.js';
 import { expensesRouter } from './routes/expenses.js';
 import { householdRouter } from './routes/household.js';
 import { listsRouter } from './routes/lists.js';
+import { recurringRouter } from './routes/recurring.js';
 import { shareRouter } from './routes/share.js';
 
 export interface CreateAppOptions {
@@ -49,6 +50,7 @@ export function createApp({ enableRateLimits = true }: CreateAppOptions = {}): E
   app.use('/api/household', householdRouter);
   app.use('/api/categories', categoriesRouter);
   app.use('/api/expenses', expensesRouter);
+  app.use('/api/recurring', recurringRouter);
   app.use('/api/lists', listsRouter);
   app.use('/api/share', ...shareLimiter, shareRouter);
 

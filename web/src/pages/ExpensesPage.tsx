@@ -277,7 +277,14 @@ export default function ExpensesPage() {
                       aria-hidden="true"
                     />
                     <div className="item-main">
-                      <div className="item-name">{expense.description || 'Expense'}</div>
+                      <div className="item-name">
+                        {expense.description || 'Expense'}
+                        {expense.recurring_id && (
+                          <span className="tag" style={{ marginLeft: '0.4rem' }} title="Added automatically by a recurring rule">
+                            ↻ repeating
+                          </span>
+                        )}
+                      </div>
                       <div className="item-meta">
                         <span>{dayLabel(expense.spent_on)}</span>
                         <span>·</span>

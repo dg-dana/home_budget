@@ -54,6 +54,7 @@ export function resetDatabase(): void {
     'shopping_items',
     'shopping_lists',
     'expenses',
+    'recurring_expenses',
     'categories',
     'invites',
     'users',

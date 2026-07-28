@@ -30,8 +30,9 @@ Reference for how this app is put together and why. Read this before extending i
 - **SQLite via `better-sqlite3`**, single file at `DATABASE_PATH` (default `data/home-budget.sqlite`).
 - **Synchronous driver, on purpose.** All query calls are blocking, which is why most route handlers are plain sync functions. Only bcrypt is async.
 - WAL journal mode; `foreign_keys = ON` enforced per connection.
-- **Schema is applied on every boot** from the `SCHEMA` constant in `server/src/db.ts`. Every statement is `CREATE ... IF NOT EXISTS`, so it is a no-op on an existing DB.
-  - There is **no migration tool and no version table**. Adding a column to an existing deployment currently needs a hand-written `ALTER TABLE`. If the schema starts changing regularly, this is the first thing to replace.
+- **Migrations run on every boot**, from the ordered list in `server/src/migrations.ts`. Each one runs inside a transaction and is recorded in `schema_migrations`; a database that is already current does no work beyond one `SELECT`.
+  - **Never edit or reorder a migration that has shipped** — add a new one. Ids are what get recorded, so they must stay stable.
+  - Migration `001-initial-schema` is the original schema and is entirely `IF NOT EXISTS`. That is deliberate: it means a database created *before* the migration system existed passes over it harmlessly and picks up later migrations cleanly. There is a test for exactly this adoption path.
 - Backups = copy the `data/` directory. It is gitignored.
 
 ### Tables
@@ -41,6 +42,7 @@ Reference for how this app is put together and why. Read this before extending i
 - `invites` — single-use tokens for adding members. Carries `used_at`/`used_by`, `expires_at`, optional pinned `email`.
 - `categories` — per household, unique name, colour, optional `monthly_budget_cents`.
 - `expenses` — per household. FKs to category and to the paying user.
+- `recurring_expenses` — per household. A rule (amount, frequency, start/end) plus `last_generated_on`, the marker that makes generation idempotent.
 - `shopping_lists` — per household. Holds the nullable `share_token` and the `share_can_edit` flag.
 - `shopping_items` — per list. Records `added_by_name` and `checked_by_name` as **plain text, not FKs** — because a guest with no account may have set them.
 
@@ -50,6 +52,7 @@ Reference for how this app is put together and why. Read this before extending i
 - Delete a list → cascades to its items.
 - Delete a **member** → their expenses survive; `paid_by` / `created_by` go `NULL`. History is never destroyed by removing a person.
 - Delete a **category** → its expenses survive and show as "Uncategorised".
+- Delete a **recurring rule** → the expenses it already generated survive and lose their `recurring_id`. They record money that really was spent.
 
 ### Money
 
@@ -103,17 +106,49 @@ Reference for how this app is put together and why. Read this before extending i
 
 ---
 
-## 7. Server code map (`server/src/`)
+## 7. Recurring expenses
+
+A rule in `recurring_expenses` (rent, a bill, a subscription) turns itself into
+real rows in `expenses`. The rows are ordinary expenses — they count towards
+budgets, totals and the trend like anything else — and carry a `recurring_id`
+so the UI can badge them.
+
+### Generation happens on read, not on a schedule
+
+- `materialiseDueExpenses(householdId)` runs at the top of `GET /expenses`, `GET /expenses/summary` and the recurring routes.
+- **Why not a scheduler:** the app is a single SQLite process that may simply not be running when a rule falls due. A cron would still need a catch-up path for that case, so the catch-up path *is* the implementation. Nothing is lost while the server is off — the occurrences appear the next time someone opens the app.
+- **Idempotency comes from `last_generated_on`**, the date of the most recent materialised occurrence. Generation only ever considers dates strictly after it. Running twice creates nothing the second time; there is a test that asserts this.
+- The cost when nothing is due is one indexed query.
+- Trade-off to be aware of: a GET request can write. It is bounded and idempotent, but it does mean read endpoints are not side-effect free.
+
+### The date maths
+
+- `occurrenceAt(rule, n)` is **pure** and works on `YYYY-MM-DD` strings, so there is no timezone to get wrong. It is tested directly, without HTTP or a database.
+- Monthly and yearly steps keep the start date's day-of-month and **clamp** to the target month. Clamping never moves the anchor: a rule starting on the 31st goes 31 Jan → 28 Feb → 31 Mar, *not* 28 Feb → 28 Mar. This is the classic bug in recurrence code and there is a test named for it.
+- 29 February yearly rules fall back to the 28th in non-leap years and return to the 29th when one comes round.
+
+### Pause, resume and edits
+
+- Pausing sets `is_active = 0`; nothing generates while paused.
+- **Resuming skips the paused window** rather than dumping months of back-dated expenses on the household. It does this by advancing `last_generated_on` to yesterday, which leaves an occurrence falling *today* still due.
+- Moving a rule's start date later than `last_generated_on` clears that marker, so the shifted schedule is not silently skipped.
+- Deleting a rule keeps the expenses it created (`ON DELETE SET NULL`).
+
+---
+
+## 8. Server code map (`server/src/`)
 
 - `app.ts` — `createApp()`: assembles the Express app (routes, static frontend, error middleware last) **without binding a port**, so tests can mount it on an ephemeral one.
 - `index.ts` — the entry point. Only calls `createApp().listen(...)`.
 - `config.ts` — env parsing, resolves paths relative to repo root, production guardrails.
-- `db.ts` — connection + schema.
+- `db.ts` — connection + the migration runner.
+- `migrations.ts` — the ordered, append-only migration list.
+- `recurring.ts` — recurrence date maths (pure) and materialisation.
 - `auth.ts` — hashing, cookies, id/token generation, auth middleware.
 - `http.ts` — `HttpError` + status helpers, `asyncHandler`, `parseBody`, error middleware.
 - `rateLimit.ts` — in-process fixed-window limiter.
 - `shoppingItems.ts` — **item operations shared by both the member and guest routes.** Both paths call the same functions with a different `actorName`, so guest and member edits can never diverge in behaviour.
-- `routes/` — `auth`, `household`, `categories`, `expenses`, `lists`, `share`.
+- `routes/` — `auth`, `household`, `categories`, `expenses`, `recurring`, `lists`, `share`.
 
 ### Conventions to follow
 
@@ -124,7 +159,7 @@ Reference for how this app is put together and why. Read this before extending i
 
 ---
 
-## 8. Frontend (`web/src/`)
+## 9. Frontend (`web/src/`)
 
 - React 18, React Router 7, **no state-management library and no data-fetching library**. Deliberate: the app is small and every page's data is scoped to one screen.
 - Per-page pattern: `useState` + a `load()` callback + `useEffect`. Mutations call the API then re-run `load()`. **Refetch rather than mutate local state** — it keeps guest/member concurrency honest at the cost of an extra request.
@@ -141,7 +176,7 @@ Reference for how this app is put together and why. Read this before extending i
 
 ---
 
-## 9. Tests
+## 10. Tests
 
 Two suites, run together with `npm run test:all`.
 
@@ -161,6 +196,8 @@ Two suites, run together with `npm run test:all`.
 - `auth.test.ts` — registration, login, forged/expired/tampered cookies, and the full invite lifecycle.
 - `expenses.test.ts` — cents arithmetic, month-boundary maths, summary aggregation, and what survives a category or member deletion.
 - `household.test.ts` — owner vs member permissions, cascade behaviour, list mechanics.
+- `recurring.test.ts` — recurrence date maths as a pure function (month-end clamping, leap years, rollovers), then catch-up, idempotency, pause/resume.
+- `migrations.test.ts` — fresh builds, repeat runs being no-ops, and the pre-migration-system adoption path.
 
 ### Browser smoke test — Playwright, `e2e/`
 
@@ -192,7 +229,7 @@ Five deliberate regressions were introduced, and each was caught by a failing te
 
 ---
 
-## 10. Cross-cutting decisions worth remembering
+## 11. Cross-cutting decisions worth remembering
 
 - **Rate limiting** is per-IP, fixed window, in-process: `/api/auth` 60 req / 15 min, `/api/share` 120 req / min. It is single-instance only — running more than one process needs a shared store.
 - `trust proxy` is set to `1`, so `req.ip` is the client IP behind exactly one reverse proxy. Wrong proxy depth = wrong rate-limit keying.
@@ -203,28 +240,26 @@ Five deliberate regressions were introduced, and each was caught by a failing te
 
 ---
 
-## 11. Known rough edges
+## 12. Known rough edges
 
 Honest list — these are real, and none is currently blocking.
 
 - **Frontend coverage is the guest flow only.** The expenses dashboard, budgets, invites and household settings have no browser tests — changes there still need checking by hand.
-- **No migration system** (see §3).
 - **Invites are generated, not delivered.** The owner copies a link and sends it themselves; there is no email integration.
 - **The guest list page polls every 15 s; the member list page does not poll at all.** So a member can be looking at a stale list while a guest shops. Unifying this — or moving both to SSE/WebSocket — is the natural fix.
-- `POST /expenses` defaults `paid_by` to the creating user when it is null, but `PUT /expenses/:id` writes whatever it is given, including null. Slightly inconsistent; decide which behaviour is correct before building on it.
-- Rate limiting is in-process and will not survive horizontal scaling (see §10).
+- Rate limiting is in-process and will not survive horizontal scaling (see §11).
 - `npm audit` flags `react-router` for an **RSC-mode** CSRF issue. This app is a client-side SPA and does not use RSC mode. The only version npm offers as a "fix" is 7.11.0, which reintroduces an open redirect that *does* affect `<Link>`/`useNavigate`. Staying on 7.18.1 is the deliberate, better trade.
 
 ---
 
-## 12. Adding a feature — the checklist
+## 13. Adding a feature — the checklist
 
 1. Does it belong to a household, or is it guest-reachable? That answer decides which router it goes in.
-2. Add/extend the table in `db.ts` (`IF NOT EXISTS`) — and hand-write an `ALTER TABLE` if a live DB already exists.
+2. Add a **new** migration to `server/src/migrations.ts`. Never edit one that has shipped.
 3. Add row types to `server/src/types.ts`.
 4. Write the route: `asyncHandler` + Zod via `parseBody` + **`household_id` in the WHERE clause** + `assertOwned` for any client-supplied foreign id.
 5. If guests touch it, put the logic in a shared service (like `shoppingItems.ts`) so both paths cannot drift — and re-check what the guest response exposes.
-6. **Write the tests.** Anything household-scoped gets a case in `isolation.test.ts`; anything guest-reachable gets one in `share.test.ts` and, if it changes what a guest sees, in `e2e/guest-flow.spec.ts`. Then break the code once and watch them fail (§9).
+6. **Write the tests.** Anything household-scoped gets a case in `isolation.test.ts`; anything guest-reachable gets one in `share.test.ts` and, if it changes what a guest sees, in `e2e/guest-flow.spec.ts`. Then break the code once and watch them fail (§10).
 7. Add the response type to `web/src/api.ts`, then build the page on the `load()` + refetch pattern.
 8. Money stays in cents end to end.
 9. Update `ARCHITECTURE.md` and `CLAUDE.md` in the same commit.
