@@ -1,14 +1,11 @@
 name: Nightly backup
 
-# Takes a consistent SQLite snapshot on the Fly machine and pulls it down as a
-# GitHub artifact, so a copy of the data exists somewhere other than the volume
+# Takes a consistent SQLite snapshot on the server and pulls it down as a
+# GitHub artifact, so a copy of the data exists somewhere other than the disk
 # it came from.
 #
-# Requires a repository secret FLY_API_TOKEN:
-#   fly tokens create deploy --app <your-app>
-#
-# Does nothing until that secret exists — the job exits cleanly rather than
-# failing every night with a red cross.
+# Uses the same secrets as the deploy workflow, so it starts working as soon as
+# those are set. Until then it exits cleanly rather than failing every night.
 
 on:
   schedule:
@@ -21,36 +18,72 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - name: Check the token is configured
+      - name: Check the secrets are configured
         id: guard
         run: |
-          if [ -z "${{ secrets.FLY_API_TOKEN }}" ]; then
-            echo "FLY_API_TOKEN is not set — skipping. See DEPLOY.md."
+          if [ -z "${{ secrets.LIGHTSAIL_HOST }}" ] || [ -z "${{ secrets.LIGHTSAIL_SSH_KEY }}" ]; then
+            echo "LIGHTSAIL_HOST / LIGHTSAIL_SSH_KEY not set — skipping. See DEPLOY.md."
             echo "configured=false" >> "$GITHUB_OUTPUT"
           else
             echo "configured=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Install flyctl
-        if: steps.guard.outputs.configured == 'true'
-        uses: superfly/flyctl-actions/setup-flyctl@master
-
-      - name: Take a snapshot on the machine
+      - name: Set up SSH
         if: steps.guard.outputs.configured == 'true'
         env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-        run: fly ssh console -C "node /app/server/dist/backup.js"
+          KEY: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+          HOST: ${{ secrets.LIGHTSAIL_HOST }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Take a snapshot on the server
+        if: steps.guard.outputs.configured == 'true'
+        env:
+          HOST: ${{ secrets.LIGHTSAIL_HOST }}
+          USER_NAME: ${{ secrets.LIGHTSAIL_USER || 'ubuntu' }}
+        run: |
+          set -euo pipefail
+          # Runs inside the app container, using SQLite's online backup API —
+          # safe while the app is serving traffic. See server/src/backup.ts.
+          ssh -i ~/.ssh/id_deploy "$USER_NAME@$HOST" \
+            "cd /opt/home-budget && sudo docker compose exec -T app node server/dist/backup.js"
 
       - name: Fetch the newest snapshot
         if: steps.guard.outputs.configured == 'true'
         env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          HOST: ${{ secrets.LIGHTSAIL_HOST }}
+          USER_NAME: ${{ secrets.LIGHTSAIL_USER || 'ubuntu' }}
         run: |
           set -euo pipefail
-          newest=$(fly ssh console -C "ls -1 /data/backups" | grep '\.sqlite$' | sort | tail -1 | tr -d '\r')
+          newest=$(ssh -i ~/.ssh/id_deploy "$USER_NAME@$HOST" \
+            "sudo ls -1 /opt/home-budget/data/backups/*.sqlite | sort | tail -1" | tr -d '\r')
           echo "Newest snapshot: $newest"
-          fly ssh sftp get "/data/backups/$newest" ./home-budget-backup.sqlite
+
+          # Copy to somewhere readable before pulling it down; the backups
+          # directory is written by root inside the container.
+          ssh -i ~/.ssh/id_deploy "$USER_NAME@$HOST" \
+            "sudo cp '$newest' /tmp/home-budget-backup.sqlite && sudo chown \$USER /tmp/home-budget-backup.sqlite"
+          scp -i ~/.ssh/id_deploy "$USER_NAME@$HOST:/tmp/home-budget-backup.sqlite" ./home-budget-backup.sqlite
+          ssh -i ~/.ssh/id_deploy "$USER_NAME@$HOST" "rm -f /tmp/home-budget-backup.sqlite"
           ls -la ./home-budget-backup.sqlite
+
+      - name: Check it is a valid database
+        if: steps.guard.outputs.configured == 'true'
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq && sudo apt-get install -y -qq sqlite3
+          result=$(sqlite3 ./home-budget-backup.sqlite 'PRAGMA integrity_check;')
+          echo "integrity_check: $result"
+          if [ "$result" != "ok" ]; then
+            echo "::error::The snapshot failed its integrity check — do not rely on it."
+            exit 1
+          fi
+          echo "households: $(sqlite3 ./home-budget-backup.sqlite 'SELECT COUNT(*) FROM households;')"
+          echo "expenses:   $(sqlite3 ./home-budget-backup.sqlite 'SELECT COUNT(*) FROM expenses;')"
 
       - name: Upload it
         if: steps.guard.outputs.configured == 'true'

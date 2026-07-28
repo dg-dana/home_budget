@@ -1,24 +1,31 @@
-name: Deploy to Fly.io
+name: Deploy to Lightsail
 
-# Runs flyctl for you, so the whole deployment can be driven from a browser —
-# no terminal, no local install. Start it from the Actions tab.
+# Builds the image here and ships it to the server, so the instance never has
+# to compile anything — a 512 MB box would struggle with a Vite build.
 #
-# Safe to re-run: the app, volume and session secret are only created if they
-# are missing. Everything after that is an ordinary deploy.
+# The whole thing runs from the Actions tab: no terminal, no local install.
 #
-# Requires a repository secret FLY_API_TOKEN. See DEPLOY.md.
+# Required repository secrets (see DEPLOY.md):
+#   LIGHTSAIL_HOST     public IP of the instance
+#   LIGHTSAIL_SSH_KEY  private key downloaded from Lightsail
+# Optional:
+#   LIGHTSAIL_USER     login user, defaults to "ubuntu"
 
 on:
   workflow_dispatch:
     inputs:
-      org:
-        description: 'Fly organization to create the app in (usually "personal")'
-        type: string
-        default: 'personal'
       skip_tests:
         description: 'Deploy without running tests first (not recommended)'
         type: boolean
         default: false
+
+concurrency:
+  group: deploy-lightsail
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
 
 jobs:
   deploy:
@@ -28,10 +35,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check the token is configured
+      - name: Check the secrets are configured
         run: |
-          if [ -z "${{ secrets.FLY_API_TOKEN }}" ]; then
-            echo "::error::FLY_API_TOKEN is not set. Add it under Settings -> Secrets and variables -> Actions. See DEPLOY.md."
+          missing=
+          [ -z "${{ secrets.LIGHTSAIL_HOST }}" ]    && missing="$missing LIGHTSAIL_HOST"
+          [ -z "${{ secrets.LIGHTSAIL_SSH_KEY }}" ] && missing="$missing LIGHTSAIL_SSH_KEY"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secret(s):$missing — see DEPLOY.md."
             exit 1
           fi
 
@@ -53,90 +63,117 @@ jobs:
         if: ${{ !inputs.skip_tests }}
         run: npm test
 
-      - uses: superfly/flyctl-actions/setup-flyctl@master
+      # --- build and publish the image -----------------------------------
+      - name: Work out the image name
+        id: image
+        run: |
+          # GHCR requires a lowercase path.
+          repo=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          echo "name=ghcr.io/$repo" >> "$GITHUB_OUTPUT"
+          echo "tag=ghcr.io/$repo:${{ github.sha }}" >> "$GITHUB_OUTPUT"
 
-      - name: Read the app name and region from fly.toml
-        id: config
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to the container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          # Lightsail's standard blueprints are x86.
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ steps.image.outputs.tag }}
+            ${{ steps.image.outputs.name }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # --- ship it to the server ------------------------------------------
+      - name: Set up SSH
+        env:
+          KEY: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+          HOST: ${{ secrets.LIGHTSAIL_HOST }}
         run: |
           set -euo pipefail
-          APP=$(grep -m1 "^app" fly.toml | cut -d"'" -f2)
-          REGION=$(grep -m1 "^primary_region" fly.toml | cut -d"'" -f2)
+          mkdir -p ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
 
-          if [ -z "$APP" ] || [ "$APP" = "home-budget" ]; then
-            echo "::error::Set a unique app name in fly.toml (the default 'home-budget' is taken). Edit it on GitHub and commit."
-            exit 1
-          fi
-
-          echo "app=$APP"       >> "$GITHUB_OUTPUT"
-          echo "region=$REGION" >> "$GITHUB_OUTPUT"
-          echo "Deploying '$APP' to '$REGION'."
-
-      - name: Create the app if it does not exist
+      - name: Copy the compose file and Caddyfile
         env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-          APP: ${{ steps.config.outputs.app }}
-          ORG: ${{ inputs.org }}
+          HOST: ${{ secrets.LIGHTSAIL_HOST }}
+          USER_NAME: ${{ secrets.LIGHTSAIL_USER || 'ubuntu' }}
         run: |
-          if fly status --app "$APP" > /dev/null 2>&1; then
-            echo "App '$APP' already exists."
-            exit 0
-          fi
+          scp -i ~/.ssh/id_deploy deploy/docker-compose.yml deploy/Caddyfile \
+            "$USER_NAME@$HOST:/opt/home-budget/"
 
-          echo "Organizations this token can see:"
-          fly orgs list || true
-
-          echo "Creating app '$APP' in org '$ORG'."
-          if ! fly apps create "$APP" --org "$ORG"; then
-            echo "::error::Could not create '$APP' in org '$ORG'. Check the org name in the list above and re-run with the right value, or pick a different app name if that one is taken."
-            exit 1
-          fi
-
-      - name: Create the volume if it does not exist
+      - name: Pull and restart
         env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-          APP: ${{ steps.config.outputs.app }}
-          REGION: ${{ steps.config.outputs.region }}
+          HOST: ${{ secrets.LIGHTSAIL_HOST }}
+          USER_NAME: ${{ secrets.LIGHTSAIL_USER || 'ubuntu' }}
+          IMAGE: ${{ steps.image.outputs.tag }}
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          # The name must match [mounts] source in fly.toml.
-          if fly volumes list --app "$APP" 2>/dev/null | grep -qw data; then
-            echo "Volume 'data' already exists — leaving it alone (it holds the database)."
-          else
-            echo "Creating a 1 GB volume 'data' in $REGION."
-            fly volumes create data --size 1 --region "$REGION" --app "$APP" --yes
-          fi
+          # The registry token is short-lived and scoped to this run, so no
+          # long-lived credential ends up sitting on the server.
+          ssh -i ~/.ssh/id_deploy "$USER_NAME@$HOST" bash -s <<EOF
+            set -euo pipefail
+            cd /opt/home-budget
 
-      - name: Set the session secret if it is not set
+            echo '$REGISTRY_TOKEN' | sudo docker login ghcr.io -u '$REGISTRY_USER' --password-stdin
+
+            # Record which image is deployed. Rolling back is editing this line
+            # to an older tag and re-running 'docker compose up -d'.
+            sed -i '/^APP_IMAGE=/d' .env
+            echo 'APP_IMAGE=$IMAGE' >> .env
+
+            sudo docker compose pull
+            sudo docker compose up -d --remove-orphans
+            sudo docker image prune -f
+            sudo docker logout ghcr.io
+          EOF
+
+      - name: Wait for it to come up
         env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-          APP: ${{ steps.config.outputs.app }}
+          HOST: ${{ secrets.LIGHTSAIL_HOST }}
+          USER_NAME: ${{ secrets.LIGHTSAIL_USER || 'ubuntu' }}
         run: |
           set -euo pipefail
-          # Generated once and left alone. Rotating it signs everybody out,
-          # because sessions are JWTs.
-          if fly secrets list --app "$APP" 2>/dev/null | grep -q JWT_SECRET; then
-            echo "JWT_SECRET already set — not touching it."
-          else
-            echo "Generating JWT_SECRET."
-            fly secrets set JWT_SECRET="$(openssl rand -hex 48)" --app "$APP" --stage
-          fi
-
-      - name: Deploy
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-          APP: ${{ steps.config.outputs.app }}
-        run: fly deploy --app "$APP" --remote-only --wait-timeout 600
+          for attempt in $(seq 1 30); do
+            if ssh -i ~/.ssh/id_deploy "$USER_NAME@$HOST" \
+                 "curl -fsS -o /dev/null http://127.0.0.1:8080/api/health" 2>/dev/null \
+               || ssh -i ~/.ssh/id_deploy "$USER_NAME@$HOST" \
+                 "sudo docker compose -f /opt/home-budget/docker-compose.yml exec -T app node -e \"fetch('http://127.0.0.1:8080/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\"" 2>/dev/null; then
+              echo "Healthy after $attempt attempt(s)."
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::The app did not become healthy. Check: sudo docker compose -f /opt/home-budget/docker-compose.yml logs"
+          exit 1
 
       - name: Report where it is
         env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-          APP: ${{ steps.config.outputs.app }}
+          HOST: ${{ secrets.LIGHTSAIL_HOST }}
+          USER_NAME: ${{ secrets.LIGHTSAIL_USER || 'ubuntu' }}
         run: |
-          fly status --app "$APP" || true
+          domain=$(ssh -i ~/.ssh/id_deploy "$USER_NAME@$HOST" \
+            "grep '^DOMAIN=' /opt/home-budget/.env | cut -d= -f2" || echo '')
           {
             echo "### Deployed"
             echo ""
-            echo "Your app: https://$APP.fly.dev"
+            [ -n "$domain" ] && echo "Your app: https://$domain"
             echo ""
-            echo "Open it and create your household — the first account is the owner."
+            echo "Image: \`${{ steps.image.outputs.tag }}\`"
+            echo ""
+            echo "If this was the first deploy, Caddy may take a minute to issue the certificate."
           } >> "$GITHUB_STEP_SUMMARY"

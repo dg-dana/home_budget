@@ -1,0 +1,123 @@
+name: Restore from a backup
+
+# Puts a backup back onto the server. Destructive, so it is manual-only and
+# requires typing CONFIRM.
+#
+# This exists because restore would otherwise need a terminal, which is no use
+# if all you have is a tablet. A backup you cannot restore is not a backup.
+#
+# The current database is kept alongside the restored one, so a mistake here is
+# still recoverable.
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: 'Run ID of the "Nightly backup" run holding the snapshot (from its URL)'
+        type: string
+        required: true
+      confirm:
+        description: 'Type CONFIRM to overwrite the live database'
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check the confirmation
+        run: |
+          if [ "${{ inputs.confirm }}" != "CONFIRM" ]; then
+            echo "::error::Type CONFIRM to proceed. Nothing was changed."
+            exit 1
+          fi
+
+      - name: Download the snapshot
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh run download "${{ inputs.run_id }}" \
+            --repo "${{ github.repository }}" --dir ./restore
+          find ./restore -name '*.sqlite' -print
+          file=$(find ./restore -name '*.sqlite' | head -1)
+          if [ -z "$file" ]; then
+            echo "::error::No .sqlite file in that run's artifacts. Check the run ID."
+            exit 1
+          fi
+          cp "$file" ./restore.sqlite
+
+      - name: Check it is a valid database before touching the server
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq && sudo apt-get install -y -qq sqlite3
+          result=$(sqlite3 ./restore.sqlite 'PRAGMA integrity_check;')
+          echo "integrity_check: $result"
+          [ "$result" = "ok" ] || { echo "::error::That snapshot is corrupt — refusing to restore it."; exit 1; }
+          echo "households: $(sqlite3 ./restore.sqlite 'SELECT COUNT(*) FROM households;')"
+          echo "expenses:   $(sqlite3 ./restore.sqlite 'SELECT COUNT(*) FROM expenses;')"
+
+      - name: Set up SSH
+        env:
+          KEY: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+          HOST: ${{ secrets.LIGHTSAIL_HOST }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Swap it in
+        env:
+          HOST: ${{ secrets.LIGHTSAIL_HOST }}
+          USER_NAME: ${{ secrets.LIGHTSAIL_USER || 'ubuntu' }}
+        run: |
+          set -euo pipefail
+          scp -i ~/.ssh/id_deploy ./restore.sqlite "$USER_NAME@$HOST:/tmp/restore.sqlite"
+
+          ssh -i ~/.ssh/id_deploy "$USER_NAME@$HOST" bash -s <<'EOF'
+            set -euo pipefail
+            cd /opt/home-budget
+            stamp=$(date -u +%Y%m%dT%H%M%SZ)
+
+            # Stop writes before swapping the file underneath the app.
+            sudo docker compose stop app
+
+            if [ -f data/home-budget.sqlite ]; then
+              sudo mv data/home-budget.sqlite "data/home-budget.replaced-$stamp.sqlite"
+              # WAL sidecars belong to the old file; leaving them would corrupt
+              # the restored database.
+              sudo rm -f data/home-budget.sqlite-wal data/home-budget.sqlite-shm
+              echo "Previous database kept as data/home-budget.replaced-$stamp.sqlite"
+            fi
+
+            sudo mv /tmp/restore.sqlite data/home-budget.sqlite
+            sudo docker compose up -d app
+          EOF
+
+      - name: Confirm it came back up
+        env:
+          HOST: ${{ secrets.LIGHTSAIL_HOST }}
+          USER_NAME: ${{ secrets.LIGHTSAIL_USER || 'ubuntu' }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 24); do
+            if ssh -i ~/.ssh/id_deploy "$USER_NAME@$HOST" \
+              "cd /opt/home-budget && sudo docker compose exec -T app node -e \"fetch('http://127.0.0.1:8080/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\"" 2>/dev/null; then
+              echo "Healthy after $attempt attempt(s)."
+              echo "### Restored" >> "$GITHUB_STEP_SUMMARY"
+              echo "" >> "$GITHUB_STEP_SUMMARY"
+              echo "The previous database was kept on the server as \`data/home-budget.replaced-*.sqlite\`." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::The app did not come back up. The previous database is still on the server as data/home-budget.replaced-*.sqlite."
+          exit 1

@@ -244,22 +244,24 @@ Five deliberate regressions were introduced, and each was caught by a failing te
 
 ## 11. Deployment
 
-- **Target: Fly.io.** One container, one machine, one volume. `DEPLOY.md` has the runbook.
-- **Deploys run from GitHub Actions** (`.github/workflows/deploy.yml`, manual trigger), not from a laptop. That is deliberate: it means the whole deployment can be driven from a browser on a tablet or phone, and it keeps `flyctl` out of anyone's local setup. The workflow is idempotent — it creates the app, volume and session secret only when missing, so re-running never destroys data or rotates the secret.
-- The `Dockerfile` is a three-stage build: compile with dev dependencies, install production dependencies separately, then copy only `node_modules`, `server/dist` and `web/dist` into a `node:22-slim` runtime. Result is ~36 MB of application layer.
-- **Debian, not Alpine**, deliberately: `better-sqlite3` is a native module and the glibc prebuilds mean no compiler in the image.
-- The runtime image must keep the source tree's shape — `/app/server/dist` and `/app/web/dist` — because `config.ts` resolves the repo root two levels up from the compiled server directory.
-- **Exactly one machine, always.** Every byte of state is in one SQLite file on the volume. A second machine gets its own volume and its own diverging copy, silently. This is the single most damaging mistake available here.
-- Sessions are JWTs, so `JWT_SECRET` must stay stable across deploys or everyone is signed out. Production refuses to boot without it.
-- Measured sizing: ~85 MB peak RSS, under 6 MB of data after ten years, ~30 MB/month egress → a 256 MB machine and a 1 GB volume, about $2/month.
-- The app is safe to let sleep when idle: nothing runs in the background, because recurring expenses materialise on read (§7) and catch up on the next request.
+- **Target: AWS Lightsail** — one small VPS running two containers via Docker Compose: the app, and **Caddy** in front terminating TLS. `DEPLOY.md` is the runbook.
+- **Caddy is not decoration.** The app marks session cookies `Secure` in production, so plain HTTP would break sign-in outright. Caddy obtains and renews a Let's Encrypt certificate automatically, which is why a real domain is required rather than a bare IP.
+- The app still trusts exactly one proxy hop (`trust proxy = 1`), which is Caddy. Change that if another proxy is ever added, or per-IP rate limiting will key on the wrong address.
+- **The image is built in CI, never on the server.** A Vite build on a small instance is a real risk of running out of memory. GitHub Actions builds it, pushes to GHCR, and the server only pulls. Registry credentials are a short-lived token passed at deploy time, so nothing long-lived sits on the box.
+- **Everything runs from the Actions tab** — deploy, backup and restore — because the person maintaining this may only have a tablet. Lightsail's browser SSH covers the rest.
+- `deploy/bootstrap.sh` runs once on a fresh instance: installs Docker, creates `/opt/home-budget`, generates `JWT_SECRET`. It deliberately never regenerates an existing secret, since that would sign everyone out.
+- `APP_IMAGE` in the server's `.env` records the deployed tag. Rolling back is editing it to an earlier SHA and running `docker compose up -d`.
+- Measured sizing: ~85 MB peak RSS, under 6 MB of data after ten years, ~30 MB/month egress. The $5/month bundle includes 1 TB of transfer.
+- **Fly.io was the original target** and the Dockerfile came from that work. It was abandoned for an account-level reason, not a technical one: Fly refuses API tokens to accounts belonging to an SSO-requiring organization, and fails silently in the UI. Without a token there is no CI deploy. Nothing in the app had to change to move.
 
 ### Backups
 
-- `npm run backup` (`server/src/backup.ts`) uses **SQLite's online backup API**, not a file copy. In WAL mode `cp` can capture the main file without its matching WAL contents — a snapshot that silently lacks recent writes, or is corrupt.
+- `npm run backup` (`server/src/backup.ts`) uses **SQLite's online backup API**, not a file copy. In WAL mode `cp` can capture the main file without its matching WAL contents — a snapshot silently lacking recent writes, or corrupt.
 - Verified against a 14,400-expense database: row counts, `integrity_check` and summed totals all match the source.
-- Snapshots are timestamped in `/data/backups`, newest `BACKUP_KEEP` (default 14) retained. Pruning removes `-wal`/`-shm` sidecars alongside each snapshot, or they accumulate on the volume forever.
-- `.github/workflows/backup.yml` runs it nightly and pulls the result down as an artifact, so a copy exists off the volume. It no-ops until `FLY_API_TOKEN` is set.
+- Snapshots are timestamped in `data/backups/`, newest `BACKUP_KEEP` (default 14) retained. Pruning removes `-wal`/`-shm` sidecars alongside each snapshot, or they accumulate forever.
+- `.github/workflows/backup.yml` runs nightly, **verifies the snapshot with `integrity_check` before accepting it**, and uploads it as an artifact — a copy off the server's disk.
+- `.github/workflows/restore.yml` puts one back: it re-verifies the file, stops the app, keeps the current database as `home-budget.replaced-<timestamp>.sqlite`, swaps and restarts. Deliberately manual and gated on typing `CONFIRM`.
+- **Restore removes the old WAL sidecars.** Leaving them next to a restored database would corrupt it — they belong to the file that was replaced.
 
 ---
 

@@ -109,9 +109,9 @@ npm run build
 NODE_ENV=production JWT_SECRET=<long random value> npm start
 ```
 
-To deploy to Fly.io, see **[DEPLOY.md](DEPLOY.md)** — one container, one machine,
-one volume, roughly $2/month. It also covers backups, which matter more than the
-hosting choice.
+To deploy to AWS Lightsail, see **[DEPLOY.md](DEPLOY.md)** — one small VPS with
+Docker Compose and automatic HTTPS, $5/month plus a domain. It also covers
+backups and restores, which matter more than the hosting choice.
 
 The build compiles the server to `server/dist` and the frontend to `web/dist`. In
 production the Express process serves the built frontend itself, so the whole app runs

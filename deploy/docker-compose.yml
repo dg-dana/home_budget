@@ -1,0 +1,56 @@
+# Runs on the Lightsail instance at /opt/home-budget.
+#
+# Two containers: the app, and Caddy in front of it terminating TLS. Caddy
+# obtains and renews a Let's Encrypt certificate on its own, which is the whole
+# reason it is here — the app sets Secure session cookies in production, so
+# plain HTTP would break sign-in entirely.
+#
+# Values come from the .env file that bootstrap.sh writes.
+
+services:
+  app:
+    image: ${APP_IMAGE}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 8080
+      DATABASE_PATH: /data/home-budget.sqlite
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET missing from .env}
+    volumes:
+      # The database and its backups. Everything that matters lives here.
+      - ./data:/data
+    expose:
+      - '8080'
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:8080/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+    environment:
+      DOMAIN: ${DOMAIN:?DOMAIN missing from .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Certificates live here. Losing this volume means re-issuing them, and
+      # Let's Encrypt rate-limits that, so leave it alone.
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+
+volumes:
+  caddy_data:
+  caddy_config:

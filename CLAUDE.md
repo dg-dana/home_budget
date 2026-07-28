@@ -30,11 +30,13 @@ npm run backup     # consistent SQLite snapshot (online backup API, not cp)
 
 ## Deployment
 
-Fly.io, one container, one machine, one volume — see `DEPLOY.md` for the runbook and `ARCHITECTURE.md` §11 for why.
+AWS Lightsail: one VPS, Docker Compose, app + Caddy for TLS. See `DEPLOY.md` for the runbook and `ARCHITECTURE.md` §11 for why.
 
-Deploys run from GitHub Actions (**Actions → Deploy to Fly.io → Run workflow**), not from a local terminal, so the whole thing is drivable from a browser. The workflow is idempotent and never rotates `JWT_SECRET` or recreates the volume.
+Deploy, backup and restore all run from the GitHub Actions tab, not a local terminal — assume whoever maintains this may only have a tablet.
 
-**Never run more than one machine.** All state is a single SQLite file on the volume; a second machine would silently diverge. `JWT_SECRET` must stay stable across deploys or every session is invalidated.
+- The image is built in CI and pulled by the server; **never build on the instance** (a Vite build will exhaust a small box).
+- `JWT_SECRET` must stay stable or every session is invalidated. `bootstrap.sh` will not regenerate an existing one.
+- HTTPS is required, not cosmetic: production cookies are `Secure`, so plain HTTP breaks sign-in.
 
 ## Schema changes
 

@@ -1,0 +1,19 @@
+# Caddy obtains and renews the TLS certificate automatically, provided the
+# domain's A record already points at this server.
+#
+# No `encode` directive: the app compresses its own responses (see
+# ARCHITECTURE.md §2), and Caddy will not re-compress what is already encoded.
+
+{$DOMAIN} {
+	reverse_proxy app:8080
+
+	# The app reads the client IP from X-Forwarded-For for rate limiting, and
+	# trusts exactly one proxy hop — this one.
+	header {
+		# Basic hardening. The app is same-origin and ships no external assets.
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "same-origin"
+	}
+}
