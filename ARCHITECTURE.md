@@ -22,6 +22,7 @@ Reference for how this app is put together and why. Read this before extending i
 - **Development**: two processes. API on `:4000`, Vite dev server on `:5173`. Vite proxies `/api` → `:4000` so the session cookie stays same-origin (no CORS, no cross-site cookie problems).
 - **Production**: one process, one port. `npm run build` emits `server/dist` + `web/dist`; Express serves `web/dist` statically with an SPA fallback to `index.html`.
 - **No CORS config anywhere by design** — same-origin in both modes. If you ever split the domains, that assumption breaks and cookies need `SameSite=None; Secure`.
+- **Responses are gzipped** (`compression` middleware, mounted before the routes and the static handler so it covers both). JSON built from repeated field names and ISO dates compresses roughly 11x: a month of expenses goes from 47 kB to 4 kB, and the frontend bundle from 225 kB to 69 kB. Small responses are left alone, since compressing them costs more than it saves.
 
 ---
 
@@ -156,6 +157,7 @@ so the UI can badge them.
 - `auth.ts` — hashing, cookies, id/token generation, auth middleware, `setPassword`.
 - `http.ts` — `HttpError` + status helpers, `asyncHandler`, `parseBody`, error middleware.
 - `rateLimit.ts` — in-process fixed-window limiter.
+- `backup.ts` — consistent snapshots via SQLite's online backup API.
 - `shoppingItems.ts` — **item operations shared by both the member and guest routes.** Both paths call the same functions with a different `actorName`, so guest and member edits can never diverge in behaviour.
 - `routes/` — `auth`, `household`, `categories`, `expenses`, `recurring`, `lists`, `share`.
 
@@ -208,6 +210,7 @@ Two suites, run together with `npm run test:all`.
 - `recurring.test.ts` — recurrence date maths as a pure function (month-end clamping, leap years, rollovers), then catch-up, idempotency, pause/resume.
 - `migrations.test.ts` — fresh builds, repeat runs being no-ops, and the pre-migration-system adoption path.
 - `password.test.ts` — self-service change, owner-issued recovery, and that both evict other devices.
+- `compression.test.ts` — measures **raw wire bytes** with `node:http`, because `fetch` transparently decompresses and would compare a number with itself.
 
 ### Browser smoke test — Playwright, `e2e/`
 
@@ -286,7 +289,6 @@ Honest list — these are real, and none is currently blocking.
 - **Links are generated, not delivered.** Invites and password recovery links are copied by the owner and sent by hand; there is no email integration. This is why recovery is owner-issued rather than self-service "forgot password".
 - **The guest list page polls every 15 s; the member list page does not poll at all.** So a member can be looking at a stale list while a guest shops. Unifying this — or moving both to SSE/WebSocket — is the natural fix.
 - Rate limiting is in-process and will not survive horizontal scaling (see §13) — moot while the deployment is deliberately one machine.
-- **API responses are not compressed.** There is no `compression` middleware, so a month of expenses ships as ~47 kB rather than ~5 kB. Cheap to fix and noticeable on a phone.
 - **The container runs as root.** Fly volumes mount root-owned, and dropping privileges needs a startup chown dance that was not worth the risk of an unverifiable failure. Worth hardening later.
 - `npm audit` flags `react-router` for an **RSC-mode** CSRF issue. This app is a client-side SPA and does not use RSC mode. The only version npm offers as a "fix" is 7.11.0, which reintroduces an open redirect that *does* affect `<Link>`/`useNavigate`. Staying on 7.18.1 is the deliberate, better trade.
 

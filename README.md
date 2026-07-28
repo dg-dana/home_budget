@@ -64,6 +64,8 @@ household members and other lists are unreachable through it.
 | Database | SQLite via better-sqlite3 (single file, WAL)     |
 | Auth     | bcrypt password hashes, JWT in an httpOnly cookie |
 
+Responses are gzipped, which takes a month of expenses from 47 kB to 4 kB.
+
 The repo is an npm workspace with two packages: `server/` and `web/`.
 
 ## Running it
@@ -82,7 +84,7 @@ categories are created with it.
 ### Tests
 
 ```bash
-npm test          # server integration suite (126 tests, Vitest)
+npm test          # server integration suite (132 tests, Vitest)
 npm run test:e2e  # guest-flow browser smoke test (6 tests, Playwright)
 npm run test:all  # both
 ```

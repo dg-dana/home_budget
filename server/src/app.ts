@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import compression from 'compression';
 import cookieParser from 'cookie-parser';
 import express, { type Express } from 'express';
 import { config } from './config.js';
@@ -30,6 +31,13 @@ export function createApp({ enableRateLimits = true }: CreateAppOptions = {}): E
   const app = express();
 
   app.set('trust proxy', 1);
+
+  // Before the routes and the static handler, so it covers both the JSON API
+  // and the built frontend. A month of expenses is mostly repeated field names
+  // and ISO dates, which gzip extremely well — it is the difference between a
+  // snappy and a sluggish page on a phone.
+  app.use(compression());
+
   app.use(express.json({ limit: '256kb' }));
   app.use(cookieParser());
 
