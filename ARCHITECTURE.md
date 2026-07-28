@@ -143,7 +143,11 @@ Reference for how this app is put together and why. Read this before extending i
 
 ## 9. Tests
 
-- **Vitest, in `server/test/`.** 75 tests, run with `npm test` from the repo root.
+Two suites, run together with `npm run test:all`.
+
+### Server integration suite — Vitest, `server/test/`
+
+- 75 tests, run with `npm test` from the repo root.
 - They are **integration tests over real HTTP**, not unit tests: each file boots the actual app on an ephemeral port and drives it with a cookie-aware client. There is no mocking of the database, the router or the session.
 - `test/setup.ts` runs before any application module is imported and points `DATABASE_PATH` at a unique temp file. Vitest gives each test file its own module registry, so **every test file gets its own SQLite database** and files can run in parallel.
 - `resetDatabase()` truncates every table in `beforeEach`.
@@ -158,15 +162,33 @@ Reference for how this app is put together and why. Read this before extending i
 - `expenses.test.ts` — cents arithmetic, month-boundary maths, summary aggregation, and what survives a category or member deletion.
 - `household.test.ts` — owner vs member permissions, cascade behaviour, list mechanics.
 
-### These tests were verified by breaking the code
+### Browser smoke test — Playwright, `e2e/`
 
-Three deliberate regressions were introduced and each was caught by a failing test:
+- 6 tests, run with `npm run test:e2e`. Config is `playwright.config.ts` at the repo root.
+- **Covers the guest flow only** — the riskiest path, because it is the one surface reachable without an account. It is a smoke test, not broad UI coverage.
+- Playwright's `webServer` runs `npm run build && npm start`, so the tests drive **the production build**: one process serving the API and the built frontend, exactly as a deployment does.
+- The run gets a throwaway SQLite file, created in the config and deleted by `e2e/teardown.ts`.
+- Chromium: the config uses the sandbox's prebuilt binary when `/opt/pw-browsers/chromium` exists (override with `CHROMIUM_PATH`) and a normally installed browser otherwise. **Never run `playwright install` in the sandbox.**
+- Every guest gets `browser.newContext()` — a guest is *defined* by having no cookies and no carried-over storage, so sharing a context would defeat the point.
+- Tests create their own household, so they share nothing but the server and can run in parallel.
+
+What it asserts: a member creates and shares a list through the UI; a guest with no account opens the link, names themselves, adds an item and ticks one off; the member sees those changes. Plus view-only enforcement, instant revocation, the name prompt appearing only once, a dead token, and that a guest is bounced off every private route.
+
+**Use `click()`, not `check()`, on the item checkboxes.** They are controlled inputs that only flip once the server round-trip lands, so `check()`'s immediate state assertion fails. Assert the visible outcome instead.
+
+### Both suites were verified by breaking the code
+
+Five deliberate regressions were introduced, and each was caught by a failing test:
 
 1. Removing the `household_id` filter from the expenses list query → `isolation` failed.
 2. Adding `householdId` to the guest share response → `share` failed.
 3. Removing the view-only check from `editableList()` → `share` failed.
+4. Dropping `disabled={!view.canEdit}` from the guest checkbox → the Playwright view-only test failed.
+5. Neutering the `RequireAuth` redirect → the Playwright "no way into the rest of the app" test failed.
 
 **Keep it that way.** When you add a test for an invariant, break the code once and confirm it fails. A test that has never failed has not been shown to test anything.
+
+(Worth knowing: regression 5 initially failed to *compile* rather than failing a test, because `noUnusedLocals` caught the orphaned variable. Typecheck is part of the safety net, not separate from it.)
 
 ---
 
@@ -185,7 +207,7 @@ Three deliberate regressions were introduced and each was caught by a failing te
 
 Honest list — these are real, and none is currently blocking.
 
-- **No frontend tests.** The server suite is solid; React components and pages have no coverage at all. A browser-level smoke test of the guest flow is the obvious next addition.
+- **Frontend coverage is the guest flow only.** The expenses dashboard, budgets, invites and household settings have no browser tests — changes there still need checking by hand.
 - **No migration system** (see §3).
 - **Invites are generated, not delivered.** The owner copies a link and sends it themselves; there is no email integration.
 - **The guest list page polls every 15 s; the member list page does not poll at all.** So a member can be looking at a stale list while a guest shops. Unifying this — or moving both to SSE/WebSocket — is the natural fix.
@@ -202,7 +224,7 @@ Honest list — these are real, and none is currently blocking.
 3. Add row types to `server/src/types.ts`.
 4. Write the route: `asyncHandler` + Zod via `parseBody` + **`household_id` in the WHERE clause** + `assertOwned` for any client-supplied foreign id.
 5. If guests touch it, put the logic in a shared service (like `shoppingItems.ts`) so both paths cannot drift — and re-check what the guest response exposes.
-6. **Write the tests.** Anything household-scoped gets a case in `isolation.test.ts`; anything guest-reachable gets one in `share.test.ts`. Then break the code once and watch them fail (§9).
+6. **Write the tests.** Anything household-scoped gets a case in `isolation.test.ts`; anything guest-reachable gets one in `share.test.ts` and, if it changes what a guest sees, in `e2e/guest-flow.spec.ts`. Then break the code once and watch them fail (§9).
 7. Add the response type to `web/src/api.ts`, then build the page on the `load()` + refetch pattern.
 8. Money stays in cents end to end.
 9. Update `ARCHITECTURE.md` and `CLAUDE.md` in the same commit.

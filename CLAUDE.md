@@ -9,16 +9,20 @@ Household expenses tracker + shared shopping lists. npm workspace: `server/` (Ex
 ```bash
 npm install
 npm run dev        # API :4000 + Vite :5173
-npm test           # vitest, server integration suite
-npm run typecheck  # both workspaces (server config also covers test/)
+npm test           # vitest, server integration suite (75 tests)
+npm run test:e2e   # playwright, guest-flow smoke test (6 tests)
+npm run test:all   # both
+npm run typecheck  # both workspaces + e2e/
 npm run build      # server/dist + web/dist
 npm start          # production: one process, serves API + built frontend
 ```
 
 ## Testing
 
-- `npm test` runs 75 integration tests in `server/test/` — real HTTP against a real SQLite DB, no mocks. Each test file gets its own database.
-- The server is well covered; **the frontend has no tests**, so changes under `web/` still need checking by hand in the running app.
+- `npm test` — `server/test/`, real HTTP against a real SQLite DB, no mocks. Each test file gets its own database.
+- `npm run test:e2e` — `e2e/`, Playwright against the **production build** (it runs `npm run build && npm start` itself). Covers the guest flow only.
+- **Do not run `playwright install`** — the sandbox ships a prebuilt Chromium and the config finds it.
+- Coverage gap: everything in `web/` except the guest flow — the expenses dashboard, budgets, invites, settings. Changes there still need checking by hand.
 - Adding a route means adding cases to `isolation.test.ts` (if household-scoped) and `share.test.ts` (if guest-reachable).
 - **Break the code once and watch the new test fail before trusting it.** A test that has never failed has not been shown to test anything.
 

@@ -71,13 +71,19 @@ categories are created with it.
 ### Tests
 
 ```bash
-npm test
+npm test          # server integration suite (75 tests, Vitest)
+npm run test:e2e  # guest-flow browser smoke test (6 tests, Playwright)
+npm run test:all  # both
 ```
 
-75 integration tests run the real app over HTTP against a real SQLite database —
-no mocks. They cover cross-household isolation, guest share access, authentication
-and invites, expense arithmetic, and owner/member permissions. See
-`ARCHITECTURE.md` §9. The frontend has no automated tests yet.
+The server suite runs the real app over HTTP against a real SQLite database — no
+mocks — covering cross-household isolation, guest share access, authentication and
+invites, expense arithmetic, and owner/member permissions.
+
+The Playwright suite builds the app and drives the production build in a browser,
+covering the guest flow end to end: sharing a list, a guest with no account adding
+and ticking off items, view-only enforcement, and instant revocation. Other parts
+of the frontend have no browser coverage yet. See `ARCHITECTURE.md` §9.
 
 ### Production
 
