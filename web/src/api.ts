@@ -1,0 +1,143 @@
+export class ApiError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
+async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const response = await fetch(`/api${path}`, {
+    method,
+    credentials: 'same-origin',
+    headers: body === undefined ? undefined : { 'content-type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+
+  if (response.status === 204) return undefined as T;
+
+  const text = await response.text();
+  const payload = text ? (JSON.parse(text) as unknown) : null;
+
+  if (!response.ok) {
+    const message =
+      payload && typeof payload === 'object' && 'error' in payload
+        ? String((payload as { error: unknown }).error)
+        : `Request failed (${response.status})`;
+    throw new ApiError(response.status, message);
+  }
+  return payload as T;
+}
+
+export const api = {
+  get: <T>(path: string) => request<T>('GET', path),
+  post: <T>(path: string, body?: unknown) => request<T>('POST', path, body ?? {}),
+  put: <T>(path: string, body: unknown) => request<T>('PUT', path, body),
+  patch: <T>(path: string, body: unknown) => request<T>('PATCH', path, body),
+  delete: <T>(path: string) => request<T>('DELETE', path),
+};
+
+// ---------------------------------------------------------------------------
+// Shared response shapes
+// ---------------------------------------------------------------------------
+
+export type Role = 'owner' | 'member';
+
+export interface SessionUser {
+  id: string;
+  householdId: string;
+  email: string;
+  name: string;
+  role: Role;
+}
+
+export interface Household {
+  id: string;
+  name: string;
+  currency: string;
+}
+
+export interface Member {
+  id: string;
+  name: string;
+  email: string;
+  role: Role;
+  created_at: string;
+}
+
+export interface Invite {
+  token: string;
+  email: string | null;
+  role: Role;
+  expires_at: string;
+}
+
+export interface Category {
+  id: string;
+  name: string;
+  color: string;
+  monthly_budget_cents: number | null;
+}
+
+export interface Expense {
+  id: string;
+  amount_cents: number;
+  description: string;
+  spent_on: string;
+  category_id: string | null;
+  paid_by: string | null;
+  category_name: string | null;
+  category_color: string | null;
+  paid_by_name: string | null;
+}
+
+export interface Summary {
+  month: string;
+  total_cents: number;
+  count: number;
+  by_category: Array<{
+    category_id: string;
+    name: string;
+    color: string;
+    monthly_budget_cents: number | null;
+    spent_cents: number;
+  }>;
+  uncategorised_cents: number;
+  by_member: Array<{ user_id: string; name: string; spent_cents: number }>;
+  trend: Array<{ month: string; total_cents: number }>;
+}
+
+export interface ShoppingItem {
+  id: string;
+  name: string;
+  quantity: string;
+  note: string;
+  is_checked: number;
+  added_by_name: string;
+  checked_by_name: string | null;
+}
+
+export interface ShoppingList {
+  id: string;
+  name: string;
+  shareToken: string | null;
+  shareCanEdit: boolean;
+  itemCount: number;
+  openCount: number;
+}
+
+export interface ShoppingListDetail {
+  id: string;
+  name: string;
+  shareToken: string | null;
+  shareCanEdit: boolean;
+  items: ShoppingItem[];
+}
+
+export interface SharedListView {
+  name: string;
+  canEdit: boolean;
+  items: ShoppingItem[];
+}

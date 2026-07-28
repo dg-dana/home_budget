@@ -1,0 +1,92 @@
+export type Role = 'owner' | 'member';
+
+export interface HouseholdRow {
+  id: string;
+  name: string;
+  currency: string;
+  created_at: string;
+}
+
+export interface UserRow {
+  id: string;
+  household_id: string;
+  email: string;
+  name: string;
+  password_hash: string;
+  role: Role;
+  created_at: string;
+}
+
+export interface InviteRow {
+  token: string;
+  household_id: string;
+  email: string | null;
+  role: Role;
+  created_by: string | null;
+  expires_at: string;
+  used_at: string | null;
+  used_by: string | null;
+  created_at: string;
+}
+
+export interface CategoryRow {
+  id: string;
+  household_id: string;
+  name: string;
+  color: string;
+  monthly_budget_cents: number | null;
+  created_at: string;
+}
+
+export interface ExpenseRow {
+  id: string;
+  household_id: string;
+  category_id: string | null;
+  paid_by: string | null;
+  amount_cents: number;
+  description: string;
+  spent_on: string;
+  created_by: string | null;
+  created_at: string;
+}
+
+export interface ShoppingListRow {
+  id: string;
+  household_id: string;
+  name: string;
+  share_token: string | null;
+  share_can_edit: number;
+  created_by: string | null;
+  created_at: string;
+}
+
+export interface ShoppingItemRow {
+  id: string;
+  list_id: string;
+  name: string;
+  quantity: string;
+  note: string;
+  is_checked: number;
+  added_by_name: string;
+  checked_by_name: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** The signed-in user attached to a request by `requireAuth`. */
+export interface SessionUser {
+  id: string;
+  householdId: string;
+  email: string;
+  name: string;
+  role: Role;
+}
+
+declare global {
+  // eslint-disable-next-line @typescript-eslint/no-namespace
+  namespace Express {
+    interface Request {
+      user?: SessionUser;
+    }
+  }
+}
