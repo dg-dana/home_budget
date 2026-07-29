@@ -39,9 +39,10 @@ because it is confidential.
 - [x] Nameservers live — `penny.ns.cloudflare.com`, `renan.ns.cloudflare.com`
 - [x] **A record → `3.68.141.55`, DNS only** (step 4)
 - [x] `bootstrap.sh` run on the instance — `.env` written with `DOMAIN` and `JWT_SECRET` (step 3)
-- [ ] **First deploy** (step 6)
+- [x] First deploy — run #1, all steps green, health check passed (step 6)
 
-Resume at the first unchecked box. Everything below except step 6 is done.
+Setup is complete; the app is live. What follows is the reference for doing it
+again elsewhere, plus the everyday deploy, backup and restore procedures.
 
 `/opt/home-budget/.env` holds `JWT_SECRET`. Never paste or screenshot the whole
 file — read back single keys instead (`grep '^DOMAIN=' /opt/home-budget/.env`).
