@@ -36,18 +36,23 @@ because it is confidential.
 - [x] Firewall open on 22, 80 and 443
 - [x] `LIGHTSAIL_HOST` and `LIGHTSAIL_SSH_KEY` set in repository secrets
 - [x] Domain registered (`home-budget-dg.app`, Cloudflare)
+- [x] Nameservers live — `penny.ns.cloudflare.com`, `renan.ns.cloudflare.com`
 - [ ] **A record → `3.68.141.55`, set to DNS only** (see step 4)
 - [ ] `bootstrap.sh` run on the instance (step 3)
 - [ ] First deploy (step 6)
 
 Resume at the first unchecked box. Steps 1, 2 and 5 below are done.
 
-**Until this branch is merged**, take `bootstrap.sh` from the branch that fixes
-it, not from the default branch — the default branch still has the version
-whose prompt cannot read your answer:
+Verified 2026-07-29: the zone is active and answering (`NOERROR`), but an `A`
+query returns no records — so the domain is registered and delegated to
+Cloudflare, and the record itself is the missing piece.
+
+**Until this branch is merged**, take `bootstrap.sh` from this branch, not from
+the default branch — the default branch still has the version whose prompt
+cannot read your answer:
 
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/dg-dana/home_budget/refs/heads/claude/lightsail-setup-guide-fu3hhu/deploy/bootstrap.sh)"
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/dg-dana/home_budget/refs/heads/claude/cloudflare-next-steps-01wjoz/deploy/bootstrap.sh)"
 ```
 
 ---
@@ -58,6 +63,14 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/dg-dana/home_budget/refs
 
 Anything works — `budget.example.com`, or the bare domain. You will point it at
 the server in step 4.
+
+This deployment uses **`home-budget-dg.app`**, registered at Cloudflare, on the
+bare domain. Step 4 is written for that; substitute freely.
+
+Two things follow from the `.app` TLD. It is on the browsers' HSTS preload
+list, so `http://` is never tried — there is no plain-HTTP fallback to limp
+along on if the certificate fails. And Caddy still needs port 80 reachable for
+the ACME challenge even though no traffic is ever served on it.
 
 ### 2. Create the Lightsail instance
 
@@ -93,46 +106,72 @@ It installs Docker, creates `/opt/home-budget`, asks for your domain and
 generates the session secret. It is safe to re-run; it will not regenerate a
 secret that already exists.
 
+Give it the hostname alone — `home-budget-dg.app`, no `https://`, no trailing
+slash. It goes into the Caddyfile verbatim, and Caddy requests a certificate
+for exactly that name.
+
 ### 4. Point DNS at the server
 
-At your registrar, add an **A record** for your hostname pointing to the static
-IP from step 2.
+DNS for this domain is on Cloudflare. In the dashboard, pick
+`home-budget-dg.app`, then **DNS → Records → Add record**:
 
 | Field | Value |
 | --- | --- |
 | Type | `A` |
-| Name | `@` for the bare domain, or a label like `budget` for a subdomain |
-| Value | `3.68.141.55` |
-| Proxy status | **DNS only** — see below |
+| Name | `@` (the bare domain — for a subdomain, a label like `budget` instead) |
+| IPv4 address | `3.68.141.55` |
+| Proxy status | **DNS only** — click the orange cloud so it turns grey |
+| TTL | Auto |
 
-Delete anything the registrar put there by default. New domains often ship with
-a parking record or a URL forward on the same name, and it will win.
+Delete anything already sitting on that name. New domains often ship with a
+parking record or a URL forward, and it will win over the record you just
+added.
 
-#### If DNS is on Cloudflare
+#### The grey cloud is the part that matters
 
-Cloudflare proxies records by default — the **orange cloud**. Click it to turn
-it **grey (DNS only)**.
+Cloudflare's proxy is on by default, and leaving it on breaks this setup three
+separate ways:
 
-Leaving it orange breaks this setup in two ways. Cloudflare terminates TLS
-itself, so Caddy never sees the Let's Encrypt challenge it needs to answer; and
-with Cloudflare's default *Flexible* SSL mode, it then talks plain HTTP to a
-server that redirects to HTTPS, which is an infinite redirect loop. Grey cloud
-avoids both — traffic goes straight to the instance and Caddy handles TLS, as
-the rest of this document assumes.
+- **The certificate.** Proxied, Cloudflare terminates TLS with its own certificate and Caddy never sees the Let's Encrypt challenge it needs to answer. Combined with Cloudflare's default *Flexible* SSL mode — which speaks plain HTTP to an origin that redirects plain HTTP to HTTPS — you get an infinite redirect loop instead of a site.
+- **Rate limiting.** The app trusts exactly one proxy hop (`app.set('trust proxy', 1)` in `server/src/app.ts`) and keys its limiter on the resulting IP. Add Cloudflare in front and that resolves to a Cloudflare edge address, not the visitor — so one person fumbling their password locks out everyone else sharing that edge.
+- **Debugging.** Two proxies means twice the places a 502 can come from.
 
-(If you ever do want Cloudflare's proxy in front, the certificate has to be
-working first, and its SSL mode must be **Full (strict)**. Not needed here.)
+Grey cloud avoids all three: traffic goes straight to the instance and Caddy
+handles TLS, as the rest of this document assumes. It costs nothing here — the
+app serves ~30 MB a month from a box that is already idle, so there is no load
+to shed and no cache to warm.
+
+Nothing else needs adding: no `www`, no `CNAME`, and no Cloudflare SSL/TLS
+setting, because with the proxy off Cloudflare only answers DNS queries.
+
+(If you ever do want the proxy in front, the certificate has to be working
+first, its SSL mode must be **Full (strict)**, and the hop count in the app has
+to be fixed. Not a toggle — see `ARCHITECTURE.md` §11.)
 
 #### A note on `.app`
 
 The `.app` TLD is HSTS-preloaded: browsers refuse plain HTTP to it, always.
 There is no `http://` fallback for testing, so the site simply will not load
 until Caddy has its certificate. That is expected, not a fault. Let's Encrypt's
-own challenge still works, because it is not a browser.
+own challenge still works, because it is not a browser. Caddy does still need
+port 80 reachable for that challenge, even though no traffic is ever served on
+it.
 
-Wait for it to resolve before deploying. Caddy asks Let's Encrypt to verify the
-domain, and that fails if DNS has not propagated yet. A minute or two is usual.
-Check with [dnschecker.org](https://dnschecker.org) before moving on.
+#### Check it before deploying
+
+Caddy asks Let's Encrypt to verify the domain, and that fails if DNS has not
+propagated yet. Cloudflare is usually quick — under a minute.
+
+From the Lightsail browser SSH:
+
+```bash
+dig +short home-budget-dg.app
+```
+
+It should print `3.68.141.55`, one line, nothing else. Several unfamiliar
+addresses means the record is still proxied. No output at all means the record
+is not there yet. [dnschecker.org](https://dnschecker.org) does the same job
+from a phone.
 
 ### 5. Give GitHub access to the server
 
@@ -289,6 +328,23 @@ Encrypt challenge. Check that the A record resolves to the static IP and that
 port 443 is open in the Lightsail firewall. `sudo docker compose logs caddy`
 gives the reason.
 
+**A redirect loop, or a certificate issued to Cloudflare rather than
+Let's Encrypt.** The record is proxied — orange cloud. Set it to **DNS only**
+in the Cloudflare DNS tab and give it a minute, then restart Caddy with
+`sudo docker compose restart caddy`. On `.app` this is total: the browser
+refuses plain HTTP, so a failed certificate means no site at all, not a site
+with a warning.
+
+**`dig` shows an IP you do not recognise.** Same cause — those are Cloudflare
+edge addresses, which is what a proxied record returns. `dig +short
+home-budget-dg.app` should return the Lightsail static IP, one line, nothing
+else.
+
+**Rate limits firing for people who did nothing.** Also the proxy: with
+Cloudflare in front, every visitor arrives from a handful of edge IPs, and the
+limiter cannot tell them apart. Turning the proxy off restores real client
+addresses.
+
 **The app container restarts in a loop.** Usually a missing `JWT_SECRET` —
 production refuses to boot without one. Check `/opt/home-budget/.env` and
 `sudo docker compose logs app`.
@@ -308,9 +364,6 @@ in step 2.
 when adding the firewall rule. The rule's source box is empty. Leave it as **Any
 IP address** (`0.0.0.0/0`) — a public web server has to accept connections from
 anyone. The restriction field is for locking down SSH, not HTTPS.
-
-**An infinite redirect loop, or a certificate issued by Cloudflare.** The DNS
-record is proxied. Set it to grey cloud / DNS only — see step 4.
 
 ---
 
