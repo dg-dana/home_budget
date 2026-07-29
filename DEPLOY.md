@@ -38,10 +38,14 @@ because it is confidential.
 - [x] Domain registered (`home-budget-dg.app`, Cloudflare)
 - [x] Nameservers live — `penny.ns.cloudflare.com`, `renan.ns.cloudflare.com`
 - [x] **A record → `3.68.141.55`, DNS only** (step 4)
-- [ ] `bootstrap.sh` run on the instance (step 3)
-- [ ] First deploy (step 6)
+- [x] `bootstrap.sh` run on the instance — `.env` written with `DOMAIN` and `JWT_SECRET` (step 3)
+- [ ] **First deploy** (step 6)
 
-Resume at the first unchecked box. Steps 1, 2, 4 and 5 below are done.
+Resume at the first unchecked box. Everything below except step 6 is done.
+
+`/opt/home-budget/.env` holds `JWT_SECRET`. Never paste or screenshot the whole
+file — read back single keys instead (`grep '^DOMAIN=' /opt/home-budget/.env`).
+Leaking it means anyone can mint a session for any account.
 
 Verified 2026-07-29: `home-budget-dg.app` resolves to `3.68.141.55` from both
 Google and Cloudflare public resolvers — a single answer, and not a Cloudflare
