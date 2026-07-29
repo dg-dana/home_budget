@@ -52,14 +52,6 @@ Verified 2026-07-29: `home-budget-dg.app` resolves to `3.68.141.55` from both
 Google and Cloudflare public resolvers — a single answer, and not a Cloudflare
 edge address, which is what confirms the record is unproxied.
 
-**Until this branch is merged**, take `bootstrap.sh` from this branch, not from
-the default branch — the default branch still has the version whose prompt
-cannot read your answer:
-
-```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/dg-dana/home_budget/refs/heads/claude/cloudflare-next-steps-01wjoz/deploy/bootstrap.sh)"
-```
-
 ---
 
 ## First-time setup
@@ -97,7 +89,7 @@ Lightsail has a browser SSH client — the **Connect using SSH** button on the
 instance page. It works on an iPad. Click it and run:
 
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/dg-dana/home_budget/refs/heads/claude/expenses-shopping-app-4bmukm/deploy/bootstrap.sh)"
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/dg-dana/home_budget/HEAD/deploy/bootstrap.sh)"
 ```
 
 Copy that shape exactly. The more familiar `curl ... | bash` does not work

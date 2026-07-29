@@ -4,11 +4,7 @@
 #
 # Run it once from Lightsail's browser SSH client — no laptop required:
 #
-#   bash -c "$(curl -fsSL https://raw.githubusercontent.com/dg-dana/home_budget/refs/heads/claude/cloudflare-next-steps-01wjoz/deploy/bootstrap.sh)"
-#
-# That is this branch, deliberately: the default branch still carries the older
-# script whose prompt cannot read your answer. Swap it for the default branch
-# once this is merged.
+#   bash -c "$(curl -fsSL https://raw.githubusercontent.com/dg-dana/home_budget/HEAD/deploy/bootstrap.sh)"
 #
 # Note the shape: `curl ... | bash` would hand bash the script on stdin, and the
 # domain prompt below would then read the script's own next line instead of your
