@@ -12,6 +12,46 @@ domain and a reverse proxy rather than just an IP address.
 
 ---
 
+## This deployment
+
+The live instance, so nobody has to rediscover it:
+
+| | |
+| --- | --- |
+| Domain | `home-budget-dg.app` |
+| Registrar / DNS | Cloudflare |
+| Host | AWS Lightsail, `eu-central-1` (Frankfurt) |
+| Static IP | `3.68.141.55` |
+| Instance | Ubuntu 22.04 LTS, 512 MB bundle ($5/month) |
+| App directory | `/opt/home-budget` |
+
+The static IP is public information — it is what the domain resolves to. It
+lives in the `LIGHTSAIL_HOST` secret because the deploy workflow needs it, not
+because it is confidential.
+
+### Where the setup got to
+
+- [x] Instance created and running
+- [x] Static IP attached
+- [x] Firewall open on 22, 80 and 443
+- [x] `LIGHTSAIL_HOST` and `LIGHTSAIL_SSH_KEY` set in repository secrets
+- [x] Domain registered (`home-budget-dg.app`, Cloudflare)
+- [ ] **A record → `3.68.141.55`, set to DNS only** (see step 4)
+- [ ] `bootstrap.sh` run on the instance (step 3)
+- [ ] First deploy (step 6)
+
+Resume at the first unchecked box. Steps 1, 2 and 5 below are done.
+
+**Until this branch is merged**, take `bootstrap.sh` from the branch that fixes
+it, not from the default branch — the default branch still has the version
+whose prompt cannot read your answer:
+
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/dg-dana/home_budget/refs/heads/claude/lightsail-setup-guide-fu3hhu/deploy/bootstrap.sh)"
+```
+
+---
+
 ## First-time setup
 
 ### 1. Buy a domain and decide the hostname
@@ -58,23 +98,85 @@ secret that already exists.
 At your registrar, add an **A record** for your hostname pointing to the static
 IP from step 2.
 
+| Field | Value |
+| --- | --- |
+| Type | `A` |
+| Name | `@` for the bare domain, or a label like `budget` for a subdomain |
+| Value | `3.68.141.55` |
+| Proxy status | **DNS only** — see below |
+
+Delete anything the registrar put there by default. New domains often ship with
+a parking record or a URL forward on the same name, and it will win.
+
+#### If DNS is on Cloudflare
+
+Cloudflare proxies records by default — the **orange cloud**. Click it to turn
+it **grey (DNS only)**.
+
+Leaving it orange breaks this setup in two ways. Cloudflare terminates TLS
+itself, so Caddy never sees the Let's Encrypt challenge it needs to answer; and
+with Cloudflare's default *Flexible* SSL mode, it then talks plain HTTP to a
+server that redirects to HTTPS, which is an infinite redirect loop. Grey cloud
+avoids both — traffic goes straight to the instance and Caddy handles TLS, as
+the rest of this document assumes.
+
+(If you ever do want Cloudflare's proxy in front, the certificate has to be
+working first, and its SSL mode must be **Full (strict)**. Not needed here.)
+
+#### A note on `.app`
+
+The `.app` TLD is HSTS-preloaded: browsers refuse plain HTTP to it, always.
+There is no `http://` fallback for testing, so the site simply will not load
+until Caddy has its certificate. That is expected, not a fault. Let's Encrypt's
+own challenge still works, because it is not a browser.
+
 Wait for it to resolve before deploying. Caddy asks Let's Encrypt to verify the
 domain, and that fails if DNS has not propagated yet. A minute or two is usual.
+Check with [dnschecker.org](https://dnschecker.org) before moving on.
 
 ### 5. Give GitHub access to the server
 
-Download the SSH key: Lightsail console → **Account → SSH keys → Download** the
-default key for your region. It downloads as a `.pem` file.
+GitHub needs a private key that the instance trusts. Two ways to get one; the
+second is easier on a tablet and gives a better key.
 
-In this repository, **Settings → Secrets and variables → Actions**, add:
+**Either** download Lightsail's default key. It is under **More ▾ → Account →
+SSH keys** — the top-right dropdown, *not* the hamburger menu, which only lists
+resources. Direct link:
+[lightsail.aws.amazon.com/ls/webapp/account/keys](https://lightsail.aws.amazon.com/ls/webapp/account/keys).
+That page has two sections: ignore **Custom keys** (those buttons make a *new*
+key the instance does not trust) and take the one under **Default keys**. Check
+the region matches the instance. It downloads as a `.pem`.
+
+**Or** generate a key on the server, through Lightsail's browser SSH:
+
+```bash
+ssh-keygen -t ed25519 -f ~/deploy_key -N "" -C github-actions
+cat ~/deploy_key.pub >> ~/.ssh/authorized_keys
+chmod 600 ~/.ssh/authorized_keys
+cat ~/deploy_key          # paste this into the GitHub secret
+rm ~/deploy_key           # once the secret is saved
+```
+
+This avoids downloading a file at all, and the result is a key that exists only
+for deploys: revoking it is deleting its line from `~/.ssh/authorized_keys`,
+which leaves your own console access alone. Newer AWS accounts may have no
+default key to download anyway.
+
+Then, in this repository, **Settings → Secrets and variables → Actions**
+([direct link](https://github.com/dg-dana/home_budget/settings/secrets/actions)),
+add:
 
 | Secret | Value |
 | --- | --- |
-| `LIGHTSAIL_HOST` | the static IP |
-| `LIGHTSAIL_SSH_KEY` | the entire contents of the `.pem` file, including the `-----BEGIN` and `-----END` lines |
+| `LIGHTSAIL_HOST` | the static IP (here: `3.68.141.55`) |
+| `LIGHTSAIL_SSH_KEY` | the whole key text, including the `-----BEGIN` and `-----END` lines |
 | `LIGHTSAIL_USER` | *(optional)* login user, defaults to `ubuntu` |
 
-On an iPad, open the downloaded `.pem` in the Files app to copy its contents.
+On an iPad, open the downloaded `.pem` in the Files app to copy its contents. If
+it will not preview, rename it to end in `.txt`.
+
+Never paste that key anywhere else — not into a chat, an issue, or a commit.
+The whole point is that only GitHub and the server ever hold it.
 
 ### 6. Deploy
 
@@ -201,6 +303,14 @@ static IP, not the earlier dynamic one.
 
 **Site unreachable after a restart.** The static IP was probably never attached
 in step 2.
+
+**"At least one source IP address or Lightsail service must be configured"**
+when adding the firewall rule. The rule's source box is empty. Leave it as **Any
+IP address** (`0.0.0.0/0`) — a public web server has to accept connections from
+anyone. The restriction field is for locking down SSH, not HTTPS.
+
+**An infinite redirect loop, or a certificate issued by Cloudflare.** The DNS
+record is proxied. Set it to grey cloud / DNS only — see step 4.
 
 ---
 
