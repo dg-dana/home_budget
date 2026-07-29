@@ -19,6 +19,14 @@ domain and a reverse proxy rather than just an IP address.
 Anything works — `budget.example.com`, or the bare domain. You will point it at
 the server in step 4.
 
+This deployment uses **`home-budget-dg.app`**, registered at Cloudflare, on the
+bare domain. Step 4 is written for that; substitute freely.
+
+Two things follow from the `.app` TLD. It is on the browsers' HSTS preload
+list, so `http://` is never tried — there is no plain-HTTP fallback to limp
+along on if the certificate fails. And Caddy still needs port 80 reachable for
+the ACME challenge even though no traffic is ever served on it.
+
 ### 2. Create the Lightsail instance
 
 In the [Lightsail console](https://lightsail.aws.amazon.com):
@@ -49,13 +57,40 @@ It installs Docker, creates `/opt/home-budget`, asks for your domain and
 generates the session secret. It is safe to re-run; it will not regenerate a
 secret that already exists.
 
+Give it the hostname alone — `home-budget-dg.app`, no `https://`, no trailing
+slash. It goes into the Caddyfile verbatim, and Caddy requests a certificate
+for exactly that name.
+
 ### 4. Point DNS at the server
 
-At your registrar, add an **A record** for your hostname pointing to the static
-IP from step 2.
+In the Cloudflare dashboard, pick the domain, then **DNS → Records → Add
+record**:
+
+| Field | Value |
+| --- | --- |
+| Type | `A` |
+| Name | `@` (the bare domain — `home-budget-dg.app` itself) |
+| IPv4 address | the static IP from step 2 |
+| Proxy status | **DNS only** — click the orange cloud so it turns grey |
+| TTL | Auto |
+
+**The grey cloud is the part that matters.** Cloudflare's proxy is on by
+default, and leaving it on breaks this setup in three separate ways:
+
+- **The certificate.** Proxied, Cloudflare answers TLS with its own certificate and Caddy's ACME challenge is intercepted. Combined with Cloudflare's default "Flexible" SSL mode — which speaks plain HTTP to the origin, while Caddy redirects plain HTTP to HTTPS — you get a redirect loop instead of a site.
+- **Rate limiting.** The app trusts exactly one proxy hop (`app.set('trust proxy', 1)` in `server/src/app.ts`) and keys its limiter on the resulting IP. Add Cloudflare in front and that resolves to a Cloudflare edge address, not the visitor — so one person fumbling their password locks out everyone else sharing that edge.
+- **Debugging.** Two proxies means twice the places a 502 can come from.
+
+DNS-only costs nothing here. The app serves ~30 MB a month from a box that is
+already idle; there is no load to shed and no cache to warm.
+
+Nothing else needs adding — no `www`, no `CNAME`, no Cloudflare SSL/TLS setting,
+because with the proxy off Cloudflare is only answering DNS queries.
 
 Wait for it to resolve before deploying. Caddy asks Let's Encrypt to verify the
-domain, and that fails if DNS has not propagated yet. A minute or two is usual.
+domain, and that fails if DNS has not propagated yet. Cloudflare is usually
+quick — under a minute. Check from the Lightsail browser SSH with
+`dig +short home-budget-dg.app`; it should print the static IP and nothing else.
 
 ### 5. Give GitHub access to the server
 
@@ -182,6 +217,23 @@ providers there is nothing else to add up. A domain is about $10–15 a year.
 Encrypt challenge. Check that the A record resolves to the static IP and that
 port 443 is open in the Lightsail firewall. `sudo docker compose logs caddy`
 gives the reason.
+
+**A redirect loop, or a certificate issued to Cloudflare rather than
+Let's Encrypt.** The record is proxied — orange cloud. Set it to **DNS only**
+in the Cloudflare DNS tab and give it a minute, then restart Caddy with
+`sudo docker compose restart caddy`. On `.app` this is total: the browser
+refuses plain HTTP, so a failed certificate means no site at all, not a site
+with a warning.
+
+**`dig` shows an IP you do not recognise.** Same cause — those are Cloudflare
+edge addresses, which is what a proxied record returns. `dig +short
+home-budget-dg.app` should return the Lightsail static IP, one line, nothing
+else.
+
+**Rate limits firing for people who did nothing.** Also the proxy: with
+Cloudflare in front, every visitor arrives from a handful of edge IPs, and the
+limiter cannot tell them apart. Turning the proxy off restores real client
+addresses.
 
 **The app container restarts in a loop.** Usually a missing `JWT_SECRET` —
 production refuses to boot without one. Check `/opt/home-budget/.env` and
