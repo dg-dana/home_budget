@@ -32,6 +32,8 @@ npm run backup     # consistent SQLite snapshot (online backup API, not cp)
 
 AWS Lightsail: one VPS, Docker Compose, app + Caddy for TLS. See `DEPLOY.md` for the runbook and `ARCHITECTURE.md` §11 for why.
 
+Live instance: `home-budget-dg.app` (Cloudflare DNS) → `3.68.141.55`, Lightsail `eu-central-1`. `DEPLOY.md` §"This deployment" tracks how far the setup has got — check it before walking anyone through the steps.
+
 Deploy, backup and restore all run from the GitHub Actions tab, not a local terminal — assume whoever maintains this may only have a tablet.
 
 - The image is built in CI and pulled by the server; **never build on the instance** (a Vite build will exhaust a small box).
