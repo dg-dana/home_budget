@@ -4,9 +4,16 @@
 #
 # Run it once from Lightsail's browser SSH client — no laptop required:
 #
-#   curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/<branch>/deploy/bootstrap.sh | bash
+#   bash -c "$(curl -fsSL https://raw.githubusercontent.com/dg-dana/home_budget/HEAD/deploy/bootstrap.sh)"
 #
-# or paste the file in. Afterwards every deploy happens from GitHub Actions.
+# Note the shape: `curl ... | bash` would hand bash the script on stdin, and the
+# domain prompt below would then read the script's own next line instead of your
+# answer. The prompt reads from /dev/tty to survive that, but the form above is
+# the one to copy.
+#
+# Non-interactive alternative: DOMAIN=budget.example.com bash bootstrap.sh
+#
+# Afterwards every deploy happens from GitHub Actions.
 #
 # Installs Docker, creates /opt/home-budget, and generates the session secret.
 # Safe to re-run: it never regenerates a secret that already exists, and never
@@ -16,6 +23,9 @@ set -euo pipefail
 
 APP_DIR=/opt/home-budget
 ENV_FILE="$APP_DIR/.env"
+
+# $USER is not set by every non-login shell; fall back to the real user.
+USER="${USER:-$(id -un)}"
 
 echo "==> Installing Docker (skipped if already present)"
 if ! command -v docker > /dev/null 2>&1; then
@@ -39,7 +49,18 @@ if [ -f "$ENV_FILE" ] && grep -q '^JWT_SECRET=' "$ENV_FILE"; then
   echo "    .env already has a JWT_SECRET — leaving it alone."
   echo "    (Changing it would sign every user out.)"
 else
-  read -rp "    Domain name for this app (e.g. budget.example.com): " DOMAIN
+  # Read the answer from the terminal, not stdin: stdin may be the script
+  # itself if this was piped into bash.
+  DOMAIN="${DOMAIN:-}"
+  if [ -z "$DOMAIN" ]; then
+    if [ -r /dev/tty ]; then
+      read -rp "    Domain name for this app (e.g. budget.example.com): " DOMAIN < /dev/tty
+    else
+      echo "    No terminal to prompt on. Re-run as: DOMAIN=budget.example.com bash bootstrap.sh" >&2
+      exit 1
+    fi
+  fi
+
   if [ -z "$DOMAIN" ]; then
     echo "    A domain is required: the app sets Secure cookies, so it needs HTTPS." >&2
     exit 1
