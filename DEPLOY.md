@@ -37,15 +37,15 @@ because it is confidential.
 - [x] `LIGHTSAIL_HOST` and `LIGHTSAIL_SSH_KEY` set in repository secrets
 - [x] Domain registered (`home-budget-dg.app`, Cloudflare)
 - [x] Nameservers live — `penny.ns.cloudflare.com`, `renan.ns.cloudflare.com`
-- [ ] **A record → `3.68.141.55`, set to DNS only** (see step 4)
+- [x] **A record → `3.68.141.55`, DNS only** (step 4)
 - [ ] `bootstrap.sh` run on the instance (step 3)
 - [ ] First deploy (step 6)
 
-Resume at the first unchecked box. Steps 1, 2 and 5 below are done.
+Resume at the first unchecked box. Steps 1, 2, 4 and 5 below are done.
 
-Verified 2026-07-29: the zone is active and answering (`NOERROR`), but an `A`
-query returns no records — so the domain is registered and delegated to
-Cloudflare, and the record itself is the missing piece.
+Verified 2026-07-29: `home-budget-dg.app` resolves to `3.68.141.55` from both
+Google and Cloudflare public resolvers — a single answer, and not a Cloudflare
+edge address, which is what confirms the record is unproxied.
 
 **Until this branch is merged**, take `bootstrap.sh` from this branch, not from
 the default branch — the default branch still has the version whose prompt
