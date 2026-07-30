@@ -104,8 +104,12 @@ jobs:
           DOMAIN_SRC: ${{ steps.domain.outputs.source }}
           SSH_OK: ${{ steps.ssh.outputs.reachable }}
         run: |
-          # Deliberately not `set -e`: every check should run even after one
-          # fails, because the pattern of failures is what identifies the fault.
+          # Every check must run even after one fails, because the pattern of
+          # failures is what identifies the fault. GitHub invokes this with
+          # `bash -e`, so `-e` has to be turned off explicitly — setting only
+          # `-uo pipefail` left it on, and a failed openssl handshake killed
+          # the step before the HTTP and Alt-Svc checks ran.
+          set +e
           set -uo pipefail
 
           domain="$DOMAIN_IN"
@@ -230,6 +234,7 @@ jobs:
           HOST: ${{ secrets.LIGHTSAIL_HOST }}
           USER_NAME: ${{ secrets.LIGHTSAIL_USER || 'ubuntu' }}
         run: |
+          set +e
           set -uo pipefail
           {
             echo ""
