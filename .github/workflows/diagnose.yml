@@ -220,7 +220,8 @@ jobs:
               echo "OK: no Alt-Svc header — nothing unreachable is being advertised."
             fi
             echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+          } 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+          exit 0  # this step reports; it does not pass or fail
 
       # --- and now from inside the server ----------------------------------
       - name: Check the server itself
@@ -278,7 +279,8 @@ jobs:
                 || echo "none found — Caddy has never successfully issued one."
           REMOTE
             echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+          } 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+          exit 0  # this step reports; it does not pass or fail
 
       - name: How to read this
         if: always()
@@ -298,4 +300,5 @@ jobs:
             echo "| **22, 80 and 443 all silent by IP** | The instance is down or wedged. Reboot it from the Lightsail console. |"
             echo "| 80 and 443 answer, 22 does not | Only SSH is blocked — a firewall rule, not an outage. The site itself is fine. |"
             echo "| 22 answers, 443 does not | The box is alive but Caddy is not serving. Check the container list above. |"
-          } >> "$GITHUB_STEP_SUMMARY"
+          } 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+          exit 0  # this step reports; it does not pass or fail
