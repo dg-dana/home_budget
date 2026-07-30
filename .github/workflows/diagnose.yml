@@ -16,6 +16,12 @@ name: Diagnose the deployment
 
 on:
   workflow_dispatch:
+    inputs:
+      domain:
+        description: 'Domain to check. Leave blank to use the DOMAIN repository variable, or to read it off the server.'
+        type: string
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -36,40 +42,104 @@ jobs:
             exit 1
           fi
 
+      # Never fails the job. A server that has stopped answering SSH is one of
+      # the things this workflow exists to report, so it must not be the thing
+      # that stops it running — an earlier version let `ssh-keyscan` abort the
+      # whole diagnosis under `set -e`, which lost the checks that mattered.
       - name: Set up SSH
+        id: ssh
+        if: always()
         env:
           KEY: ${{ secrets.LIGHTSAIL_SSH_KEY }}
           HOST: ${{ secrets.LIGHTSAIL_HOST }}
         run: |
-          set -euo pipefail
+          set -uo pipefail
           mkdir -p ~/.ssh
           printf '%s\n' "$KEY" > ~/.ssh/id_deploy
           chmod 600 ~/.ssh/id_deploy
-          ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          if ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null; then
+            echo "reachable=true" >> "$GITHUB_OUTPUT"
+            echo "Port 22 answered; host key recorded."
+          else
+            echo "reachable=false" >> "$GITHUB_OUTPUT"
+            echo "Port 22 did not answer. Reported in the summary; continuing."
+          fi
+
+      # The domain must be resolvable without the server, or a down server also
+      # blinds the outside-in checks. Order: workflow input, repository
+      # variable, then the server as a last resort.
+      - name: Work out which domain to check
+        id: domain
+        if: always()
+        env:
+          HOST: ${{ secrets.LIGHTSAIL_HOST }}
+          USER_NAME: ${{ secrets.LIGHTSAIL_USER || 'ubuntu' }}
+          INPUT_DOMAIN: ${{ inputs.domain }}
+          VAR_DOMAIN: ${{ vars.DOMAIN }}
+          SSH_OK: ${{ steps.ssh.outputs.reachable }}
+        run: |
+          set -uo pipefail
+          domain="$INPUT_DOMAIN"
+          source="the workflow input"
+          if [ -z "$domain" ]; then
+            domain="$VAR_DOMAIN"
+            source="the DOMAIN repository variable"
+          fi
+          if [ -z "$domain" ] && [ "$SSH_OK" = "true" ]; then
+            domain=$(ssh -i ~/.ssh/id_deploy -o ConnectTimeout=20 "$USER_NAME@$HOST" \
+              "grep '^DOMAIN=' /opt/home-budget/.env | cut -d= -f2" 2>/dev/null || echo '')
+            source="the server's .env"
+          fi
+          echo "domain=$domain" >> "$GITHUB_OUTPUT"
+          echo "source=$source" >> "$GITHUB_OUTPUT"
+          echo "Checking '${domain:-<none>}' (from $source)."
 
       # --- from the outside, the way a visitor arrives ---------------------
       - name: Check the site from the internet
         id: outside
+        if: always()
         env:
           HOST: ${{ secrets.LIGHTSAIL_HOST }}
-          USER_NAME: ${{ secrets.LIGHTSAIL_USER || 'ubuntu' }}
+          DOMAIN_IN: ${{ steps.domain.outputs.domain }}
+          DOMAIN_SRC: ${{ steps.domain.outputs.source }}
+          SSH_OK: ${{ steps.ssh.outputs.reachable }}
         run: |
           # Deliberately not `set -e`: every check should run even after one
           # fails, because the pattern of failures is what identifies the fault.
           set -uo pipefail
 
-          domain=$(ssh -i ~/.ssh/id_deploy "$USER_NAME@$HOST" \
-            "grep '^DOMAIN=' /opt/home-budget/.env | cut -d= -f2" 2>/dev/null || echo '')
-          echo "domain=$domain" >> "$GITHUB_OUTPUT"
+          domain="$DOMAIN_IN"
 
           {
+            if [ "$SSH_OK" != "true" ]; then
+              echo "> **Port 22 is not answering.** The server could not be asked anything."
+              echo "> Whether that is the instance being down or just SSH being closed is"
+              echo "> settled by the port checks below: if 443 also times out, the instance"
+              echo "> is down; if 443 answers, only SSH is blocked."
+              echo ""
+            fi
             echo "## Reachability"
             echo ""
             if [ -z "$domain" ]; then
-              echo "**No DOMAIN found in /opt/home-budget/.env.** Re-run \`deploy/bootstrap.sh\`."
+              echo "No domain to check. Re-run this workflow with the **domain** input"
+              echo "filled in, or set a \`DOMAIN\` repository variable so it is always known"
+              echo "even when the server cannot be reached."
+              echo ""
+              echo "Checking the instance IP directly instead — that still distinguishes a"
+              echo "dead instance from a working one."
+              echo ""
+              echo '```'
+              for port in 443 80 22; do
+                if timeout 12 bash -c "cat < /dev/null > /dev/tcp/$HOST/$port" 2>/dev/null; then
+                  echo "$HOST:$port OPEN"
+                else
+                  echo "$HOST:$port no connection"
+                fi
+              done
+              echo '```'
               exit 0
             fi
-            echo "Domain: \`$domain\` — expected to resolve to \`$HOST\`."
+            echo "Domain: \`$domain\` — expected to resolve to \`$HOST\` (from $DOMAIN_SRC)."
             echo ""
             echo '```'
 
@@ -82,6 +152,19 @@ jobs:
               *)           echo "FAIL: does not match $HOST. If these look like Cloudflare" \
                                 "addresses the record is proxied; it must be DNS only." ;;
             esac
+
+            echo
+            echo "== The instance itself, by IP =="
+            # Straight at the address, so this stays meaningful even when DNS is
+            # wrong. All three silent is the signature of a dead instance;
+            # 443 open with 22 shut is a firewall, not an outage.
+            for port in 22 80 443; do
+              if timeout 12 bash -c "cat < /dev/null > /dev/tcp/$HOST/$port" 2>/dev/null; then
+                echo "$HOST:$port OPEN"
+              else
+                echo "$HOST:$port no connection"
+              fi
+            done
 
             echo
             echo "== TCP 443 =="
@@ -212,5 +295,7 @@ jobs:
             echo "| TLS | Caddy could not issue or renew. Its logs above say why; usually port 80. |"
             echo "| HTTP 502 | Caddy is fine, the app container is not. Check the app logs above. |"
             echo "| Everything passes here but phones still hang | Suspect HTTP/3 — see the Alt-Svc check. |"
-            echo "| SSH failed | The instance is down or out of memory. Reboot it from the Lightsail console. |"
+            echo "| **22, 80 and 443 all silent by IP** | The instance is down or wedged. Reboot it from the Lightsail console. |"
+            echo "| 80 and 443 answer, 22 does not | Only SSH is blocked — a firewall rule, not an outage. The site itself is fine. |"
+            echo "| 22 answers, 443 does not | The box is alive but Caddy is not serving. Check the container list above. |"
           } >> "$GITHUB_STEP_SUMMARY"
