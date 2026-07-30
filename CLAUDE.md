@@ -43,6 +43,8 @@ Deploy, backup, restore and diagnostics all run from the GitHub Actions tab, not
 - HTTPS is required, not cosmetic: production cookies are `Secure`, so plain HTTP breaks sign-in.
 - **Never advertise a protocol the firewall drops.** Caddy pins `protocols h1 h2` because compose publishes TCP 443 only; enabling HTTP/3 without also opening UDP 443 makes browsers hang on a blank page. `DEPLOY.md` §"Enabling HTTP/3".
 - A green deploy does not mean a reachable site. The container health check runs *inside* the app container — the public URL is verified separately, at the end of the deploy.
+- **Changing `deploy/Caddyfile` requires reloading Caddy**, which the deploy now does. `docker compose up -d` will not do it for you: the file is bind-mounted, so its contents are not part of the service definition and Compose leaves the container alone. Copying a new Caddyfile without a reload deploys green and changes nothing.
+- The instance has ~110 MB free and **no swap**; it has already OOM-killed a process and wedged. Before blaming the app for an outage, check `free -m` in the diagnostic. `DEPLOY.md` §"Memory headroom".
 
 ## Schema changes
 

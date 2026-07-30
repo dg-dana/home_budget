@@ -52,6 +52,32 @@ Verified 2026-07-29: `home-budget-dg.app` resolves to `3.68.141.55` from both
 Google and Cloudflare public resolvers — a single answer, and not a Cloudflare
 edge address, which is what confirms the record is unproxied.
 
+### Outage, 2026-07-30
+
+Worth keeping, because both faults are the kind that recur.
+
+The site stopped loading — a black screen that spun forever on a phone, no
+error. Two separate problems, and the first deploy's green tick had told us
+nothing about either, because its health check ran *inside* the app container.
+
+**The instance was wedged.** All of 22, 80 and 443 timed out from outside while
+DNS resolved correctly. A graceful **Stop** hung in "Stopping"; **Force stop**
+followed by **Start** recovered it. Afterwards `dmesg` showed a real kill —
+`Out of memory: Killed process (apt-check)` — on a box with 416 MB usable and
+**no swap**. See "Memory headroom" under Costs; this will happen again
+otherwise.
+
+**Caddy was advertising HTTP/3 it could not serve.** `alt-svc: h3=":443"`
+with a 30-day cache lifetime, while compose publishes TCP 443 only. Fixed by
+pinning `protocols h1 h2`.
+
+The fix then failed to apply, silently, which is the part worth remembering:
+`docker compose up -d` does not recreate a container whose service definition
+is unchanged, and a bind-mounted Caddyfile's *contents* are not part of that
+definition. The deploy copied the new file, Caddy never re-read it, and the
+run went green. The deploy now reloads Caddy explicitly and checks the public
+URL, so neither failure can pass silently again.
+
 ---
 
 ## First-time setup
@@ -235,6 +261,16 @@ Open the site and create your household — the first account is the owner.
 swapped; the `data/` directory is untouched, so the database survives.
 Migrations run automatically on boot (`ARCHITECTURE.md` §3).
 
+The deploy also copies `deploy/Caddyfile` and then **reloads Caddy explicitly**.
+That reload is not decoration. `docker compose up -d` recreates a container only
+when its *service definition* changes, and the Caddyfile is bind-mounted — its
+contents are not part of that definition, so Compose leaves Caddy running and
+Caddy never re-reads the file. Without the reload a Caddyfile change deploys
+green and does nothing at all, which is exactly what happened on 2026-07-30.
+
+The run is not finished until it has fetched the real public URL and got a 200.
+A green deploy now means a visitor can load the site.
+
 Rolling back means editing `APP_IMAGE=` in `/opt/home-budget/.env` to an
 earlier tag and running `sudo docker compose up -d`. Every deploy is tagged
 with its commit SHA.
@@ -255,6 +291,16 @@ Start here when the site will not load. The deploy workflow's own health check
 runs *inside* the app container, so it can be green while the website is
 unreachable; that is what the outside-in checks exist to catch, and why the
 deploy now verifies the public URL too.
+
+It reads the domain from the **domain** input if you fill one in, otherwise a
+`DOMAIN` repository variable, and only then from the server's `.env`. Setting
+the repository variable once (**Settings → Secrets and variables → Actions →
+Variables**, name `DOMAIN`) means the outside-in checks still know what to look
+for when the server is unreachable — which is exactly when you need them. It is
+not a secret; it is the public name of the site.
+
+The job goes green even when it finds faults. Red means the diagnostic itself
+broke, not that your site is down — read the summary for the verdict.
 
 For a closer look, through Lightsail's browser SSH:
 
@@ -328,6 +374,29 @@ Measured requirements: ~85 MB peak memory, under 6 MB of data after ten years,
 The $5/month Lightsail bundle covers all of it, including 1 TB of transfer —
 roughly 30,000 times what this app uses. That is the whole bill; unlike metered
 providers there is nothing else to add up. A domain is about $10–15 a year.
+
+### Memory headroom
+
+The app's ~85 MB is not the whole story. The 512 MB bundle reports about
+416 MB usable, and Docker, Caddy and the OS take most of what is left — the
+instance sits near 110 MB free with **no swap configured**. On 2026-07-30 the
+kernel OOM-killed a routine `apt-check`, and the instance wedged hard enough
+that a graceful stop hung.
+
+Nothing is wrong with the $5 bundle for this workload, but it has no cushion.
+Two ways to give it one, cheapest first:
+
+```bash
+# 1 GB of swap. Survives reboots. Costs nothing but disk, of which there is
+# plenty — the root filesystem is 18% used.
+sudo fallocate -l 1G /swapfile && sudo chmod 600 /swapfile
+sudo mkswap /swapfile && sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+```
+
+Or move to the 1 GB bundle ($7/month) in the Lightsail console — **Manage →
+Change plan**, which requires a stop and start. Swap first; it is free and
+reversible, and `free -m` in the diagnostic will show whether it was enough.
 
 ---
 
