@@ -253,10 +253,13 @@ jobs:
               grep '^APP_IMAGE=' .env || echo "APP_IMAGE not set"
 
               echo
+              # `< /dev/null` on every `docker compose exec`: this script arrives
+              # on the remote shell's stdin, and exec reads stdin, so without it the
+              # command eats the rest of its own script and the report stops here.
               echo "== App health, from inside its container =="
               sudo docker compose exec -T app node -e \
                 "fetch('http://127.0.0.1:8080/api/health').then(r=>{console.log('HTTP',r.status);process.exit(r.ok?0:1)}).catch(e=>{console.log('unreachable:',e.message);process.exit(1)})" \
-                || echo "FAIL: the app is not answering inside its own container."
+                < /dev/null || echo "FAIL: the app is not answering inside its own container."
 
               echo
               echo "== Caddy, last 40 lines =="
@@ -280,7 +283,7 @@ jobs:
               echo
               echo "== Certificates on disk =="
               sudo docker compose exec -T caddy \
-                find /data/caddy/certificates -name '*.crt' 2>/dev/null \
+                find /data/caddy/certificates -name '*.crt' 2>/dev/null < /dev/null \
                 || echo "none found — Caddy has never successfully issued one."
           REMOTE
             echo '```'
