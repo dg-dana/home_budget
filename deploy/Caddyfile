@@ -4,6 +4,27 @@
 # No `encode` directive: the app compresses its own responses (see
 # ARCHITECTURE.md §2), and Caddy will not re-compress what is already encoded.
 
+{
+	servers {
+		# HTTP/3 is on by default in Caddy 2.6+, and that is a trap here.
+		#
+		# It listens on UDP 443, but docker-compose.yml publishes `443:443`,
+		# which Docker reads as TCP only — nothing forwards UDP to this
+		# container, and the Lightsail firewall rule for HTTPS is TCP too. Caddy
+		# would still advertise `Alt-Svc: h3=":443"` on every HTTPS response. A
+		# browser caches that for a month, then tries QUIC against a port that
+		# silently drops every packet. The fallback to TCP exists, but on a
+		# phone it can take long enough to look like the site has simply hung
+		# on a blank page.
+		#
+		# So: only advertise what is actually reachable. To turn HTTP/3 back on,
+		# both of these have to happen first — see DEPLOY.md "Enabling HTTP/3".
+		#   1. publish '443:443/udp' as well, in docker-compose.yml
+		#   2. open UDP 443 in the Lightsail IPv4 firewall
+		protocols h1 h2
+	}
+}
+
 {$DOMAIN} {
 	reverse_proxy app:8080
 

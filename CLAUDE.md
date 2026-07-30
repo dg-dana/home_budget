@@ -34,11 +34,15 @@ AWS Lightsail: one VPS, Docker Compose, app + Caddy for TLS. See `DEPLOY.md` for
 
 Live instance: `home-budget-dg.app` (Cloudflare DNS) → `3.68.141.55`, Lightsail `eu-central-1`. `DEPLOY.md` §"This deployment" tracks how far the setup has got — check it before walking anyone through the steps.
 
-Deploy, backup and restore all run from the GitHub Actions tab, not a local terminal — assume whoever maintains this may only have a tablet.
+Deploy, backup, restore and diagnostics all run from the GitHub Actions tab, not a local terminal — assume whoever maintains this may only have a tablet.
+
+**When the site will not load, run "Diagnose the deployment" first** and read the run summary. It checks the visitor's path from the outside in (DNS → 443 → 80 → certificate → HTTP) before looking inside the server, and it changes nothing.
 
 - The image is built in CI and pulled by the server; **never build on the instance** (a Vite build will exhaust a small box).
 - `JWT_SECRET` must stay stable or every session is invalidated. `bootstrap.sh` will not regenerate an existing one.
 - HTTPS is required, not cosmetic: production cookies are `Secure`, so plain HTTP breaks sign-in.
+- **Never advertise a protocol the firewall drops.** Caddy pins `protocols h1 h2` because compose publishes TCP 443 only; enabling HTTP/3 without also opening UDP 443 makes browsers hang on a blank page. `DEPLOY.md` §"Enabling HTTP/3".
+- A green deploy does not mean a reachable site. The container health check runs *inside* the app container — the public URL is verified separately, at the end of the deploy.
 
 ## Schema changes
 

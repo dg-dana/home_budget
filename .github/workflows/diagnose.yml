@@ -1,0 +1,216 @@
+name: Diagnose the deployment
+
+# Answers "the site will not load — why?" without needing a terminal.
+#
+# Run it from the Actions tab and read the run summary. It checks the path a
+# visitor actually takes, from the outside in: DNS -> TCP 443 -> TLS
+# certificate -> HTTP response, and only then looks inside the server at the
+# containers, Caddy's logs and the machine's memory and disk.
+#
+# The order matters. The deploy workflow's health check runs inside the app
+# container, so it stays green even when nothing is reachable from the
+# internet. This starts where the user is standing instead.
+#
+# Read-only: it starts nothing, stops nothing and changes nothing. It never
+# prints .env, which holds JWT_SECRET — only the DOMAIN line is read back.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check the secrets are configured
+        run: |
+          missing=
+          [ -z "${{ secrets.LIGHTSAIL_HOST }}" ]    && missing="$missing LIGHTSAIL_HOST"
+          [ -z "${{ secrets.LIGHTSAIL_SSH_KEY }}" ] && missing="$missing LIGHTSAIL_SSH_KEY"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secret(s):$missing — see DEPLOY.md."
+            exit 1
+          fi
+
+      - name: Set up SSH
+        env:
+          KEY: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+          HOST: ${{ secrets.LIGHTSAIL_HOST }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+      # --- from the outside, the way a visitor arrives ---------------------
+      - name: Check the site from the internet
+        id: outside
+        env:
+          HOST: ${{ secrets.LIGHTSAIL_HOST }}
+          USER_NAME: ${{ secrets.LIGHTSAIL_USER || 'ubuntu' }}
+        run: |
+          # Deliberately not `set -e`: every check should run even after one
+          # fails, because the pattern of failures is what identifies the fault.
+          set -uo pipefail
+
+          domain=$(ssh -i ~/.ssh/id_deploy "$USER_NAME@$HOST" \
+            "grep '^DOMAIN=' /opt/home-budget/.env | cut -d= -f2" 2>/dev/null || echo '')
+          echo "domain=$domain" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "## Reachability"
+            echo ""
+            if [ -z "$domain" ]; then
+              echo "**No DOMAIN found in /opt/home-budget/.env.** Re-run \`deploy/bootstrap.sh\`."
+              exit 0
+            fi
+            echo "Domain: \`$domain\` — expected to resolve to \`$HOST\`."
+            echo ""
+            echo '```'
+
+            echo "== DNS =="
+            resolved=$(getent ahostsv4 "$domain" | awk '{print $1}' | sort -u | tr '\n' ' ')
+            echo "$domain resolves to: ${resolved:-NOTHING}"
+            case " $resolved " in
+              *" $HOST "*) echo "OK: matches the instance IP." ;;
+              "  ")        echo "FAIL: the name does not resolve. Check the A record." ;;
+              *)           echo "FAIL: does not match $HOST. If these look like Cloudflare" \
+                                "addresses the record is proxied; it must be DNS only." ;;
+            esac
+
+            echo
+            echo "== TCP 443 =="
+            if timeout 10 bash -c "cat < /dev/null > /dev/tcp/$domain/443" 2>/dev/null; then
+              echo "OK: port 443 accepts connections."
+            else
+              echo "FAIL: cannot connect on 443. Either Caddy is not running or the"
+              echo "Lightsail IPv4 firewall has no HTTPS rule."
+            fi
+
+            echo
+            echo "== TCP 80 (needed to renew the certificate) =="
+            if timeout 10 bash -c "cat < /dev/null > /dev/tcp/$domain/80" 2>/dev/null; then
+              echo "OK: port 80 accepts connections."
+            else
+              echo "FAIL: port 80 is closed. Caddy cannot pass the ACME challenge,"
+              echo "so the certificate will fail to renew even if it works today."
+            fi
+
+            echo
+            echo "== TLS certificate =="
+            cert=$(echo | timeout 15 openssl s_client -connect "$domain:443" \
+              -servername "$domain" 2>/dev/null | openssl x509 -noout -issuer -subject -dates 2>/dev/null)
+            if [ -n "$cert" ]; then
+              echo "$cert"
+              if echo | timeout 15 openssl s_client -connect "$domain:443" \
+                   -servername "$domain" -verify_return_error > /dev/null 2>&1; then
+                echo "OK: the certificate validates."
+              else
+                echo "FAIL: the certificate does not validate. On a .app domain there is no"
+                echo "plain-HTTP fallback, so browsers will refuse the site outright."
+              fi
+            else
+              echo "FAIL: no TLS handshake. Caddy is not terminating TLS on this name."
+            fi
+
+            echo
+            echo "== HTTP =="
+            code=$(curl -sS --max-time 20 -o /dev/null -w '%{http_code}' "https://$domain/api/health" 2>&1)
+            echo "GET /api/health -> ${code:-no response}"
+            code=$(curl -sS --max-time 20 -o /dev/null -w '%{http_code}' "https://$domain/" 2>&1)
+            echo "GET /            -> ${code:-no response}"
+
+            echo
+            echo "== Advertised protocols =="
+            altsvc=$(curl -sSI --max-time 20 "https://$domain/" 2>/dev/null | grep -i '^alt-svc:' || true)
+            if [ -n "$altsvc" ]; then
+              echo "$altsvc"
+              echo "WARNING: HTTP/3 is being advertised. Unless UDP 443 is published in"
+              echo "docker-compose.yml AND open in the Lightsail firewall, browsers will"
+              echo "try QUIC, get silence, and appear to hang on a blank page."
+            else
+              echo "OK: no Alt-Svc header — nothing unreachable is being advertised."
+            fi
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # --- and now from inside the server ----------------------------------
+      - name: Check the server itself
+        if: always()
+        env:
+          HOST: ${{ secrets.LIGHTSAIL_HOST }}
+          USER_NAME: ${{ secrets.LIGHTSAIL_USER || 'ubuntu' }}
+        run: |
+          set -uo pipefail
+          {
+            echo ""
+            echo "## On the server"
+            echo ""
+            echo '```'
+            ssh -i ~/.ssh/id_deploy -o ConnectTimeout=20 "$USER_NAME@$HOST" bash -s <<'REMOTE' 2>&1 || echo "SSH failed — the instance may be down or wedged."
+              cd /opt/home-budget || { echo "No /opt/home-budget."; exit 1; }
+
+              echo "== Containers =="
+              sudo docker compose ps --all
+
+              echo
+              echo "== Deployed image =="
+              # Only this one line. The rest of .env holds JWT_SECRET.
+              grep '^APP_IMAGE=' .env || echo "APP_IMAGE not set"
+
+              echo
+              echo "== App health, from inside its container =="
+              sudo docker compose exec -T app node -e \
+                "fetch('http://127.0.0.1:8080/api/health').then(r=>{console.log('HTTP',r.status);process.exit(r.ok?0:1)}).catch(e=>{console.log('unreachable:',e.message);process.exit(1)})" \
+                || echo "FAIL: the app is not answering inside its own container."
+
+              echo
+              echo "== Caddy, last 40 lines =="
+              sudo docker compose logs --tail 40 --no-color caddy 2>&1 || echo "no caddy logs"
+
+              echo
+              echo "== App, last 20 lines =="
+              sudo docker compose logs --tail 20 --no-color app 2>&1 || echo "no app logs"
+
+              echo
+              echo "== Memory =="
+              # A 512 MB box running Docker, Node and Caddy has little headroom.
+              free -m
+              echo "Recent out-of-memory kills:"
+              sudo dmesg 2>/dev/null | grep -i -m5 'killed process' || echo "none found"
+
+              echo
+              echo "== Disk =="
+              df -h / /opt 2>/dev/null | sort -u
+
+              echo
+              echo "== Certificates on disk =="
+              sudo docker compose exec -T caddy \
+                find /data/caddy/certificates -name '*.crt' 2>/dev/null \
+                || echo "none found — Caddy has never successfully issued one."
+          REMOTE
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: How to read this
+        if: always()
+        run: |
+          {
+            echo ""
+            echo "## How to read this"
+            echo ""
+            echo "| What failed | Where the fault is |"
+            echo "| --- | --- |"
+            echo "| DNS | The A record. It must point at the instance IP, **DNS only**, not proxied. |"
+            echo "| TCP 443 but containers are up | The Lightsail IPv4 firewall is missing the HTTPS rule. |"
+            echo "| TCP 80 | Same firewall. Caddy needs 80 for the certificate even though nothing is served on it. |"
+            echo "| TLS | Caddy could not issue or renew. Its logs above say why; usually port 80. |"
+            echo "| HTTP 502 | Caddy is fine, the app container is not. Check the app logs above. |"
+            echo "| Everything passes here but phones still hang | Suspect HTTP/3 — see the Alt-Svc check. |"
+            echo "| SSH failed | The instance is down or out of memory. Reboot it from the Lightsail console. |"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -243,7 +243,20 @@ with its commit SHA.
 
 ## Checking on it
 
-Through Lightsail's browser SSH:
+**Actions → Diagnose the deployment → Run workflow**, then read the run
+summary. It needs no terminal, changes nothing, and works from a tablet.
+
+It walks the path a visitor actually takes, from the outside in — DNS, port
+443, port 80, the certificate, the HTTP response — and only then looks inside
+the server at the containers, Caddy's logs, memory and disk. The summary ends
+with a table mapping each failure to the thing that causes it.
+
+Start here when the site will not load. The deploy workflow's own health check
+runs *inside* the app container, so it can be green while the website is
+unreachable; that is what the outside-in checks exist to catch, and why the
+deploy now verifies the public URL too.
+
+For a closer look, through Lightsail's browser SSH:
 
 ```bash
 cd /opt/home-budget
@@ -319,6 +332,57 @@ providers there is nothing else to add up. A domain is about $10–15 a year.
 ---
 
 ## Troubleshooting
+
+Run **Actions → Diagnose the deployment** first — it identifies most of what
+follows for you.
+
+**The page never loads: no error, no content, just a blank screen that keeps
+spinning.** A blank *hang* is different from an error. A 502, a bad certificate
+or a 404 all put something on the screen; a hang means the reply never arrives
+at all. Phones are usually affected before desktops.
+
+The cause to suspect first is HTTP/3. Caddy enables it by default and
+advertises `Alt-Svc: h3=":443"`, but `docker-compose.yml` publishes `443:443`,
+which Docker takes as **TCP only**, and the Lightsail HTTPS rule is TCP too. So
+the browser is told to switch to QUIC on UDP 443, and every packet it then
+sends is dropped. It caches that instruction for a month, which is why the site
+can work once and then stop. Browsers do fall back to TCP, but on a phone the
+wait can be long enough to look like a hang.
+
+`deploy/Caddyfile` now pins `protocols h1 h2`, so nothing unreachable is
+advertised. If you are seeing this on a deployment from before that change,
+redeploy and the `Alt-Svc` header goes away. A browser that already cached the
+old advertisement needs its cache cleared, or simply time.
+
+The diagnostic workflow reports any `Alt-Svc` header it sees, and the deploy
+workflow now warns if one appears.
+
+If it is not that, work down the diagnostic's reachability section: a hang with
+port 443 closed is the firewall, and a hang with SSH also failing is the
+instance itself — a 512 MB box can be pushed into swap death by something as
+ordinary as an image build, which is why the image is built in CI.
+
+### Enabling HTTP/3
+
+Optional, and only worth it if you want the latency win on mobile. Both steps
+are required — doing one without the other is exactly the blank-screen fault
+above:
+
+1. In `deploy/docker-compose.yml`, publish the UDP port alongside the TCP one:
+
+   ```yaml
+   ports:
+     - '80:80'
+     - '443:443'
+     - '443:443/udp'
+   ```
+
+2. In the Lightsail **Networking → IPv4 Firewall**, add a **Custom / UDP / 443**
+   rule.
+
+Then drop the `protocols h1 h2` line from `deploy/Caddyfile` and redeploy.
+Verify with the diagnostic workflow: an `Alt-Svc` header is only correct once
+UDP 443 genuinely answers.
 
 **No certificate / the browser warns.** Caddy could not complete the Let's
 Encrypt challenge. Check that the A record resolves to the static IP and that

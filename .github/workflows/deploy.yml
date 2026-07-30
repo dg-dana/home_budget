@@ -142,7 +142,11 @@ jobs:
             sudo docker logout ghcr.io
           EOF
 
-      - name: Wait for it to come up
+      # The app container publishes nothing to the host (compose says `expose`,
+      # not `ports`), so this has to run inside the container. An earlier
+      # version tried `curl http://127.0.0.1:8080` on the host first, which
+      # could never succeed and quietly fell through to this.
+      - name: Wait for the app container to come up
         env:
           HOST: ${{ secrets.LIGHTSAIL_HOST }}
           USER_NAME: ${{ secrets.LIGHTSAIL_USER || 'ubuntu' }}
@@ -150,18 +154,58 @@ jobs:
           set -euo pipefail
           for attempt in $(seq 1 30); do
             if ssh -i ~/.ssh/id_deploy "$USER_NAME@$HOST" \
-                 "curl -fsS -o /dev/null http://127.0.0.1:8080/api/health" 2>/dev/null \
-               || ssh -i ~/.ssh/id_deploy "$USER_NAME@$HOST" \
-                 "sudo docker compose -f /opt/home-budget/docker-compose.yml exec -T app node -e \"fetch('http://127.0.0.1:8080/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\"" 2>/dev/null; then
-              echo "Healthy after $attempt attempt(s)."
+                 "cd /opt/home-budget && sudo docker compose exec -T app node -e \"fetch('http://127.0.0.1:8080/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\"" 2>/dev/null; then
+              echo "App healthy after $attempt attempt(s)."
               exit 0
             fi
             sleep 5
           done
-          echo "::error::The app did not become healthy. Check: sudo docker compose -f /opt/home-budget/docker-compose.yml logs"
+          echo "::error::The app container did not become healthy. Run the 'Diagnose the deployment' workflow."
+          exit 1
+
+      # The check above only proves the Node process is alive inside its own
+      # container. It says nothing about Caddy, the certificate, the firewall or
+      # DNS — every part a visitor actually depends on. Checking the real URL
+      # from outside is the only thing that answers "is the website up?", so a
+      # deploy is not considered finished until this passes.
+      - name: Verify the public URL works
+        env:
+          HOST: ${{ secrets.LIGHTSAIL_HOST }}
+          USER_NAME: ${{ secrets.LIGHTSAIL_USER || 'ubuntu' }}
+        run: |
+          set -euo pipefail
+          domain=$(ssh -i ~/.ssh/id_deploy "$USER_NAME@$HOST" \
+            "grep '^DOMAIN=' /opt/home-budget/.env | cut -d= -f2")
+          if [ -z "$domain" ]; then
+            echo "::error::No DOMAIN in /opt/home-budget/.env — re-run deploy/bootstrap.sh."
+            exit 1
+          fi
+          echo "Checking https://$domain/api/health from outside the server."
+
+          # On a first deploy Caddy has to complete the ACME challenge, which
+          # takes a little while, so this is patient before giving up.
+          for attempt in $(seq 1 30); do
+            code=$(curl -fsS --max-time 15 -o /dev/null -w '%{http_code}' \
+              "https://$domain/api/health" 2>/dev/null) && [ "$code" = "200" ] && {
+              echo "Public HTTPS is serving (attempt $attempt)."
+              # Nothing should advertise a protocol the firewall drops.
+              altsvc=$(curl -fsSI --max-time 15 "https://$domain/" 2>/dev/null \
+                | grep -i '^alt-svc:' || true)
+              if [ -n "$altsvc" ]; then
+                echo "::warning::Caddy is advertising $altsvc — if UDP 443 is not open, phones may hang. See deploy/Caddyfile."
+              fi
+              exit 0
+            }
+            sleep 10
+          done
+
+          echo "::error::The app container is healthy but https://$domain is not serving."
+          echo "The failure is between the internet and Caddy: certificate, firewall or DNS."
+          echo "Run the 'Diagnose the deployment' workflow for the details."
           exit 1
 
       - name: Report where it is
+        if: always()
         env:
           HOST: ${{ secrets.LIGHTSAIL_HOST }}
           USER_NAME: ${{ secrets.LIGHTSAIL_USER || 'ubuntu' }}
@@ -174,6 +218,4 @@ jobs:
             [ -n "$domain" ] && echo "Your app: https://$domain"
             echo ""
             echo "Image: \`${{ steps.image.outputs.tag }}\`"
-            echo ""
-            echo "If this was the first deploy, Caddy may take a minute to issue the certificate."
           } >> "$GITHUB_STEP_SUMMARY"
