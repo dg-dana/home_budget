@@ -138,6 +138,23 @@ jobs:
 
             sudo docker compose pull
             sudo docker compose up -d --remove-orphans
+
+            # Caddy will not have been touched by the line above. Compose only
+            # recreates a container when its *service definition* changes, and
+            # the Caddyfile is a bind-mounted file — editing its contents leaves
+            # the definition identical, so the container is left alone and Caddy
+            # never re-reads the file. A deploy that changed the Caddyfile would
+            # report success while the old config kept serving. Reload it
+            # explicitly; \`< /dev/null\` because this script is on the remote
+            # shell's stdin and \`exec\` would otherwise eat the rest of it.
+            if sudo docker compose exec -T caddy \\
+                 caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile < /dev/null; then
+              echo 'Caddy reloaded its configuration.'
+            else
+              echo 'Graceful reload failed; restarting Caddy instead.'
+              sudo docker compose restart caddy
+            fi
+
             sudo docker image prune -f
             sudo docker logout ghcr.io
           EOF
