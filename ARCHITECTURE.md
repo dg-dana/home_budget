@@ -177,7 +177,19 @@ so the UI can badge them.
 - `api.ts` — thin typed `fetch` wrapper; unwraps `{error}` bodies into `ApiError` carrying the status. Also the single home for all response type definitions.
 - `session.tsx` — the only global state. Holds `user` + `household`, hydrates from `GET /auth/me` on mount, treats a 401 as "signed out" rather than an error.
 - `format.ts` — money and date helpers. **Month/day helpers use local time, not UTC**, so "today" matches the user's calendar rather than the server's.
-- `styles.css` — plain CSS, custom properties, light/dark via `prefers-color-scheme`. No CSS framework, no CSS-in-JS.
+- `styles.css` — plain CSS, custom properties, light/dark themes (§9.1). No CSS framework, no CSS-in-JS.
+- `theme.ts` — reads/writes the theme preference and applies it to `<html>`.
+
+### 9.1 Theming
+
+- **One palette, two values each.** Every colour variable is `light-dark(<light>, <dark>)`, resolved against the element's used `color-scheme`. Adding a colour means adding one line, not remembering to edit a second block further down the file.
+- **Only two rules in the whole stylesheet mention a theme by name**: `:root[data-theme='light']` and `:root[data-theme='dark']`, each setting nothing but `color-scheme`. Everything else just uses the variables.
+- Using `color-scheme` rather than re-listing colours also fixes the native widgets — date pickers, scrollbars, the checkbox tick were all rendering light-on-dark before.
+- `light-dark()` takes *colours*, so `--shadow` (a composite value) is built from `--shadow-near` / `--shadow-far` instead.
+- **The preference is per-device, not per-user**: `localStorage['home-budget:theme']`, one of `light` / `dark` / `system`. It never touches the API. A guest has no account to hang a setting on, and the same person may want different answers on a phone and a laptop.
+- **No `data-theme` attribute at all means "follow the OS"** — that is the `color-scheme: light dark` on `:root`. Do not write `data-theme="system"`.
+- **An inline script in `web/index.html` applies the stored choice before first paint.** Without it, a dark-mode device flashes the light palette on every load while React boots. It duplicates `applyTheme()` in `theme.ts` on purpose — the two must be changed together, and there is an e2e test that blocks the JS bundle to prove the inline copy is doing the work.
+- `ThemeToggle` sits in both headers: the member `Layout` and `SharedListPage`'s own guest header. Three states, not a switch, because "match device" is the default and a two-way toggle would strand anyone whose phone flips to dark at sunset.
 
 ### Routing
 
@@ -214,27 +226,29 @@ Two suites, run together with `npm run test:all`.
 
 ### Browser smoke test — Playwright, `e2e/`
 
-- 6 tests, run with `npm run test:e2e`. Config is `playwright.config.ts` at the repo root.
-- **Covers the guest flow only** — the riskiest path, because it is the one surface reachable without an account. It is a smoke test, not broad UI coverage.
+- 7 tests, run with `npm run test:e2e`. Config is `playwright.config.ts` at the repo root.
+- **Covers the guest flow only** — the riskiest path, because it is the one surface reachable without an account. It is a smoke test, not broad UI coverage. (The theme test lives here because the toggle is on the guest header too, so the guest suite can reach it.)
 - Playwright's `webServer` runs `npm run build && npm start`, so the tests drive **the production build**: one process serving the API and the built frontend, exactly as a deployment does.
 - The run gets a throwaway SQLite file, created in the config and deleted by `e2e/teardown.ts`.
 - Chromium: the config uses the sandbox's prebuilt binary when `/opt/pw-browsers/chromium` exists (override with `CHROMIUM_PATH`) and a normally installed browser otherwise. **Never run `playwright install` in the sandbox.**
 - Every guest gets `browser.newContext()` — a guest is *defined* by having no cookies and no carried-over storage, so sharing a context would defeat the point.
 - Tests create their own household, so they share nothing but the server and can run in parallel.
 
-What it asserts: a member creates and shares a list through the UI; a guest with no account opens the link, names themselves, adds an item and ticks one off; the member sees those changes. Plus view-only enforcement, instant revocation, the name prompt appearing only once, a dead token, and that a guest is bounced off every private route.
+What it asserts: a member creates and shares a list through the UI; a guest with no account opens the link, names themselves, adds an item and ticks one off; the member sees those changes. Plus view-only enforcement, instant revocation, the name prompt appearing only once, a dead token, that a guest is bounced off every private route, and that a chosen theme survives a reload without a flash.
 
 **Use `click()`, not `check()`, on the item checkboxes.** They are controlled inputs that only flip once the server round-trip lands, so `check()`'s immediate state assertion fails. Assert the visible outcome instead.
 
 ### Both suites were verified by breaking the code
 
-Five deliberate regressions were introduced, and each was caught by a failing test:
+Seven deliberate regressions were introduced, and each was caught by a failing test:
 
 1. Removing the `household_id` filter from the expenses list query → `isolation` failed.
 2. Adding `householdId` to the guest share response → `share` failed.
 3. Removing the view-only check from `editableList()` → `share` failed.
 4. Dropping `disabled={!view.canEdit}` from the guest checkbox → the Playwright view-only test failed.
 5. Neutering the `RequireAuth` redirect → the Playwright "no way into the rest of the app" test failed.
+6. Deleting the pre-paint theme script from `index.html` → the Playwright theme test failed on the JS-blocked reload (React alone cannot satisfy it).
+7. Removing `:root[data-theme='dark'] { color-scheme: dark }` → the same test failed, because picking Dark then changed no colour.
 
 **Keep it that way.** When you add a test for an invariant, break the code once and confirm it fails. A test that has never failed has not been shown to test anything.
 
@@ -290,6 +304,7 @@ Five deliberate regressions were introduced, and each was caught by a failing te
 Honest list — these are real, and none is currently blocking.
 
 - **Frontend coverage is the guest flow only.** The expenses dashboard, budgets, invites and household settings have no browser tests — changes there still need checking by hand.
+- **The theme toggle is only in the two headers**, so the sign-in, register, join and password-reset pages have no control on them. They still honour a choice already stored on the device, and fall back to the OS otherwise, so this only bites someone who wants to override the OS *before* they have signed in once.
 - **Links are generated, not delivered.** Invites and password recovery links are copied by the owner and sent by hand; there is no email integration. This is why recovery is owner-issued rather than self-service "forgot password".
 - **The guest list page polls every 15 s; the member list page does not poll at all.** So a member can be looking at a stale list while a guest shops. Unifying this — or moving both to SSE/WebSocket — is the natural fix.
 - Rate limiting is in-process and will not survive horizontal scaling (see §13) — moot while the deployment is deliberately one machine.

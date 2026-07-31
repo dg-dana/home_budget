@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { api, type SharedListView, type ShoppingItem } from '../api';
+import ThemeToggle from '../components/ThemeToggle';
 
 const GUEST_NAME_KEY = 'home-budget:guest-name';
 
@@ -126,18 +127,21 @@ export default function SharedListPage() {
             </span>
             <span>{view.name}</span>
           </span>
-          {view.canEdit && (
-            <div className="row" style={{ marginLeft: 'auto' }}>
-              <span className="muted small">Shopping as {guestName}</span>
-              <button
-                type="button"
-                className="button secondary small"
-                onClick={() => setNameConfirmed(false)}
-              >
-                Change
-              </button>
-            </div>
-          )}
+          <div className="row" style={{ marginLeft: 'auto' }}>
+            {view.canEdit && (
+              <>
+                <span className="muted small">Shopping as {guestName}</span>
+                <button
+                  type="button"
+                  className="button secondary small"
+                  onClick={() => setNameConfirmed(false)}
+                >
+                  Change
+                </button>
+              </>
+            )}
+            <ThemeToggle />
+          </div>
         </div>
       </header>
 

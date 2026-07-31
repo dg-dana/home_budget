@@ -10,7 +10,7 @@ Household expenses tracker + shared shopping lists. npm workspace: `server/` (Ex
 npm install
 npm run dev        # API :4000 + Vite :5173
 npm test           # vitest, server integration suite (132 tests)
-npm run test:e2e   # playwright, guest-flow smoke test (6 tests)
+npm run test:e2e   # playwright, guest-flow smoke test (7 tests)
 npm run test:all   # both
 npm run typecheck  # both workspaces + e2e/
 npm run build      # server/dist + web/dist
@@ -65,6 +65,11 @@ Migrations live in `server/src/migrations.ts` and run on every boot. **Add a new
 1. **Every household-scoped query filters on the caller's `household_id` in the SQL itself.** Never trust a client-supplied id; use `assertOwned()` for foreign ids.
 2. **Money is integer cents everywhere.** Convert only at the API boundary and at display time.
 3. **`/api/share/:token` and `/s/:token` are unauthenticated by design.** They must keep working with no cookie, and must never expose anything beyond the one list's name and items.
+
+Theming: colours are `light-dark()` pairs in one `:root` block, and the only two
+rules that name a theme set nothing but `color-scheme` (`ARCHITECTURE.md` §9.1).
+**The pre-paint script in `web/index.html` duplicates `applyTheme()` in
+`web/src/theme.ts` deliberately — change both or dark-mode devices flash white.**
 
 Also worth knowing: changing a password bumps `users.session_generation`, which invalidates that user's other sessions — a counter rather than a timestamp, deliberately (`ARCHITECTURE.md` §4).
 
