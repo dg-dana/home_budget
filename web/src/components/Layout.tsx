@@ -26,6 +26,7 @@ export default function Layout() {
             <NavLink to="/" end>
               Expenses
             </NavLink>
+            <NavLink to="/stats">Statistics</NavLink>
             <NavLink to="/recurring">Recurring</NavLink>
             <NavLink to="/lists">Shopping</NavLink>
             <NavLink to="/household">Household</NavLink>

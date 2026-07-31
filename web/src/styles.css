@@ -23,6 +23,18 @@
   --danger-soft: light-dark(#fee2e2, #45161a);
   --success: light-dark(#16a34a, #4ade80);
   --warning: light-dark(#d97706, #fbbf24);
+  /* Categorical series colours, for charts where each family member is a mark
+     of their own. A fixed order, assigned by the member's position in the
+     name-ordered list the API returns, so changing the date range never
+     repaints anyone. Checked for colour-blind separation and for contrast
+     against both surfaces; three of the light steps sit below 3:1, which is
+     why every chart using them also carries direct labels and a table. */
+  --series-1: light-dark(#2a78d6, #3987e5);
+  --series-2: light-dark(#eb6834, #d95926);
+  --series-3: light-dark(#1baf7a, #199e70);
+  --series-4: light-dark(#eda100, #c98500);
+  --series-5: light-dark(#e87ba4, #d55181);
+  --series-6: light-dark(#008300, #008300);
   --radius: 12px;
   /* light-dark() takes colours, not whole shadow values, so the two layers'
      colours are variables and --shadow composes them. */
@@ -176,6 +188,11 @@ a:hover { text-decoration: underline; }
   border-radius: var(--radius);
   padding: 1.1rem;
   box-shadow: var(--shadow);
+  /* Grid and flex items default to min-width:auto, which lets a wide child —
+     a table, a chart with many columns — push the card past the viewport and
+     scroll the whole page sideways. Zero here keeps the card at its column
+     width so those children scroll inside their own box instead. */
+  min-width: 0;
 }
 
 .card-title {
@@ -464,6 +481,82 @@ input[type='checkbox'] {
   background: var(--accent);
   border-radius: 6px 6px 0 0;
   min-height: 3px;
+}
+
+/* Month-by-month spending, one stacked column per month. Columns scroll
+   sideways rather than squeezing, so a 24-month range stays readable on a
+   phone. */
+.stacked-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+  height: 170px;
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
+}
+.stacked-col {
+  flex: 1 0 34px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  height: 100%;
+  justify-content: flex-end;
+}
+/* The card colour shows through the 2px gaps, which is what keeps two adjacent
+   segments readable as two rather than one blended band. */
+.stacked-bar {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--surface);
+  border-radius: 6px 6px 0 0;
+  overflow: hidden;
+  min-height: 2px;
+}
+.stacked-seg { min-height: 3px; }
+.stacked-label {
+  font-size: 0.72rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* Two month inputs side by side, kept narrow so the range picker stays a slim
+   strip above the charts rather than a full-width block. */
+.range-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  padding: 0.85rem 1.1rem;
+}
+.range-picker > div { flex: 1 1 150px; max-width: 240px; }
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.9rem;
+  margin-top: 0.8rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.legend > * {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex: none;
+}
+
+/* Money in a column lines up only with tabular figures. */
+.num {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
 }
 
 /* --------------------------------------------------------------- shared */

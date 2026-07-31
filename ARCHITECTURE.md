@@ -161,6 +161,34 @@ so the UI can badge them.
 - `shoppingItems.ts` — **item operations shared by both the member and guest routes.** Both paths call the same functions with a different `actorName`, so guest and member edits can never diverge in behaviour.
 - `routes/` — `auth`, `household`, `categories`, `expenses`, `recurring`, `lists`, `share`.
 
+### The two reporting endpoints
+
+`GET /expenses/summary` and `GET /expenses/stats` look similar and answer
+different questions. Keep them apart rather than merging them.
+
+- **`/summary?month=` is one month**: the total, each category against its budget,
+  a per-member split and the six-month trend. It is what the dashboard needs.
+- **`/stats?from=&to=` is a range of months**: totals, a per-member split, a
+  per-category split, the **cross-tab of the two**, and a per-month series
+  broken down by payer. It is what the statistics page needs.
+- Both materialise recurring expenses first (§7), so both are reads that write.
+- **Spending with no payer or no category is a row with a `null` id**, not a
+  dropped row and not a separate scalar. A removed member's expenses and
+  uncategorised spending both still exist (§3), so the per-member and
+  per-category breakdowns each add up to the overall total — which is what makes
+  the cross-tab trustworthy. The row carries a `null` **name** too: what to call
+  it ("Unassigned", "Uncategorised") is a display decision and lives in the UI.
+- **Members come back ordered by name, never by spend.** The order decides each
+  member's colour on the page, and a colour that moved when the date range
+  changed would make every chart lie. There is a test for the ordering.
+- The cross-tab sends only the pairs that have spending; the UI fills the rest
+  of the grid with zeroes. A household with 6 members and 10 categories would
+  otherwise send 60 cells to describe a handful.
+- The range is capped at **24 months** (`MAX_STATS_MONTHS`), so one request
+  cannot ask for the entire history.
+- It needed no migration and no new table: it is a different question asked of
+  the rows that were already there.
+
 ### Conventions to follow
 
 - Throw `HttpError` (or `badRequest`/`notFound`/`forbidden`/…) from anywhere; the error middleware turns it into JSON. Do not hand-roll `res.status(...).json({error})`.
@@ -192,9 +220,38 @@ so the UI can badge them.
 - `ThemeToggle` sits in both headers: the member `Layout` and `SharedListPage`'s own guest header. Three states, not a switch, because "match device" is the default and a two-way toggle would strand anyone whose phone flips to dark at sunset.
 - **The signed-out pages get it too, via `AuthPage`** — the shell every `.auth-page` screen renders through (sign-in, register, join, reset, and the guest page's own error and name-prompt states). They have no header to hold the control, and the sign-in page is where most people land: with no toggle there, the only route to dark mode was to sign in first. The toggle is absolutely positioned in the corner so the card stays centred rather than being pushed down by a second grid row.
 
+### 9.2 Charts and the statistics page
+
+`/stats` is where the household sees who spent what, on which categories, over a
+range of months. The charts are plain CSS — divs with widths and heights, no
+charting library — and follow a few rules that are easy to undo by accident:
+
+- **Series colours are `--series-1` … `--series-6` in the same `:root` block as
+  everything else** (§9.1), one `light-dark()` pair each. They are a
+  colour-blind-safe set in a fixed order, checked for separation between
+  neighbours and for contrast against both surfaces. **Do not reorder them and
+  do not add a seventh by picking a nice colour** — the order is the safety
+  mechanism, and a member past the last slot deliberately folds into a grey
+  "Other" bucket instead of getting an invented hue.
+- **A member's colour comes from their position in the API's name-ordered list**,
+  never from their rank. Sorting the display by spend is fine; sorting the
+  colour assignment by spend is not.
+- Because three of the light-mode series steps sit below 3:1 against white, the
+  page always carries **direct labels and the cross-tab table**. Colour is never
+  the only way to read a number here — that is what makes the palette legal.
+- Stacked segments are separated by a **2px gap showing the card colour**.
+  Without it two adjacent segments blend into one band.
+- Category bars use the **category's own colour from the database**, not a series
+  slot. Categories already have an identity colour; members do not.
+- **Wide children scroll inside their card, never sideways across the page.**
+  `.card { min-width: 0 }` is what makes that work: grid and flex items default
+  to `min-width: auto`, so before it a 24-column chart or a wide table dragged
+  the whole layout past the viewport on a phone.
+
 ### Routing
 
 - Public: `/login`, `/register`, `/join/:token`, and `/s/:token`.
+- Member pages: `/` (expenses), `/stats`, `/recurring`, `/lists`, `/lists/:id`, `/household`.
 - `/s/:token` (the guest list) sits **outside the `RequireAuth` layout entirely** — it renders its own header and never touches session state. Keep it that way; it must work for someone with no cookie.
 - Everything else is nested under `RequireAuth` → `Layout`.
 
@@ -206,7 +263,7 @@ Two suites, run together with `npm run test:all`.
 
 ### Server integration suite — Vitest, `server/test/`
 
-- 132 tests, run with `npm test` from the repo root.
+- 142 tests, run with `npm test` from the repo root.
 - They are **integration tests over real HTTP**, not unit tests: each file boots the actual app on an ephemeral port and drives it with a cookie-aware client. There is no mocking of the database, the router or the session.
 - `test/setup.ts` runs before any application module is imported and points `DATABASE_PATH` at a unique temp file. Vitest gives each test file its own module registry, so **every test file gets its own SQLite database** and files can run in parallel.
 - `resetDatabase()` truncates every table in `beforeEach`.
@@ -218,7 +275,7 @@ Two suites, run together with `npm run test:all`.
 - `isolation.test.ts` — **the most important file.** Two households, and every route checked to confirm one cannot see or touch the other's rows.
 - `share.test.ts` — guest access: what a guest can do, what the link must never expose, view-only enforcement, revocation, token reuse.
 - `auth.test.ts` — registration, login, forged/expired/tampered cookies, and the full invite lifecycle.
-- `expenses.test.ts` — cents arithmetic, month-boundary maths, summary aggregation, and what survives a category or member deletion.
+- `expenses.test.ts` — cents arithmetic, month-boundary maths, summary aggregation, and what survives a category or member deletion. Also the statistics endpoint: the per-member and per-category splits, the member/category cross-tab adding up to the same money as the totals, months with no spending, the name ordering that pins each member's colour, and the range validation.
 - `household.test.ts` — owner vs member permissions, cascade behaviour, list mechanics.
 - `recurring.test.ts` — recurrence date maths as a pure function (month-end clamping, leap years, rollovers), then catch-up, idempotency, pause/resume.
 - `migrations.test.ts` — fresh builds, repeat runs being no-ops, and the pre-migration-system adoption path.
@@ -305,7 +362,7 @@ Eight deliberate regressions were introduced, and each was caught by a failing t
 
 Honest list — these are real, and none is currently blocking.
 
-- **Frontend coverage is the guest flow plus one sign-in page test.** The expenses dashboard, budgets, invites and household settings have no browser tests — changes there still need checking by hand, against the built app rather than by reading the CSS.
+- **Frontend coverage is the guest flow plus one sign-in page test.** The expenses dashboard, budgets, statistics, invites and household settings have no browser tests — changes there still need checking by hand, against the built app rather than by reading the CSS.
 - **Links are generated, not delivered.** Invites and password recovery links are copied by the owner and sent by hand; there is no email integration. This is why recovery is owner-issued rather than self-service "forgot password".
 - **The guest list page polls every 15 s; the member list page does not poll at all.** So a member can be looking at a stale list while a guest shops. Unifying this — or moving both to SSE/WebSocket — is the natural fix.
 - Rate limiting is in-process and will not survive horizontal scaling (see §13) — moot while the deployment is deliberately one machine.

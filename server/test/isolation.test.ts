@@ -133,4 +133,26 @@ describe('cross-household isolation', () => {
     expect(aliceSummary.body.total_cents).toBe(10000);
     expect(bobSummary.body.total_cents).toBe(700);
   });
+
+  it('scopes the statistics to the calling household', async () => {
+    const aliceCategory = (await alice.client.get('/api/categories')).body[0];
+    await alice.client.post('/api/expenses', {
+      amount: 100,
+      categoryId: aliceCategory.id,
+      spentOn: '2026-03-04',
+    });
+    await bob.client.post('/api/expenses', { amount: 7, spentOn: '2026-03-04' });
+
+    const stats = await bob.client.get('/api/expenses/stats?from=2026-03&to=2026-03');
+    expect(stats.body.total_cents).toBe(700);
+    // Neither Alice's money, nor her name, nor her categories appear anywhere.
+    expect(stats.body.members.map((row: any) => row.user_id)).toEqual([bob.userId]);
+    expect(stats.body.categories.every((row: any) => row.category_id !== aliceCategory.id)).toBe(true);
+    expect(stats.body.categories.reduce((sum: number, row: any) => sum + row.spent_cents, 0)).toBe(700);
+    expect(stats.body.matrix.every((row: any) => row.user_id !== alice.userId)).toBe(true);
+    expect(stats.body.monthly[0].by_member).toEqual([{ user_id: bob.userId, spent_cents: 700 }]);
+
+    const aliceStats = await alice.client.get('/api/expenses/stats?from=2026-03&to=2026-03');
+    expect(aliceStats.body.total_cents).toBe(10000);
+  });
 });

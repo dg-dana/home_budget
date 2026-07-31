@@ -12,6 +12,9 @@ expensesRouter.use(requireAuth);
 const MONTH_PATTERN = /^\d{4}-\d{2}$/;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
+/** Upper bound on a statistics range, so one request cannot ask for everything. */
+const MAX_STATS_MONTHS = 24;
+
 const expenseSchema = z.object({
   // Amount in major currency units (e.g. 12.40), converted to integer cents for storage.
   amount: z.number().positive('Amount must be greater than zero').max(1_000_000_000),
@@ -39,6 +42,19 @@ function monthRange(month: string): { start: string; end: string } {
 }
 
 const currentMonth = () => new Date().toISOString().slice(0, 7);
+
+/** Steps a YYYY-MM month by whole months, in either direction. */
+function shiftMonth(month: string, delta: number): string {
+  const index = Number(month.slice(0, 4)) * 12 + Number(month.slice(5, 7)) - 1 + delta;
+  return `${String(Math.floor(index / 12)).padStart(4, '0')}-${String((index % 12) + 1).padStart(2, '0')}`;
+}
+
+/** Every month from `from` to `to`, inclusive, oldest first. */
+function monthsInRange(from: string, to: string): string[] {
+  const months: string[] = [];
+  for (let month = from; month <= to; month = shiftMonth(month, 1)) months.push(month);
+  return months;
+}
 
 /**
  * Verifies a category / member id belongs to this household before it is
@@ -171,6 +187,151 @@ expensesRouter.get(
       uncategorised_cents: uncategorised.spent_cents,
       by_member: byMember,
       trend: trend.reverse(),
+    });
+  }),
+);
+
+/**
+ * Statistics over a range of months: who spent how much, on what, and the
+ * cross-tab of the two. Unlike `/summary` (one month, budgets, trend) this
+ * answers "how does the household divide up".
+ *
+ * Spending with no payer (a removed member's expenses) and with no category
+ * both appear as a row with a `null` id rather than being dropped, so the
+ * per-member and per-category totals always add up to the overall total.
+ * They carry a `null` name too — what to call them is a display decision.
+ */
+expensesRouter.get(
+  '/stats',
+  asyncHandler((req, res) => {
+    const user = currentUser(req);
+    materialiseDueExpenses(user.householdId);
+
+    const to = typeof req.query.to === 'string' && req.query.to ? req.query.to : currentMonth();
+    const from =
+      typeof req.query.from === 'string' && req.query.from ? req.query.from : shiftMonth(to, -5);
+    // monthRange also validates the format, throwing a 400 on anything else.
+    const { start } = monthRange(from);
+    const { end } = monthRange(to);
+    if (from > to) throw badRequest('from must not be after to');
+    const months = monthsInRange(from, to);
+    if (months.length > MAX_STATS_MONTHS) {
+      throw badRequest(`Range must be ${MAX_STATS_MONTHS} months or fewer`);
+    }
+    const scope = [user.householdId, start, end];
+
+    const total = db
+      .prepare(
+        `SELECT COALESCE(SUM(amount_cents), 0) AS total_cents, COUNT(*) AS count
+         FROM expenses WHERE household_id = ? AND spent_on >= ? AND spent_on < ?`,
+      )
+      .get(...scope) as { total_cents: number; count: number };
+
+    // Ordered by name, not by spend: the order decides each member's colour in
+    // the UI, and changing the range must not repaint everyone.
+    const members = db
+      .prepare(
+        `SELECT u.id AS user_id, u.name,
+                COALESCE(SUM(e.amount_cents), 0) AS spent_cents, COUNT(e.id) AS count
+         FROM users u
+         LEFT JOIN expenses e
+           ON e.paid_by = u.id AND e.household_id = u.household_id
+              AND e.spent_on >= ? AND e.spent_on < ?
+         WHERE u.household_id = ?
+         GROUP BY u.id
+         ORDER BY u.name COLLATE NOCASE`,
+      )
+      .all(start, end, user.householdId) as Array<{
+      user_id: string | null;
+      name: string | null;
+      spent_cents: number;
+      count: number;
+    }>;
+
+    const unattributed = db
+      .prepare(
+        `SELECT COALESCE(SUM(amount_cents), 0) AS spent_cents, COUNT(*) AS count
+         FROM expenses
+         WHERE household_id = ? AND paid_by IS NULL AND spent_on >= ? AND spent_on < ?`,
+      )
+      .get(...scope) as { spent_cents: number; count: number };
+    if (unattributed.count > 0) {
+      members.push({ user_id: null, name: null, ...unattributed });
+    }
+
+    const categories = db
+      .prepare(
+        `SELECT c.id AS category_id, c.name, c.color,
+                COALESCE(SUM(e.amount_cents), 0) AS spent_cents, COUNT(e.id) AS count
+         FROM categories c
+         LEFT JOIN expenses e
+           ON e.category_id = c.id AND e.household_id = c.household_id
+              AND e.spent_on >= ? AND e.spent_on < ?
+         WHERE c.household_id = ?
+         GROUP BY c.id
+         ORDER BY spent_cents DESC, c.name COLLATE NOCASE`,
+      )
+      .all(start, end, user.householdId) as Array<{
+      category_id: string | null;
+      name: string | null;
+      color: string | null;
+      spent_cents: number;
+      count: number;
+    }>;
+
+    const uncategorised = db
+      .prepare(
+        `SELECT COALESCE(SUM(amount_cents), 0) AS spent_cents, COUNT(*) AS count
+         FROM expenses
+         WHERE household_id = ? AND category_id IS NULL AND spent_on >= ? AND spent_on < ?`,
+      )
+      .get(...scope) as { spent_cents: number; count: number };
+    if (uncategorised.count > 0) {
+      categories.push({ category_id: null, name: null, color: null, ...uncategorised });
+    }
+
+    // One cell per member/category pair that has any spending; the UI fills the
+    // rest of the grid with zeroes rather than the server sending them.
+    const matrix = db
+      .prepare(
+        `SELECT paid_by AS user_id, category_id,
+                SUM(amount_cents) AS spent_cents, COUNT(*) AS count
+         FROM expenses
+         WHERE household_id = ? AND spent_on >= ? AND spent_on < ?
+         GROUP BY paid_by, category_id`,
+      )
+      .all(...scope);
+
+    const monthlyRows = db
+      .prepare(
+        `SELECT substr(spent_on, 1, 7) AS month, paid_by AS user_id,
+                SUM(amount_cents) AS spent_cents
+         FROM expenses
+         WHERE household_id = ? AND spent_on >= ? AND spent_on < ?
+         GROUP BY month, paid_by`,
+      )
+      .all(...scope) as Array<{ month: string; user_id: string | null; spent_cents: number }>;
+
+    // Months with no spending still get an entry, so the chart has no gaps.
+    const monthly = months.map((month) => {
+      const rows = monthlyRows.filter((row) => row.month === month);
+      return {
+        month,
+        total_cents: rows.reduce((sum, row) => sum + row.spent_cents, 0),
+        by_member: rows.map(({ user_id, spent_cents }) => ({ user_id, spent_cents })),
+      };
+    });
+
+    res.json({
+      from,
+      to,
+      months: months.length,
+      total_cents: total.total_cents,
+      count: total.count,
+      members,
+      categories,
+      matrix,
+      monthly,
     });
   }),
 );
