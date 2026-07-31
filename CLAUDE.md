@@ -10,7 +10,7 @@ Household expenses tracker + shared shopping lists. npm workspace: `server/` (Ex
 npm install
 npm run dev        # API :4000 + Vite :5173
 npm test           # vitest, server integration suite (132 tests)
-npm run test:e2e   # playwright, guest-flow smoke test (7 tests)
+npm run test:e2e   # playwright, guest-flow smoke test (8 tests)
 npm run test:all   # both
 npm run typecheck  # both workspaces + e2e/
 npm run build      # server/dist + web/dist
@@ -51,8 +51,8 @@ Deploy, backup, restore and diagnostics all run from the GitHub Actions tab, not
 Things a fresh session would otherwise have to rediscover. Delete lines here as
 they stop being true.
 
-- **The default branch is `claude/expenses-shopping-app-4bmukm`**, not `main`. There are no pull requests; work has been committed and pushed straight to it. Note that GitHub only lists a `workflow_dispatch` workflow once it exists on the default branch — a new workflow added on a side branch is invisible in the Actions tab until merged.
-- **`deploy/Caddyfile` has an undeployed change**: comments reordered and the file formatted so `caddy fmt` stops warning at startup. Cosmetic, behaviour identical. It reaches the server with the next deploy.
+- **The default branch is `claude/expenses-shopping-app-4bmukm`**, not `main`. Early work was pushed straight to it; PR #1 (dark mode) was the first to go through review and was squash-merged. Note that GitHub only lists a `workflow_dispatch` workflow once it exists on the default branch — a new workflow added on a side branch is invisible in the Actions tab until merged.
+- **Merging does not deploy.** `deploy.yml` is `workflow_dispatch` only, so a merged change sits in the repo until someone runs **Deploy to Lightsail** from the Actions tab. Deploy run #4 (2026-07-31) shipped the dark mode work and the pending `deploy/Caddyfile` formatting change.
 - **Swap is newly added and unproven over time.** It was holding ~114 MB within eight minutes of boot, so the pressure is continuous rather than a spike. The nightly backup at 03:17 UTC is the suspected trigger for both wedges, but the evidence went with the reboot (`dmesg` is per-boot), so that stays a theory.
 - The `DOMAIN` repository variable is set, so **Diagnose the deployment** needs no inputs.
 
@@ -70,6 +70,9 @@ Theming: colours are `light-dark()` pairs in one `:root` block, and the only two
 rules that name a theme set nothing but `color-scheme` (`ARCHITECTURE.md` §9.1).
 **The pre-paint script in `web/index.html` duplicates `applyTheme()` in
 `web/src/theme.ts` deliberately — change both or dark-mode devices flash white.**
+The toggle reaches every screen through two places: the two headers, and
+`AuthPage` for everything signed-out. A new signed-out page that renders a bare
+`<div className="auth-page">` instead of `<AuthPage>` silently loses it.
 
 Also worth knowing: changing a password bumps `users.session_generation`, which invalidates that user's other sessions — a counter rather than a timestamp, deliberately (`ARCHITECTURE.md` §4).
 

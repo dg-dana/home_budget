@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { api, type SharedListView, type ShoppingItem } from '../api';
 import ThemeToggle from '../components/ThemeToggle';
+import AuthPage from '../components/AuthPage';
 
 const GUEST_NAME_KEY = 'home-budget:guest-name';
 
@@ -75,13 +76,13 @@ export default function SharedListPage() {
 
   if (loadError) {
     return (
-      <div className="auth-page">
+      <AuthPage>
         <div className="card auth-card stack">
           <h1>Link not active</h1>
           <div className="alert">{loadError}</div>
           <p className="small muted">Ask whoever sent it to share the list again.</p>
         </div>
-      </div>
+      </AuthPage>
     );
   }
 
@@ -90,7 +91,7 @@ export default function SharedListPage() {
   // Ask a guest who they are once, so ticked-off items are attributable.
   if (view.canEdit && !nameConfirmed) {
     return (
-      <div className="auth-page">
+      <AuthPage>
         <form className="card auth-card stack" onSubmit={saveGuestName}>
           <div>
             <h1>{view.name}</h1>
@@ -110,7 +111,7 @@ export default function SharedListPage() {
             Open list
           </button>
         </form>
-      </div>
+      </AuthPage>
     );
   }
 

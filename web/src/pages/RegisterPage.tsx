@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api, type Household, type SessionUser } from '../api';
 import { useSession } from '../session';
+import AuthPage from '../components/AuthPage';
 
 const CURRENCIES = ['USD', 'EUR', 'GBP', 'ILS', 'CAD', 'AUD', 'CHF', 'SEK', 'PLN', 'INR'];
 
@@ -38,7 +39,7 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="auth-page">
+    <AuthPage>
       <form className="card auth-card stack" onSubmit={handleSubmit}>
         <div>
           <h1>Create your household</h1>
@@ -111,6 +112,6 @@ export default function RegisterPage() {
           Already have an account? <Link to="/login">Sign in</Link>
         </p>
       </form>
-    </div>
+    </AuthPage>
   );
 }

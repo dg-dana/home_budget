@@ -190,6 +190,7 @@ so the UI can badge them.
 - **No `data-theme` attribute at all means "follow the OS"** — that is the `color-scheme: light dark` on `:root`. Do not write `data-theme="system"`.
 - **An inline script in `web/index.html` applies the stored choice before first paint.** Without it, a dark-mode device flashes the light palette on every load while React boots. It duplicates `applyTheme()` in `theme.ts` on purpose — the two must be changed together, and there is an e2e test that blocks the JS bundle to prove the inline copy is doing the work.
 - `ThemeToggle` sits in both headers: the member `Layout` and `SharedListPage`'s own guest header. Three states, not a switch, because "match device" is the default and a two-way toggle would strand anyone whose phone flips to dark at sunset.
+- **The signed-out pages get it too, via `AuthPage`** — the shell every `.auth-page` screen renders through (sign-in, register, join, reset, and the guest page's own error and name-prompt states). They have no header to hold the control, and the sign-in page is where most people land: with no toggle there, the only route to dark mode was to sign in first. The toggle is absolutely positioned in the corner so the card stays centred rather than being pushed down by a second grid row.
 
 ### Routing
 
@@ -205,7 +206,7 @@ Two suites, run together with `npm run test:all`.
 
 ### Server integration suite — Vitest, `server/test/`
 
-- 75 tests, run with `npm test` from the repo root.
+- 132 tests, run with `npm test` from the repo root.
 - They are **integration tests over real HTTP**, not unit tests: each file boots the actual app on an ephemeral port and drives it with a cookie-aware client. There is no mocking of the database, the router or the session.
 - `test/setup.ts` runs before any application module is imported and points `DATABASE_PATH` at a unique temp file. Vitest gives each test file its own module registry, so **every test file gets its own SQLite database** and files can run in parallel.
 - `resetDatabase()` truncates every table in `beforeEach`.
@@ -226,7 +227,7 @@ Two suites, run together with `npm run test:all`.
 
 ### Browser smoke test — Playwright, `e2e/`
 
-- 7 tests, run with `npm run test:e2e`. Config is `playwright.config.ts` at the repo root.
+- 8 tests, run with `npm run test:e2e`. Config is `playwright.config.ts` at the repo root.
 - **Covers the guest flow only** — the riskiest path, because it is the one surface reachable without an account. It is a smoke test, not broad UI coverage. (The theme test lives here because the toggle is on the guest header too, so the guest suite can reach it.)
 - Playwright's `webServer` runs `npm run build && npm start`, so the tests drive **the production build**: one process serving the API and the built frontend, exactly as a deployment does.
 - The run gets a throwaway SQLite file, created in the config and deleted by `e2e/teardown.ts`.
@@ -234,13 +235,13 @@ Two suites, run together with `npm run test:all`.
 - Every guest gets `browser.newContext()` — a guest is *defined* by having no cookies and no carried-over storage, so sharing a context would defeat the point.
 - Tests create their own household, so they share nothing but the server and can run in parallel.
 
-What it asserts: a member creates and shares a list through the UI; a guest with no account opens the link, names themselves, adds an item and ticks one off; the member sees those changes. Plus view-only enforcement, instant revocation, the name prompt appearing only once, a dead token, that a guest is bounced off every private route, and that a chosen theme survives a reload without a flash.
+What it asserts: a member creates and shares a list through the UI; a guest with no account opens the link, names themselves, adds an item and ticks one off; the member sees those changes. Plus view-only enforcement, instant revocation, the name prompt appearing only once, a dead token, that a guest is bounced off every private route, that a chosen theme survives a reload without a flash, and that the sign-in page carries the toggle at all — the one signed-out screen everybody sees.
 
 **Use `click()`, not `check()`, on the item checkboxes.** They are controlled inputs that only flip once the server round-trip lands, so `check()`'s immediate state assertion fails. Assert the visible outcome instead.
 
 ### Both suites were verified by breaking the code
 
-Seven deliberate regressions were introduced, and each was caught by a failing test:
+Eight deliberate regressions were introduced, and each was caught by a failing test:
 
 1. Removing the `household_id` filter from the expenses list query → `isolation` failed.
 2. Adding `householdId` to the guest share response → `share` failed.
@@ -249,6 +250,7 @@ Seven deliberate regressions were introduced, and each was caught by a failing t
 5. Neutering the `RequireAuth` redirect → the Playwright "no way into the rest of the app" test failed.
 6. Deleting the pre-paint theme script from `index.html` → the Playwright theme test failed on the JS-blocked reload (React alone cannot satisfy it).
 7. Removing `:root[data-theme='dark'] { color-scheme: dark }` → the same test failed, because picking Dark then changed no colour.
+8. Taking `ThemeToggle` back out of `AuthPage` → the sign-in-page test failed, with no control to click.
 
 **Keep it that way.** When you add a test for an invariant, break the code once and confirm it fails. A test that has never failed has not been shown to test anything.
 
@@ -304,7 +306,6 @@ Seven deliberate regressions were introduced, and each was caught by a failing t
 Honest list — these are real, and none is currently blocking.
 
 - **Frontend coverage is the guest flow only.** The expenses dashboard, budgets, invites and household settings have no browser tests — changes there still need checking by hand.
-- **The theme toggle is only in the two headers**, so the sign-in, register, join and password-reset pages have no control on them. They still honour a choice already stored on the device, and fall back to the OS otherwise, so this only bites someone who wants to override the OS *before* they have signed in once.
 - **Links are generated, not delivered.** Invites and password recovery links are copied by the owner and sent by hand; there is no email integration. This is why recovery is owner-issued rather than self-service "forgot password".
 - **The guest list page polls every 15 s; the member list page does not poll at all.** So a member can be looking at a stale list while a guest shops. Unifying this — or moving both to SSE/WebSocket — is the natural fix.
 - Rate limiting is in-process and will not survive horizontal scaling (see §13) — moot while the deployment is deliberately one machine.

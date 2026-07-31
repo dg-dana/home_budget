@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, type Household, type SessionUser } from '../api';
 import { useSession } from '../session';
+import AuthPage from '../components/AuthPage';
 
 /**
  * Reached through a recovery link. No session is required — holding the link
@@ -48,7 +49,7 @@ export default function ResetPasswordPage() {
 
   if (loadError) {
     return (
-      <div className="auth-page">
+      <AuthPage>
         <div className="card auth-card stack">
           <h1>Link not usable</h1>
           <div className="alert">{loadError}</div>
@@ -56,14 +57,14 @@ export default function ResetPasswordPage() {
             Ask the household owner for a fresh link, or <Link to="/login">sign in</Link>.
           </p>
         </div>
-      </div>
+      </AuthPage>
     );
   }
 
   if (!account) return <div className="empty">Checking link…</div>;
 
   return (
-    <div className="auth-page">
+    <AuthPage>
       <form className="card auth-card stack" onSubmit={handleSubmit}>
         <div>
           <h1>Choose a new password</h1>
@@ -110,6 +111,6 @@ export default function ResetPasswordPage() {
           This will sign out any device already using this account.
         </p>
       </form>
-    </div>
+    </AuthPage>
   );
 }

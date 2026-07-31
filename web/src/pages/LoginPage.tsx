@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api, type Household, type SessionUser } from '../api';
 import { useSession } from '../session';
+import AuthPage from '../components/AuthPage';
 
 export default function LoginPage() {
   const { setSession } = useSession();
@@ -28,7 +29,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="auth-page">
+    <AuthPage>
       <form className="card auth-card stack" onSubmit={handleSubmit}>
         <div>
           <h1>Welcome back</h1>
@@ -72,6 +73,6 @@ export default function LoginPage() {
           Forgotten your password? Ask the household owner to send you a reset link.
         </p>
       </form>
-    </div>
+    </AuthPage>
   );
 }
