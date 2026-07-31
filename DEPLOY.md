@@ -71,6 +71,20 @@ otherwise.
 with a 30-day cache lifetime, while compose publishes TCP 443 only. Fixed by
 pinning `protocols h1 h2`.
 
+**It happened again on 2026-07-31**, roughly sixteen hours later and with the
+same signature — DNS fine, 22, 80 and 443 all silent, another force stop to
+recover. That second outage is what moved swap from "worth doing" to "do it
+now". Within eight minutes of the reboot the box had already pushed 114 MB
+into the new swap file, so the pressure is real and continuous, not a one-off
+spike.
+
+The OOM evidence for that night was lost with the restart — `dmesg` is
+per-boot — so the theory that the 03:17 nightly backup triggers it is
+plausible but unproven. Caddy's logs from just before the shutdown do show
+Docker's embedded DNS resolver failing (`lookup ... on 127.0.0.11:53: server
+misbehaving`), which is what a box in real distress looks like from the
+inside.
+
 The fix then failed to apply, silently, which is the part worth remembering:
 `docker compose up -d` does not recreate a container whose service definition
 is unchanged, and a bind-mounted Caddyfile's *contents* are not part of that
