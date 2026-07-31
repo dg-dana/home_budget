@@ -259,6 +259,13 @@ charting library — and follow a few rules that are easy to undo by accident:
 - **The table did not go away, it went under a `<details>`.** Angles answer
   "roughly who and what"; the numbers answer "exactly how much", and this is an
   app about money. It is also the relief the series palette depends on.
+- **A household is seeded with a category literally named "Other"**, so no fold
+  bucket may borrow that word. The category fold is "Everything else (n)" and
+  the member fold is "Other people". Three meanings of "Other" on one page was
+  the bug this replaced.
+- **One month is not a trend.** With a single point the drill-down prints the
+  figure and says to widen the range, rather than drawing a lone dot between two
+  identical axis labels.
 - **A category row in "Where it went" is a `<button>`** that opens that
   category's month-by-month line. It has to keep looking like the plain row it
   replaced, so `.category-row` strips the border, background, font and padding a
