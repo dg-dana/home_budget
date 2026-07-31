@@ -305,7 +305,7 @@ Eight deliberate regressions were introduced, and each was caught by a failing t
 
 Honest list — these are real, and none is currently blocking.
 
-- **Frontend coverage is the guest flow only.** The expenses dashboard, budgets, invites and household settings have no browser tests — changes there still need checking by hand.
+- **Frontend coverage is the guest flow plus one sign-in page test.** The expenses dashboard, budgets, invites and household settings have no browser tests — changes there still need checking by hand, against the built app rather than by reading the CSS.
 - **Links are generated, not delivered.** Invites and password recovery links are copied by the owner and sent by hand; there is no email integration. This is why recovery is owner-issued rather than self-service "forgot password".
 - **The guest list page polls every 15 s; the member list page does not poll at all.** So a member can be looking at a stale list while a guest shops. Unifying this — or moving both to SSE/WebSocket — is the natural fix.
 - Rate limiting is in-process and will not survive horizontal scaling (see §13) — moot while the deployment is deliberately one machine.
