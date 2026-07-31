@@ -1,5 +1,6 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useSession } from '../session';
+import ThemeToggle from './ThemeToggle';
 
 export default function Layout() {
   const { user, household, signOut } = useSession();
@@ -32,6 +33,7 @@ export default function Layout() {
 
           <div className="row">
             <span className="muted small">{user?.name}</span>
+            <ThemeToggle />
             <button type="button" className="button secondary small" onClick={handleSignOut}>
               Sign out
             </button>

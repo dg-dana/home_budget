@@ -142,6 +142,50 @@ test.describe('guest shopping list', () => {
     await guest.context().close();
   });
 
+  test('a guest can pick a theme and it survives a reload', async ({
+    browser,
+    request,
+    baseURL,
+  }) => {
+    const owner = await seedSharedList(request, baseURL!);
+    const guest = await openAsGuest(browser, owner.shareUrl);
+    await identifyAs(guest, 'Ruti');
+
+    const root = guest.locator('html');
+    const bodyColour = () =>
+      guest.evaluate(() => getComputedStyle(document.body).backgroundColor);
+
+    // No attribute at all to begin with: follow the device.
+    await expect(root).not.toHaveAttribute('data-theme', /./);
+    const systemColour = await bodyColour();
+
+    await guest.getByRole('button', { name: 'Dark' }).click();
+    await expect(root).toHaveAttribute('data-theme', 'dark');
+    const darkColour = await bodyColour();
+    expect(darkColour).not.toBe(systemColour);
+
+    await guest.reload();
+    await expect(root).toHaveAttribute('data-theme', 'dark');
+    await expect(guest.locator('body')).toHaveCSS('background-color', darkColour);
+
+    // And it is applied *before first paint*, not once React has mounted —
+    // otherwise every load flashes the light palette first. Blocking the bundle
+    // is what makes that testable: with React unable to run, the inline script
+    // in index.html is the only thing left that could have set the palette.
+    await guest.route('**/assets/*.js', (route) => route.abort());
+    await guest.reload();
+    await expect(root).toHaveAttribute('data-theme', 'dark');
+    expect(await bodyColour()).toBe(darkColour);
+    await guest.unroute('**/assets/*.js');
+    await guest.reload();
+
+    await guest.getByRole('button', { name: 'Match device' }).click();
+    await expect(root).not.toHaveAttribute('data-theme', /./);
+    expect(await bodyColour()).toBe(systemColour);
+
+    await guest.context().close();
+  });
+
   test('an invented share token shows the dead-link page', async ({ browser, baseURL }) => {
     const guest = await openAsGuest(browser, `${baseURL}/s/not-a-real-token`);
     await expect(guest.getByRole('heading', { name: 'Link not active' })).toBeVisible();

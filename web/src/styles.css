@@ -1,39 +1,43 @@
+/* One palette, both themes. `light-dark()` resolves against the element's used
+   `color-scheme`, so the two rules at the bottom of this block are the only
+   place in the stylesheet that mentions light or dark — everything else just
+   uses the variables and follows automatically. */
 :root {
-  --accent: #0f766e;
-  --accent-strong: #115e59;
-  --accent-soft: #ccfbf1;
-  --bg: #f6f7f9;
-  --surface: #ffffff;
-  --surface-alt: #f1f5f9;
-  --border: #e2e8f0;
-  --text: #0f172a;
-  --muted: #64748b;
-  --danger: #dc2626;
-  --danger-soft: #fee2e2;
-  --success: #16a34a;
-  --warning: #d97706;
+  color-scheme: light dark;
+
+  --accent: light-dark(#0f766e, #2dd4bf);
+  --accent-strong: light-dark(#115e59, #5eead4);
+  --accent-soft: light-dark(#ccfbf1, #134e4a);
+  /* Accent as *text*, on --accent-soft or on the page: the dark palette needs a
+     brighter teal here than --accent-strong to stay readable. */
+  --accent-text: light-dark(#115e59, #2dd4bf);
+  /* Text and glyphs sitting on a solid --accent fill. */
+  --on-accent: light-dark(#ffffff, #06211f);
+  --bg: light-dark(#f6f7f9, #0b1120);
+  --surface: light-dark(#ffffff, #131c31);
+  --surface-alt: light-dark(#f1f5f9, #1b2540);
+  --border: light-dark(#e2e8f0, #26314d);
+  --text: light-dark(#0f172a, #e2e8f0);
+  --muted: light-dark(#64748b, #94a3b8);
+  --danger: light-dark(#dc2626, #f87171);
+  --danger-soft: light-dark(#fee2e2, #45161a);
+  --success: light-dark(#16a34a, #4ade80);
+  --warning: light-dark(#d97706, #fbbf24);
   --radius: 12px;
-  --shadow: 0 1px 2px rgba(15, 23, 42, 0.06), 0 8px 24px rgba(15, 23, 42, 0.06);
+  /* light-dark() takes colours, not whole shadow values, so the two layers'
+     colours are variables and --shadow composes them. */
+  --shadow-near: light-dark(rgba(15, 23, 42, 0.06), rgba(0, 0, 0, 0.3));
+  --shadow-far: light-dark(rgba(15, 23, 42, 0.06), rgba(0, 0, 0, 0.25));
+  --shadow: 0 1px 2px var(--shadow-near), 0 8px 24px var(--shadow-far);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --accent: #2dd4bf;
-    --accent-strong: #5eead4;
-    --accent-soft: #134e4a;
-    --bg: #0b1120;
-    --surface: #131c31;
-    --surface-alt: #1b2540;
-    --border: #26314d;
-    --text: #e2e8f0;
-    --muted: #94a3b8;
-    --danger: #f87171;
-    --danger-soft: #45161a;
-    --success: #4ade80;
-    --warning: #fbbf24;
-    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.25);
-  }
-}
+/* The explicit choice. `data-theme` is set from localStorage by the inline
+   script in index.html before first paint, and thereafter by src/theme.ts; no
+   attribute at all means "follow the OS", which is the `light dark` above.
+   Setting color-scheme rather than re-listing colours also hands native
+   widgets — date pickers, scrollbars, the checkbox tick — the right palette. */
+:root[data-theme='light'] { color-scheme: light; }
+:root[data-theme='dark'] { color-scheme: dark; }
 
 * {
   box-sizing: border-box;
@@ -105,13 +109,10 @@ a:hover { text-decoration: underline; }
   height: 28px;
   border-radius: 8px;
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   display: grid;
   place-items: center;
   font-size: 0.9rem;
-}
-@media (prefers-color-scheme: dark) {
-  .brand-mark { color: #0b1120; }
 }
 
 .nav {
@@ -133,10 +134,7 @@ a:hover { text-decoration: underline; }
 }
 .nav a.active {
   background: var(--accent-soft);
-  color: var(--accent-strong);
-}
-@media (prefers-color-scheme: dark) {
-  .nav a.active { color: var(--accent); }
+  color: var(--accent-text);
 }
 
 .page {
@@ -259,16 +257,13 @@ input[type='checkbox'] {
 .button {
   border: 1px solid transparent;
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   padding: 0.55rem 1rem;
   border-radius: 9px;
   font: inherit;
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
-}
-@media (prefers-color-scheme: dark) {
-  .button { color: #06211f; }
 }
 .button:hover:not(:disabled) { background: var(--accent-strong); }
 .button:disabled { opacity: 0.55; cursor: not-allowed; }
@@ -305,6 +300,35 @@ input[type='checkbox'] {
 .icon-button:hover { background: var(--surface-alt); color: var(--text); }
 .icon-button.danger:hover { background: var(--danger-soft); color: var(--danger); }
 
+/* ----------------------------------------------------------- theme toggle */
+
+.theme-toggle {
+  display: inline-flex;
+  gap: 0.15rem;
+  padding: 0.15rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-alt);
+  flex: none;
+}
+
+.theme-option {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  line-height: 1;
+  padding: 0.3rem 0.5rem;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.theme-option:hover { color: var(--text); }
+.theme-option[aria-pressed='true'] {
+  background: var(--surface);
+  color: var(--accent-text);
+  box-shadow: 0 1px 2px var(--shadow-near);
+}
+
 /* --------------------------------------------------------------- alerts */
 
 .alert {
@@ -316,10 +340,7 @@ input[type='checkbox'] {
 }
 .alert.info {
   background: var(--accent-soft);
-  color: var(--accent-strong);
-}
-@media (prefers-color-scheme: dark) {
-  .alert.info { color: var(--accent); }
+  color: var(--accent-text);
 }
 
 .empty {
