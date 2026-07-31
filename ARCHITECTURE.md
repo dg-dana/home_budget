@@ -243,6 +243,18 @@ charting library — and follow a few rules that are easy to undo by accident:
   Without it two adjacent segments blend into one band.
 - Category bars use the **category's own colour from the database**, not a series
   slot. Categories already have an identity colour; members do not.
+- **The cross-tab is one pie per person**, each split by category — a single pie
+  cannot show two dimensions, and the question is a two-dimensional one. Slices
+  are capped at the household's **top five categories plus a grey "Other"**: a
+  pie stops being readable past about six, and the fold is decided once for the
+  whole household rather than per person, so a colour means the same thing in
+  everybody's pie and the pies can be compared with each other.
+- Pies are **all the same size**. Radius encoding an amount would ask people to
+  compare areas, which nobody does accurately; each person's total is printed
+  under their pie and shown as a bar further up instead.
+- **The table did not go away, it went under a `<details>`.** Angles answer
+  "roughly who and what"; the numbers answer "exactly how much", and this is an
+  app about money. It is also the relief the series palette depends on.
 - **Wide children scroll inside their card, never sideways across the page.**
   `.card { min-width: 0 }` is what makes that work: grid and flex items default
   to `min-width: auto`, so before it a 24-column chart or a wide table dragged

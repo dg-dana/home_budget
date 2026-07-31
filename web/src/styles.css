@@ -552,6 +552,37 @@ input[type='checkbox'] {
   flex: none;
 }
 
+/* One pie per person, so the same slice colours can be compared across people.
+   They shrink to two per row on a phone rather than becoming unreadable. */
+.pie-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 1.1rem;
+}
+.pie-cell { text-align: center; }
+.pie {
+  width: 100%;
+  max-width: 130px;
+  height: auto;
+  display: block;
+  margin: 0 auto 0.5rem;
+}
+.pie-name {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+/* The numbers behind the picture. Collapsed by default: the angles answer
+   "roughly who and what", the table answers "exactly how much". */
+.table-details { margin-top: 1.1rem; }
+.table-details > summary {
+  cursor: pointer;
+  color: var(--accent-text);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.table-details[open] > summary { margin-bottom: 0.6rem; }
+
 /* Money in a column lines up only with tabular figures. */
 .num {
   font-variant-numeric: tabular-nums;
