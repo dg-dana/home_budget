@@ -131,6 +131,39 @@ export interface Summary {
   trend: Array<{ month: string; total_cents: number }>;
 }
 
+/**
+ * Statistics over a range of months. A `null` id (with a `null` name) is real
+ * data, not a gap: spending whose payer was removed, or that has no category.
+ * Naming those rows is the UI's job, which is why the server leaves it out.
+ */
+export interface Stats {
+  from: string;
+  to: string;
+  months: number;
+  total_cents: number;
+  count: number;
+  members: Array<{ user_id: string | null; name: string | null; spent_cents: number; count: number }>;
+  categories: Array<{
+    category_id: string | null;
+    name: string | null;
+    color: string | null;
+    spent_cents: number;
+    count: number;
+  }>;
+  /** One cell per member/category pair that has spending; the rest are zero. */
+  matrix: Array<{
+    user_id: string | null;
+    category_id: string | null;
+    spent_cents: number;
+    count: number;
+  }>;
+  monthly: Array<{
+    month: string;
+    total_cents: number;
+    by_member: Array<{ user_id: string | null; spent_cents: number }>;
+  }>;
+}
+
 export interface ShoppingItem {
   id: string;
   name: string;

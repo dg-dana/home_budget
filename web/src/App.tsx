@@ -10,6 +10,7 @@ import RecurringPage from './pages/RecurringPage';
 import RegisterPage from './pages/RegisterPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 import SharedListPage from './pages/SharedListPage';
+import StatsPage from './pages/StatsPage';
 import { useSession } from './session';
 
 function RequireAuth({ children }: { children: JSX.Element }) {
@@ -61,6 +62,7 @@ export default function App() {
         }
       >
         <Route path="/" element={<ExpensesPage />} />
+        <Route path="/stats" element={<StatsPage />} />
         <Route path="/recurring" element={<RecurringPage />} />
         <Route path="/lists" element={<ListsPage />} />
         <Route path="/lists/:id" element={<ListDetailPage />} />

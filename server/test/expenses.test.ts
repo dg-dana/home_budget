@@ -221,6 +221,187 @@ describe('expenses', () => {
   });
 });
 
+describe('expense statistics', () => {
+  beforeAll(async () => {
+    await startServer({ enableRateLimits: false });
+  });
+  afterAll(stopServer);
+
+  let owner: Household;
+  let categories: Array<{ id: string; name: string }>;
+
+  beforeEach(async () => {
+    resetDatabase();
+    owner = await registerHousehold();
+    categories = (await owner.client.get('/api/categories')).body;
+  });
+
+  const statsFor = (from: string, to: string) =>
+    owner.client.get(`/api/expenses/stats?from=${from}&to=${to}`);
+
+  it('splits a multi-month range by member', async () => {
+    const member = await addMember(owner, 'Yossi');
+    await owner.client.post('/api/expenses', { amount: 60, spentOn: '2026-03-10' });
+    await owner.client.post('/api/expenses', { amount: 15.5, spentOn: '2026-04-02' });
+    await member.client.post('/api/expenses', { amount: 40, spentOn: '2026-04-11' });
+    // Outside the range: must not be counted.
+    await member.client.post('/api/expenses', { amount: 999, spentOn: '2026-05-01' });
+
+    const stats = await statsFor('2026-03', '2026-04');
+    expect(stats.status).toBe(200);
+    expect(stats.body.total_cents).toBe(11550);
+    expect(stats.body.count).toBe(3);
+    expect(stats.body.members.map((row: any) => [row.name, row.spent_cents, row.count])).toEqual([
+      ['Owner', 7550, 2],
+      ['Yossi', 4000, 1],
+    ]);
+  });
+
+  it('orders members by name, not by spend, so a colour never moves', async () => {
+    // 'Abigail' spends the least and must still come first.
+    const big = await addMember(owner, 'Zoe');
+    const small = await addMember(owner, 'Abigail');
+    await small.client.post('/api/expenses', { amount: 1, spentOn: '2026-04-01' });
+    await big.client.post('/api/expenses', { amount: 500, spentOn: '2026-04-01' });
+
+    const stats = await statsFor('2026-04', '2026-04');
+    expect(stats.body.members.map((row: any) => row.name)).toEqual(['Abigail', 'Owner', 'Zoe']);
+  });
+
+  it('splits the same range by category', async () => {
+    await owner.client.post('/api/expenses', {
+      amount: 30,
+      categoryId: categories[0].id,
+      spentOn: '2026-04-01',
+    });
+    await owner.client.post('/api/expenses', {
+      amount: 10,
+      categoryId: categories[1].id,
+      spentOn: '2026-04-02',
+    });
+
+    const stats = await statsFor('2026-04', '2026-04');
+    const spend = Object.fromEntries(
+      stats.body.categories.map((row: any) => [row.name, row.spent_cents]),
+    );
+    expect(spend[categories[0].name]).toBe(3000);
+    expect(spend[categories[1].name]).toBe(1000);
+    // Categories with no spending still appear, at zero.
+    expect(spend[categories[2].name]).toBe(0);
+    expect(stats.body.categories[0].color).toBeTruthy();
+  });
+
+  it('cross-tabs how much each member spent per category', async () => {
+    const member = await addMember(owner, 'Yossi');
+    const [food, transport] = categories;
+    await owner.client.post('/api/expenses', {
+      amount: 20,
+      categoryId: food.id,
+      spentOn: '2026-04-01',
+    });
+    await owner.client.post('/api/expenses', {
+      amount: 5,
+      categoryId: food.id,
+      spentOn: '2026-04-03',
+    });
+    await member.client.post('/api/expenses', {
+      amount: 12,
+      categoryId: food.id,
+      spentOn: '2026-04-02',
+    });
+    await member.client.post('/api/expenses', {
+      amount: 8,
+      categoryId: transport.id,
+      spentOn: '2026-04-02',
+    });
+
+    const stats = await statsFor('2026-04', '2026-04');
+    const cell = (userId: string, categoryId: string) =>
+      stats.body.matrix.find((row: any) => row.user_id === userId && row.category_id === categoryId);
+
+    expect(cell(owner.userId, food.id)).toMatchObject({ spent_cents: 2500, count: 2 });
+    expect(cell(member.userId, food.id)).toMatchObject({ spent_cents: 1200, count: 1 });
+    expect(cell(member.userId, transport.id)).toMatchObject({ spent_cents: 800, count: 1 });
+    // Pairs with no spending are simply absent rather than sent as zeroes.
+    expect(cell(owner.userId, transport.id)).toBeUndefined();
+
+    // The cross-tab adds up to the same money as the totals do.
+    const matrixTotal = stats.body.matrix.reduce((sum: number, row: any) => sum + row.spent_cents, 0);
+    expect(matrixTotal).toBe(stats.body.total_cents);
+  });
+
+  it('keeps spending with no payer or no category in the totals, under a null id', async () => {
+    const member = await addMember(owner, 'Yossi');
+    await member.client.post('/api/expenses', { amount: 25, spentOn: '2026-04-10' });
+    await owner.client.delete(`/api/household/members/${member.userId}`);
+
+    const stats = await statsFor('2026-04', '2026-04');
+    const orphan = stats.body.members.find((row: any) => row.user_id === null);
+    const uncategorised = stats.body.categories.find((row: any) => row.category_id === null);
+
+    expect(orphan).toMatchObject({ name: null, spent_cents: 2500, count: 1 });
+    expect(uncategorised).toMatchObject({ name: null, color: null, spent_cents: 2500 });
+    // Both breakdowns still account for every cent.
+    const memberTotal = stats.body.members.reduce((sum: number, row: any) => sum + row.spent_cents, 0);
+    const categoryTotal = stats.body.categories.reduce(
+      (sum: number, row: any) => sum + row.spent_cents,
+      0,
+    );
+    expect(memberTotal).toBe(2500);
+    expect(categoryTotal).toBe(2500);
+    expect(stats.body.matrix[0]).toMatchObject({ user_id: null, category_id: null });
+  });
+
+  it('reports every month in the range, including the empty ones', async () => {
+    const member = await addMember(owner, 'Yossi');
+    await owner.client.post('/api/expenses', { amount: 10, spentOn: '2026-01-15' });
+    await member.client.post('/api/expenses', { amount: 4, spentOn: '2026-03-02' });
+
+    const stats = await statsFor('2026-01', '2026-03');
+    expect(stats.body.months).toBe(3);
+    expect(stats.body.monthly.map((point: any) => [point.month, point.total_cents])).toEqual([
+      ['2026-01', 1000],
+      ['2026-02', 0],
+      ['2026-03', 400],
+    ]);
+    expect(stats.body.monthly[2].by_member).toEqual([{ user_id: member.userId, spent_cents: 400 }]);
+  });
+
+  it('crosses a year boundary', async () => {
+    await owner.client.post('/api/expenses', { amount: 10, spentOn: '2025-12-31' });
+    await owner.client.post('/api/expenses', { amount: 20, spentOn: '2026-01-01' });
+
+    const stats = await statsFor('2025-12', '2026-01');
+    expect(stats.body.monthly.map((point: any) => point.month)).toEqual(['2025-12', '2026-01']);
+    expect(stats.body.total_cents).toBe(3000);
+  });
+
+  it('defaults to the six months ending with this month', async () => {
+    const stats = await owner.client.get('/api/expenses/stats');
+    expect(stats.status).toBe(200);
+    expect(stats.body.months).toBe(6);
+    expect(stats.body.to).toBe(new Date().toISOString().slice(0, 7));
+    expect(stats.body.monthly).toHaveLength(6);
+    expect(stats.body.monthly[5].month).toBe(stats.body.to);
+  });
+
+  it('rejects a malformed, backwards or oversized range', async () => {
+    expect((await statsFor('2026-13', '2026-04')).status).toBe(400);
+    expect((await statsFor('April', '2026-04')).status).toBe(400);
+    expect((await statsFor('2026-04', '2026-1')).status).toBe(400);
+
+    const backwards = await statsFor('2026-06', '2026-01');
+    expect(backwards.status).toBe(400);
+    expect(backwards.body.error).toMatch(/from must not be after to/i);
+
+    const tooLong = await statsFor('2024-01', '2026-04');
+    expect(tooLong.status).toBe(400);
+    expect(tooLong.body.error).toMatch(/24 months/);
+    // The largest allowed range is still fine.
+    expect((await statsFor('2024-05', '2026-04')).body.months).toBe(24);
+  });
+});
+
 describe('categories', () => {
   beforeAll(async () => {
     await startServer({ enableRateLimits: false });
