@@ -44,7 +44,17 @@ Deploy, backup, restore and diagnostics all run from the GitHub Actions tab, not
 - **Never advertise a protocol the firewall drops.** Caddy pins `protocols h1 h2` because compose publishes TCP 443 only; enabling HTTP/3 without also opening UDP 443 makes browsers hang on a blank page. `DEPLOY.md` §"Enabling HTTP/3".
 - A green deploy does not mean a reachable site. The container health check runs *inside* the app container — the public URL is verified separately, at the end of the deploy.
 - **Changing `deploy/Caddyfile` requires reloading Caddy**, which the deploy now does. `docker compose up -d` will not do it for you: the file is bind-mounted, so its contents are not part of the service definition and Compose leaves the container alone. Copying a new Caddyfile without a reload deploys green and changes nothing.
-- The instance has ~110 MB free and **no swap**; it has already OOM-killed a process and wedged. Before blaming the app for an outage, check `free -m` in the diagnostic. `DEPLOY.md` §"Memory headroom".
+- **The instance is memory-tight.** 416 MB usable, and it wedged twice on 2026-07-30/31 — unreachable on every port, needing a Lightsail **Force stop**. 1 GB of swap now covers it (`DEPLOY.md` §"Memory headroom"), but before blaming the app for an outage, check `free -m` and the OOM line in the diagnostic. If it wedges again, the answer is the 1 GB bundle, not more patching.
+
+## Current state (2026-07-31)
+
+Things a fresh session would otherwise have to rediscover. Delete lines here as
+they stop being true.
+
+- **The default branch is `claude/expenses-shopping-app-4bmukm`**, not `main`. There are no pull requests; work has been committed and pushed straight to it. Note that GitHub only lists a `workflow_dispatch` workflow once it exists on the default branch — a new workflow added on a side branch is invisible in the Actions tab until merged.
+- **`deploy/Caddyfile` has an undeployed change**: comments reordered and the file formatted so `caddy fmt` stops warning at startup. Cosmetic, behaviour identical. It reaches the server with the next deploy.
+- **Swap is newly added and unproven over time.** It was holding ~114 MB within eight minutes of boot, so the pressure is continuous rather than a spike. The nightly backup at 03:17 UTC is the suspected trigger for both wedges, but the evidence went with the reboot (`dmesg` is per-boot), so that stays a theory.
+- The `DOMAIN` repository variable is set, so **Diagnose the deployment** needs no inputs.
 
 ## Schema changes
 
