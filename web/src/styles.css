@@ -469,10 +469,18 @@ input[type='checkbox'] {
 /* --------------------------------------------------------------- shared */
 
 .auth-page {
+  position: relative;
   min-height: 100vh;
   display: grid;
   place-items: center;
   padding: 1.5rem;
+}
+/* Out of flow, so the card stays centred on the page rather than being pushed
+   down by a second grid row. */
+.auth-page-corner {
+  position: absolute;
+  top: 1.5rem;
+  right: 1.5rem;
 }
 .auth-card {
   width: 100%;

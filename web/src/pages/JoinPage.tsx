@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, type Household, type SessionUser } from '../api';
 import { useSession } from '../session';
+import AuthPage from '../components/AuthPage';
 
 interface InvitePreview {
   householdName: string;
@@ -52,7 +53,7 @@ export default function JoinPage() {
 
   if (loadError) {
     return (
-      <div className="auth-page">
+      <AuthPage>
         <div className="card auth-card stack">
           <h1>Invite not usable</h1>
           <div className="alert">{loadError}</div>
@@ -60,14 +61,14 @@ export default function JoinPage() {
             Ask whoever invited you to send a fresh link, or <Link to="/login">sign in</Link>.
           </p>
         </div>
-      </div>
+      </AuthPage>
     );
   }
 
   if (!preview) return <div className="empty">Checking invite…</div>;
 
   return (
-    <div className="auth-page">
+    <AuthPage>
       <form className="card auth-card stack" onSubmit={handleSubmit}>
         <div>
           <h1>Join {preview.householdName}</h1>
@@ -111,6 +112,6 @@ export default function JoinPage() {
           {busy ? 'Joining…' : 'Join household'}
         </button>
       </form>
-    </div>
+    </AuthPage>
   );
 }

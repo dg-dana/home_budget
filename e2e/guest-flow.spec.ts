@@ -186,6 +186,38 @@ test.describe('guest shopping list', () => {
     await guest.context().close();
   });
 
+  test('the sign-in page carries the theme toggle', async ({ page }) => {
+    // Nobody signed in has a header to hold the toggle, so without one here the
+    // only route to dark mode is to sign in first — no use to whoever is
+    // looking at the sign-in page, which is where most people land.
+    await page.goto('/login');
+    const root = page.locator('html');
+    const bodyColour = () =>
+      page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+
+    await expect(root).not.toHaveAttribute('data-theme', /./);
+    const systemColour = await bodyColour();
+
+    await page.getByRole('button', { name: 'Dark' }).click();
+    await expect(root).toHaveAttribute('data-theme', 'dark');
+    const darkColour = await bodyColour();
+    expect(darkColour).not.toBe(systemColour);
+
+    // The choice is the device's, not the page's: it holds across the other
+    // signed-out pages rather than resetting on each one.
+    await page.goto('/register');
+    await expect(root).toHaveAttribute('data-theme', 'dark');
+    await expect(page.locator('body')).toHaveCSS('background-color', darkColour);
+
+    // Adding the toggle must not shove the card off centre.
+    await page.goto('/login');
+    const card = await page.locator('.auth-card').boundingBox();
+    const viewport = page.viewportSize()!;
+    const above = card!.y;
+    const below = viewport.height - (card!.y + card!.height);
+    expect(Math.abs(above - below)).toBeLessThan(2);
+  });
+
   test('an invented share token shows the dead-link page', async ({ browser, baseURL }) => {
     const guest = await openAsGuest(browser, `${baseURL}/s/not-a-real-token`);
     await expect(guest.getByRole('heading', { name: 'Link not active' })).toBeVisible();
