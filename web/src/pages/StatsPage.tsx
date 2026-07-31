@@ -30,6 +30,30 @@ const PRESETS: Array<{ label: string; months: number }> = [
 const memberName = (name: string | null) => name ?? 'Unassigned';
 const categoryName = (name: string | null) => name ?? 'Uncategorised';
 
+/**
+ * How many categories get a slice of their own before the tail is folded into
+ * "Other". A pie is only readable at a glance up to about six slices, and the
+ * fold is decided across the whole household so a category keeps the same
+ * colour — and the same meaning — in everybody's pie.
+ */
+const PIE_SLICES = 5;
+
+const pointOnCircle = (radius: number, degrees: number) => {
+  const radians = ((degrees - 90) * Math.PI) / 180;
+  return {
+    x: 50 + radius * Math.cos(radians),
+    y: 50 + radius * Math.sin(radians),
+  };
+};
+
+/** An SVG wedge in a 100x100 viewBox centred on (50, 50). */
+function wedge(radius: number, startDegrees: number, endDegrees: number): string {
+  const start = pointOnCircle(radius, startDegrees);
+  const end = pointOnCircle(radius, endDegrees);
+  const sweptMoreThanHalf = endDegrees - startDegrees > 180 ? 1 : 0;
+  return `M 50 50 L ${start.x} ${start.y} A ${radius} ${radius} 0 ${sweptMoreThanHalf} 1 ${end.x} ${end.y} Z`;
+}
+
 export default function StatsPage() {
   const { household } = useSession();
   const currency = household?.currency ?? 'USD';
@@ -121,8 +145,50 @@ export default function StatsPage() {
       ?.spent_cents ?? 0;
 
   const share = (cents: number) => (total > 0 ? Math.round((cents / total) * 100) : 0);
-  const rangeLabel =
-    from === to ? monthLabel(from) : `${monthLabel(from)} – ${monthLabel(to)}`;
+
+  /**
+   * The slice colours, chosen once for the household: the biggest categories
+   * keep their own colour, everything below the cut becomes one grey "Other".
+   * Deciding it here rather than per person is what lets the pies be compared
+   * with each other.
+   */
+  const slices = useMemo(() => {
+    const named = spentCategories.slice(0, PIE_SLICES).map((row) => ({
+      key: row.category_id ?? 'uncategorised',
+      label: categoryName(row.name),
+      color: row.color ?? 'var(--muted)',
+      ids: [row.category_id],
+    }));
+    const folded = spentCategories.slice(PIE_SLICES);
+    if (folded.length > 0) {
+      named.push({
+        key: 'other',
+        label: `Other (${folded.length})`,
+        color: 'var(--muted)',
+        ids: folded.map((row) => row.category_id),
+      });
+    }
+    return named;
+  }, [spentCategories]);
+
+  /** One pie per person: their spending split across those slices. */
+  const pies = spenders.map((member) => {
+    const parts = slices
+      .map((slice) => ({
+        ...slice,
+        cents: slice.ids.reduce((sum, id) => sum + cell(member.user_id, id), 0),
+      }))
+      .filter((part) => part.cents > 0);
+
+    let degrees = 0;
+    const wedges = parts.map((part) => {
+      const start = degrees;
+      degrees += (part.cents / member.spent_cents) * 360;
+      return { ...part, start, end: degrees };
+    });
+    return { member, wedges };
+  });
+  const rangeLabel = from === to ? monthLabel(from) : `${monthLabel(from)} – ${monthLabel(to)}`;
 
   return (
     <div className="stack">
@@ -303,7 +369,9 @@ export default function StatsPage() {
                   </span>
                   <div
                     className="stacked-bar"
-                    style={{ height: `${(point.total_cents / monthMax) * 100}%` }}
+                    style={{
+                      height: `${(point.total_cents / monthMax) * 100}%`,
+                    }}
                     title={`${monthLabel(point.month)}: ${formatMoney(point.total_cents, currency)}`}
                   >
                     {series.map((row) => {
@@ -345,61 +413,127 @@ export default function StatsPage() {
         {spenders.length === 0 || spentCategories.length === 0 ? (
           <p className="empty small">Nothing to cross-reference yet.</p>
         ) : (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Category</th>
-                  {spenders.map((member) => (
-                    <th key={member.user_id ?? 'unassigned'} className="num">
-                      {memberName(member.name)}
-                    </th>
-                  ))}
-                  <th className="num">Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                {spentCategories.map((row) => (
-                  <tr key={row.category_id ?? 'uncategorised'}>
-                    <td>
-                      {/* No wrapping: a narrow column would otherwise drop the
+          <>
+            <div className="legend" style={{ marginTop: 0, marginBottom: '1rem' }}>
+              {slices.map((slice) => (
+                <span key={slice.key}>
+                  <span className="swatch" style={{ background: slice.color }} aria-hidden="true" />
+                  {slice.label}
+                </span>
+              ))}
+            </div>
+
+            <div className="pie-grid">
+              {pies.map(({ member, wedges }) => (
+                <div className="pie-cell" key={member.user_id ?? 'unassigned'}>
+                  <svg
+                    className="pie"
+                    viewBox="0 0 100 100"
+                    role="img"
+                    aria-label={`${memberName(member.name)} spent ${formatMoney(
+                      member.spent_cents,
+                      currency,
+                    )}: ${wedges
+                      .map(
+                        (part) =>
+                          `${part.label} ${Math.round((part.cents / member.spent_cents) * 100)}%`,
+                      )
+                      .join(', ')}`}
+                  >
+                    {/* A lone slice is a whole circle; an arc from 0° to 360°
+                        would collapse to nothing. */}
+                    {wedges.length === 1 ? (
+                      <circle cx="50" cy="50" r="48" fill={wedges[0].color} />
+                    ) : (
+                      wedges.map((part) => (
+                        <path
+                          key={part.key}
+                          d={wedge(48, part.start, part.end)}
+                          fill={part.color}
+                          /* The card colour between slices, so neighbours read
+                             as two rather than one blended shape. */
+                          stroke="var(--surface)"
+                          strokeWidth="2"
+                        >
+                          <title>
+                            {`${memberName(member.name)} · ${part.label}: ${formatMoney(
+                              part.cents,
+                              currency,
+                            )} (${Math.round((part.cents / member.spent_cents) * 100)}%)`}
+                          </title>
+                        </path>
+                      ))
+                    )}
+                  </svg>
+                  <div className="pie-name">{memberName(member.name)}</div>
+                  <div className="muted small">{formatMoney(member.spent_cents, currency)}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Angles are for the glance; the numbers are for the argument
+                about who owes what. Both, rather than one or the other. */}
+            <details className="table-details">
+              <summary>Show the numbers</summary>
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Category</th>
+                      {spenders.map((member) => (
+                        <th key={member.user_id ?? 'unassigned'} className="num">
+                          {memberName(member.name)}
+                        </th>
+                      ))}
+                      <th className="num">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {spentCategories.map((row) => (
+                      <tr key={row.category_id ?? 'uncategorised'}>
+                        <td>
+                          {/* No wrapping: a narrow column would otherwise drop the
                           dot onto a line of its own. */}
-                      <span className="row" style={{ gap: '0.4rem', flexWrap: 'nowrap' }}>
-                        <span
-                          className="dot"
-                          style={{ background: row.color ?? 'var(--muted)' }}
-                          aria-hidden="true"
-                        />
-                        {categoryName(row.name)}
-                      </span>
-                    </td>
-                    {spenders.map((member) => {
-                      const cents = cell(member.user_id, row.category_id);
-                      return (
-                        <td key={member.user_id ?? 'unassigned'} className="num">
-                          {cents > 0 ? (
-                            formatMoney(cents, currency)
-                          ) : (
-                            <span className="muted">—</span>
-                          )}
+                          <span className="row" style={{ gap: '0.4rem', flexWrap: 'nowrap' }}>
+                            <span
+                              className="dot"
+                              style={{
+                                background: row.color ?? 'var(--muted)',
+                              }}
+                              aria-hidden="true"
+                            />
+                            {categoryName(row.name)}
+                          </span>
                         </td>
-                      );
-                    })}
-                    <td className="num strong">{formatMoney(row.spent_cents, currency)}</td>
-                  </tr>
-                ))}
-                <tr>
-                  <td className="strong">Total</td>
-                  {spenders.map((member) => (
-                    <td key={member.user_id ?? 'unassigned'} className="num strong">
-                      {formatMoney(member.spent_cents, currency)}
-                    </td>
-                  ))}
-                  <td className="num strong">{formatMoney(total, currency)}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+                        {spenders.map((member) => {
+                          const cents = cell(member.user_id, row.category_id);
+                          return (
+                            <td key={member.user_id ?? 'unassigned'} className="num">
+                              {cents > 0 ? (
+                                formatMoney(cents, currency)
+                              ) : (
+                                <span className="muted">—</span>
+                              )}
+                            </td>
+                          );
+                        })}
+                        <td className="num strong">{formatMoney(row.spent_cents, currency)}</td>
+                      </tr>
+                    ))}
+                    <tr>
+                      <td className="strong">Total</td>
+                      {spenders.map((member) => (
+                        <td key={member.user_id ?? 'unassigned'} className="num strong">
+                          {formatMoney(member.spent_cents, currency)}
+                        </td>
+                      ))}
+                      <td className="num strong">{formatMoney(total, currency)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </details>
+          </>
         )}
       </div>
     </div>
