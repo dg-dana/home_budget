@@ -78,6 +78,11 @@ now". Within eight minutes of the reboot the box had already pushed 114 MB
 into the new swap file, so the pressure is real and continuous, not a one-off
 spike.
 
+The database came through both force stops intact, checked by hand in the app
+afterwards. That is what SQLite's WAL is for, but it is worth having observed
+rather than assumed: two hypervisor-level power cuts, no corruption. A backup
+taken between them passed `integrity_check` as well.
+
 The OOM evidence for that night was lost with the restart — `dmesg` is
 per-boot — so the theory that the 03:17 nightly backup triggers it is
 plausible but unproven. Caddy's logs from just before the shutdown do show
