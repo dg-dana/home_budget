@@ -161,6 +161,8 @@ export interface Stats {
     month: string;
     total_cents: number;
     by_member: Array<{ user_id: string | null; spent_cents: number }>;
+    /** The same month split by category, for following one category over time. */
+    by_category: Array<{ category_id: string | null; spent_cents: number }>;
   }>;
 }
 
