@@ -81,10 +81,20 @@ function CategoryTrend({
     points[0],
   );
 
-  const x = (index: number) =>
-    points.length === 1
-      ? (left + right) / 2
-      : left + (index / (points.length - 1)) * (right - left);
+  // One month is not a trend: a lone dot with the same label at both ends reads
+  // as a broken chart. Say what the month was and what would fix it.
+  if (points.length < 2) {
+    return (
+      <div className="trend-panel">
+        <p className="muted small" style={{ margin: 0 }}>
+          {formatMoney(points[0].cents, currency)} in {monthLabel(points[0].month)}. Widen the range
+          to see how it moves.
+        </p>
+      </div>
+    );
+  }
+
+  const x = (index: number) => left + (index / (points.length - 1)) * (right - left);
   const y = (cents: number) => bottom - (cents / peak) * (bottom - top);
 
   const line = points.map((point, index) => `${x(index)},${y(point.cents)}`).join(' ');
@@ -210,7 +220,9 @@ export default function StatsPage() {
     if (folded.length > 0) {
       rows.push({
         key: 'folded',
-        label: folded.length === 1 ? memberName(folded[0].name) : 'Other',
+        // Not "Other": a household is seeded with a category of that name, and
+        // three different meanings of the word on one page is two too many.
+        label: folded.length === 1 ? memberName(folded[0].name) : 'Other people',
         color: FOLDED,
         ids: folded.map((row) => row.user_id),
       });
@@ -247,7 +259,8 @@ export default function StatsPage() {
     if (folded.length > 0) {
       named.push({
         key: 'other',
-        label: `Other (${folded.length})`,
+        // "Other" is a real seeded category name, so the fold cannot borrow it.
+        label: `Everything else (${folded.length})`,
         color: 'var(--muted)',
         ids: folded.map((row) => row.category_id),
       });
@@ -418,7 +431,10 @@ export default function StatsPage() {
                       aria-expanded={open}
                       onClick={() => setOpenCategory(open ? null : key)}
                     >
-                      <div className="budget-head">
+                      {/* Spans, not divs: a <button> takes phrasing content, and
+                          a <div> inside one is invalid however well it renders.
+                          The CSS gives these the layout the divs had. */}
+                      <span className="budget-head">
                         <span className="row" style={{ gap: '0.4rem', flexWrap: 'nowrap' }}>
                           <span
                             className="dot"
@@ -436,16 +452,16 @@ export default function StatsPage() {
                           <span className="strong">{formatMoney(row.spent_cents, currency)}</span>{' '}
                           <span className="muted small">{share(row.spent_cents)}%</span>
                         </span>
-                      </div>
-                      <div className="bar-track">
-                        <div
+                      </span>
+                      <span className="bar-track">
+                        <span
                           className="bar-fill"
                           style={{
                             width: `${(row.spent_cents / categoryMax) * 100}%`,
                             background: row.color ?? 'var(--muted)',
                           }}
                         />
-                      </div>
+                      </span>
                     </button>
                     {open && (
                       <CategoryTrend
