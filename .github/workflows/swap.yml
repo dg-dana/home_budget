@@ -1,0 +1,174 @@
+name: Add swap to the instance
+
+# Gives the instance a memory cushion it does not have by default.
+#
+# The 512 MB bundle reports ~416 MB usable, and Docker, Caddy and the OS take
+# most of it. With no swap, a small spike has nowhere to go: on 2026-07-30 the
+# kernel OOM-killed a routine apt-check and the instance wedged so hard that a
+# graceful stop hung and it had to be force-stopped. See DEPLOY.md §"Memory
+# headroom".
+#
+# Swap is slower than RAM — it is a disk file — so this is a safety net, not
+# extra capacity. That is why swappiness is set low: use it only under real
+# pressure, not for routine paging.
+#
+# Safe to re-run. It skips whatever is already in place and changes nothing
+# else. Nothing restarts; the site stays up throughout.
+#
+# Also written into deploy/bootstrap.sh, so a rebuilt server gets swap from the
+# start. This workflow exists for the instance that is already running.
+
+on:
+  workflow_dispatch:
+    inputs:
+      size:
+        description: 'Swap file size (e.g. 1G, 2G). 1G is plenty for this app.'
+        type: string
+        required: false
+        default: '1G'
+
+permissions:
+  contents: read
+
+jobs:
+  swap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check the secrets are configured
+        run: |
+          missing=
+          [ -z "${{ secrets.LIGHTSAIL_HOST }}" ]    && missing="$missing LIGHTSAIL_HOST"
+          [ -z "${{ secrets.LIGHTSAIL_SSH_KEY }}" ] && missing="$missing LIGHTSAIL_SSH_KEY"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secret(s):$missing — see DEPLOY.md."
+            exit 1
+          fi
+
+      - name: Set up SSH
+        env:
+          KEY: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+          HOST: ${{ secrets.LIGHTSAIL_HOST }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          if ! ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null; then
+            echo "::error::Port 22 is not answering. The instance may be down — run 'Diagnose the deployment'."
+            exit 1
+          fi
+
+      - name: Create and enable the swap file
+        env:
+          HOST: ${{ secrets.LIGHTSAIL_HOST }}
+          USER_NAME: ${{ secrets.LIGHTSAIL_USER || 'ubuntu' }}
+          SIZE: ${{ inputs.size }}
+        run: |
+          set -uo pipefail
+          {
+            echo "## Swap"
+            echo ""
+            echo '```'
+            ssh -i ~/.ssh/id_deploy -o ConnectTimeout=20 "$USER_NAME@$HOST" \
+              "SWAP_SIZE='$SIZE' bash -s" <<'REMOTE' 2>&1
+              set -uo pipefail
+
+              echo "== Before =="
+              free -m
+
+              if swapon --show | grep -q '/swapfile'; then
+                echo
+                echo "/swapfile is already active — nothing to create."
+              else
+                echo
+                echo "== Creating /swapfile ($SWAP_SIZE) =="
+                # Disk is ample (20 GB, ~18% used), but check rather than assume.
+                avail_kb=$(df -Pk / | awk 'NR==2 {print $4}')
+                if [ "$avail_kb" -lt 2097152 ]; then
+                  echo "FAIL: under 2 GB free on /. Not creating a swap file."
+                  exit 1
+                fi
+
+                sudo rm -f /swapfile
+                # fallocate is instant but not supported on every filesystem;
+                # dd always works, just slower.
+                if ! sudo fallocate -l "$SWAP_SIZE" /swapfile 2>/dev/null; then
+                  echo "fallocate unavailable, falling back to dd."
+                  count=$(echo "$SWAP_SIZE" | sed 's/[Gg]$//')
+                  case "$count" in
+                    ''|*[!0-9]*)
+                      echo "FAIL: cannot parse '$SWAP_SIZE' for the dd fallback. Use a whole number of GB, e.g. 1G."
+                      exit 1 ;;
+                  esac
+                  sudo dd if=/dev/zero of=/swapfile bs=1M count=$((count * 1024)) status=none
+                fi
+
+                # 600: the swap file can hold memory contents, so only root
+                # should ever be able to read it.
+                sudo chmod 600 /swapfile
+                sudo mkswap /swapfile > /dev/null
+                sudo swapon /swapfile
+                echo "Swap is on."
+              fi
+
+              echo
+              echo "== Persisting across reboots =="
+              if grep -q '^/swapfile ' /etc/fstab; then
+                echo "/etc/fstab already has the entry."
+              else
+                echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab > /dev/null
+                echo "Added to /etc/fstab."
+              fi
+
+              echo
+              echo "== Swappiness =="
+              # Default is 60, which pages eagerly. This box has a slow disk and
+              # only wants swap as a last resort before the OOM killer.
+              if [ -f /etc/sysctl.d/99-swappiness.conf ]; then
+                echo "Already configured: $(cat /etc/sysctl.d/99-swappiness.conf)"
+              else
+                was=$(cat /proc/sys/vm/swappiness)
+                echo 'vm.swappiness=10' | sudo tee /etc/sysctl.d/99-swappiness.conf > /dev/null
+                sudo sysctl -q -w vm.swappiness=10
+                echo "Set vm.swappiness=10 (was $was)."
+              fi
+
+              echo
+              echo "== After =="
+              free -m
+          REMOTE
+            echo '```'
+          } 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+          exit 0
+
+      # Reads the state back over a fresh connection rather than trusting the
+      # step above — the same reason the deploy checks the public URL.
+      - name: Verify it survived and is active
+        if: always()
+        env:
+          HOST: ${{ secrets.LIGHTSAIL_HOST }}
+          USER_NAME: ${{ secrets.LIGHTSAIL_USER || 'ubuntu' }}
+        run: |
+          set -uo pipefail
+          total=$(ssh -i ~/.ssh/id_deploy -o ConnectTimeout=20 "$USER_NAME@$HOST" \
+            "free -m | awk '/^Swap:/ {print \$2}'" 2>/dev/null || echo 0)
+          fstab=$(ssh -i ~/.ssh/id_deploy -o ConnectTimeout=20 "$USER_NAME@$HOST" \
+            "grep -c '^/swapfile ' /etc/fstab" 2>/dev/null || echo 0)
+
+          {
+            echo ""
+            if [ "${total:-0}" -gt 0 ] && [ "${fstab:-0}" -gt 0 ]; then
+              echo "**Done.** ${total} MB of swap is active, and it is in /etc/fstab so it"
+              echo "survives a reboot. The instance now has somewhere to put memory under"
+              echo "pressure instead of killing a process."
+            elif [ "${total:-0}" -gt 0 ]; then
+              echo "**Partly done.** ${total} MB of swap is active but the /etc/fstab entry is"
+              echo "missing, so it will vanish on the next reboot. Re-run this workflow."
+            else
+              echo "**Swap is not active.** Read the log above for the reason."
+            fi
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+          [ "${total:-0}" -gt 0 ] || exit 1

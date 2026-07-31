@@ -40,6 +40,29 @@ if ! id -nG "$USER" | grep -qw docker; then
   echo "    Added $USER to the docker group — log out and back in for it to apply."
 fi
 
+echo "==> Ensuring swap exists (skipped if already present)"
+# The 512 MB bundle reports ~416 MB usable and Docker, Caddy and the OS take
+# most of it. Without swap a small spike has nowhere to go: the live instance
+# OOM-killed a process and wedged badly enough to need a force stop. See
+# DEPLOY.md §"Memory headroom". Swappiness stays low — this is a safety net,
+# not extra capacity.
+if swapon --show | grep -q .; then
+  echo "    Swap is already active — leaving it alone."
+elif [ "$(df -Pk / | awk 'NR==2 {print $4}')" -lt 2097152 ]; then
+  echo "    Under 2 GB free on / — skipping swap. Add it by hand later if needed." >&2
+else
+  sudo fallocate -l 1G /swapfile 2> /dev/null ||
+    sudo dd if=/dev/zero of=/swapfile bs=1M count=1024 status=none
+  sudo chmod 600 /swapfile
+  sudo mkswap /swapfile > /dev/null
+  sudo swapon /swapfile
+  grep -q '^/swapfile ' /etc/fstab ||
+    echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab > /dev/null
+  echo 'vm.swappiness=10' | sudo tee /etc/sysctl.d/99-swappiness.conf > /dev/null
+  sudo sysctl -q -w vm.swappiness=10
+  echo "    Created 1 GB of swap, persisted in /etc/fstab."
+fi
+
 echo "==> Creating $APP_DIR"
 sudo mkdir -p "$APP_DIR/data"
 sudo chown -R "$USER:$USER" "$APP_DIR"

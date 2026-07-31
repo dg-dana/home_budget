@@ -384,19 +384,24 @@ kernel OOM-killed a routine `apt-check`, and the instance wedged hard enough
 that a graceful stop hung.
 
 Nothing is wrong with the $5 bundle for this workload, but it has no cushion.
-Two ways to give it one, cheapest first:
 
-```bash
-# 1 GB of swap. Survives reboots. Costs nothing but disk, of which there is
-# plenty — the root filesystem is 18% used.
-sudo fallocate -l 1G /swapfile && sudo chmod 600 /swapfile
-sudo mkswap /swapfile && sudo swapon /swapfile
-echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
-```
+**Actions → Add swap to the instance → Run workflow.** It creates a 1 GB swap
+file, persists it in `/etc/fstab`, sets `vm.swappiness=10` so swap is a last
+resort rather than routine, and reads the result back over a fresh connection
+to confirm. Nothing restarts and the site stays up. It is safe to re-run — it
+skips whatever is already there.
 
-Or move to the 1 GB bundle ($7/month) in the Lightsail console — **Manage →
-Change plan**, which requires a stop and start. Swap first; it is free and
-reversible, and `free -m` in the diagnostic will show whether it was enough.
+`deploy/bootstrap.sh` does the same on a fresh server, so this workflow is only
+needed for an instance that predates it.
+
+Swap is a disk file, so it is far slower than RAM. It is not extra capacity;
+it is the difference between "briefly slow" and "the OOM killer picks a
+process and the box wedges".
+
+If the diagnostic still shows memory pressure afterwards, move to the 1 GB
+bundle ($7/month) in the Lightsail console — **Manage → Change plan**, which
+requires a stop and start. Swap first: it is free, reversible, and `free -m` in
+the diagnostic shows whether it was enough.
 
 ---
 
