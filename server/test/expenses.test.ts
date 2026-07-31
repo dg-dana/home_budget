@@ -367,6 +367,50 @@ describe('expense statistics', () => {
     expect(stats.body.monthly[2].by_member).toEqual([{ user_id: member.userId, spent_cents: 400 }]);
   });
 
+  it('follows one category through the range, month by month', async () => {
+    const [food, transport] = categories;
+    await owner.client.post('/api/expenses', {
+      amount: 30,
+      categoryId: food.id,
+      spentOn: '2026-01-04',
+    });
+    await owner.client.post('/api/expenses', {
+      amount: 12,
+      categoryId: food.id,
+      spentOn: '2026-01-20',
+    });
+    await owner.client.post('/api/expenses', {
+      amount: 9,
+      categoryId: transport.id,
+      spentOn: '2026-02-10',
+    });
+    await owner.client.post('/api/expenses', {
+      amount: 7,
+      categoryId: food.id,
+      spentOn: '2026-03-01',
+    });
+    await owner.client.post('/api/expenses', { amount: 5, spentOn: '2026-03-02' });
+
+    const stats = await statsFor('2026-01', '2026-03');
+    const forCategory = (categoryId: string | null) =>
+      stats.body.monthly.map(
+        (point: any) =>
+          point.by_category.find((row: any) => row.category_id === categoryId)?.spent_cents ?? 0,
+      );
+
+    // January's two shops add up; February has none; March has one.
+    expect(forCategory(food.id)).toEqual([4200, 0, 700]);
+    expect(forCategory(transport.id)).toEqual([0, 900, 0]);
+    // Uncategorised spending is followable the same way, under a null id.
+    expect(forCategory(null)).toEqual([0, 0, 500]);
+
+    // Each month's categories add up to that month's total.
+    for (const point of stats.body.monthly) {
+      const summed = point.by_category.reduce((sum: number, row: any) => sum + row.spent_cents, 0);
+      expect(summed).toBe(point.total_cents);
+    }
+  });
+
   it('crosses a year boundary', async () => {
     await owner.client.post('/api/expenses', { amount: 10, spentOn: '2025-12-31' });
     await owner.client.post('/api/expenses', { amount: 20, spentOn: '2026-01-01' });

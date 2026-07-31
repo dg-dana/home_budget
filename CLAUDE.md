@@ -9,7 +9,7 @@ Household expenses tracker + shared shopping lists. npm workspace: `server/` (Ex
 ```bash
 npm install
 npm run dev        # API :4000 + Vite :5173
-npm test           # vitest, server integration suite (142 tests)
+npm test           # vitest, server integration suite (143 tests)
 npm run test:e2e   # playwright, guest-flow smoke test (8 tests)
 npm run test:all   # both
 npm run typecheck  # both workspaces + e2e/

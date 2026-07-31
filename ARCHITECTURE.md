@@ -170,7 +170,11 @@ different questions. Keep them apart rather than merging them.
   a per-member split and the six-month trend. It is what the dashboard needs.
 - **`/stats?from=&to=` is a range of months**: totals, a per-member split, a
   per-category split, the **cross-tab of the two**, and a per-month series
-  broken down by payer. It is what the statistics page needs.
+  broken down **both by payer and by category**. It is what the statistics page
+  needs. The per-category monthly split is what the category drill-down draws,
+  and it ships with the first response rather than behind a second request —
+  months x categories is a few hundred small numbers even at the 24-month cap,
+  and it makes opening a category instant with no loading state to design.
 - Both materialise recurring expenses first (§7), so both are reads that write.
 - **Spending with no payer or no category is a row with a `null` id**, not a
   dropped row and not a separate scalar. A removed member's expenses and
@@ -255,6 +259,16 @@ charting library — and follow a few rules that are easy to undo by accident:
 - **The table did not go away, it went under a `<details>`.** Angles answer
   "roughly who and what"; the numbers answer "exactly how much", and this is an
   app about money. It is also the relief the series palette depends on.
+- **A category row in "Where it went" is a `<button>`** that opens that
+  category's month-by-month line. It has to keep looking like the plain row it
+  replaced, so `.category-row` strips the border, background, font and padding a
+  button brings with it. Using a real button rather than a clickable `<div>` is
+  what gives it keyboard focus and `aria-expanded` for free.
+- **The drill-down is a line, not more bars.** It answers "how did this move",
+  which is a trend, and the page already spends its columns on the stacked
+  month-by-month chart. The baseline is zero — money compared against a
+  truncated axis exaggerates every wobble. Only the first and last month are
+  labelled; a tick per month collides past a handful.
 - **Wide children scroll inside their card, never sideways across the page.**
   `.card { min-width: 0 }` is what makes that work: grid and flex items default
   to `min-width: auto`, so before it a 24-column chart or a wide table dragged
@@ -275,7 +289,7 @@ Two suites, run together with `npm run test:all`.
 
 ### Server integration suite — Vitest, `server/test/`
 
-- 142 tests, run with `npm test` from the repo root.
+- 143 tests, run with `npm test` from the repo root.
 - They are **integration tests over real HTTP**, not unit tests: each file boots the actual app on an ephemeral port and drives it with a cookie-aware client. There is no mocking of the database, the router or the session.
 - `test/setup.ts` runs before any application module is imported and points `DATABASE_PATH` at a unique temp file. Vitest gives each test file its own module registry, so **every test file gets its own SQLite database** and files can run in parallel.
 - `resetDatabase()` truncates every table in `beforeEach`.

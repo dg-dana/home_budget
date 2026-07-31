@@ -312,6 +312,18 @@ expensesRouter.get(
       )
       .all(...scope) as Array<{ month: string; user_id: string | null; spent_cents: number }>;
 
+    // The same months split the other way, so a category can be followed
+    // through the range without asking the server again.
+    const monthlyByCategory = db
+      .prepare(
+        `SELECT substr(spent_on, 1, 7) AS month, category_id,
+                SUM(amount_cents) AS spent_cents
+         FROM expenses
+         WHERE household_id = ? AND spent_on >= ? AND spent_on < ?
+         GROUP BY month, category_id`,
+      )
+      .all(...scope) as Array<{ month: string; category_id: string | null; spent_cents: number }>;
+
     // Months with no spending still get an entry, so the chart has no gaps.
     const monthly = months.map((month) => {
       const rows = monthlyRows.filter((row) => row.month === month);
@@ -319,6 +331,9 @@ expensesRouter.get(
         month,
         total_cents: rows.reduce((sum, row) => sum + row.spent_cents, 0),
         by_member: rows.map(({ user_id, spent_cents }) => ({ user_id, spent_cents })),
+        by_category: monthlyByCategory
+          .filter((row) => row.month === month)
+          .map(({ category_id, spent_cents }) => ({ category_id, spent_cents })),
       };
     });
 

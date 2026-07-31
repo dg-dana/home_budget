@@ -54,6 +54,88 @@ function wedge(radius: number, startDegrees: number, endDegrees: number): string
   return `M 50 50 L ${start.x} ${start.y} A ${radius} ${radius} 0 ${sweptMoreThanHalf} 1 ${end.x} ${end.y} Z`;
 }
 
+/**
+ * One category followed through the range: a line over the months, with the
+ * area under it filled in the category's own colour. Drawn in a 300x90 user
+ * space and scaled to whatever width the card gives it.
+ */
+function CategoryTrend({
+  label,
+  color,
+  currency,
+  points,
+}: {
+  label: string;
+  color: string;
+  currency: string;
+  points: Array<{ month: string; cents: number }>;
+}) {
+  const top = 8;
+  const bottom = 74;
+  const left = 6;
+  const right = 294;
+  const peak = Math.max(1, ...points.map((point) => point.cents));
+  const spent = points.reduce((sum, point) => sum + point.cents, 0);
+  const busiest = points.reduce(
+    (best, point) => (point.cents > best.cents ? point : best),
+    points[0],
+  );
+
+  const x = (index: number) =>
+    points.length === 1
+      ? (left + right) / 2
+      : left + (index / (points.length - 1)) * (right - left);
+  const y = (cents: number) => bottom - (cents / peak) * (bottom - top);
+
+  const line = points.map((point, index) => `${x(index)},${y(point.cents)}`).join(' ');
+  const area = `M ${x(0)},${bottom} L ${line.split(' ').join(' L ')} L ${x(points.length - 1)},${bottom} Z`;
+
+  return (
+    <div className="trend-panel">
+      <svg
+        viewBox="0 0 300 90"
+        className="trend-chart"
+        role="img"
+        aria-label={`${label} by month: ${points
+          .map((point) => `${shortMonthLabel(point.month)} ${formatMoney(point.cents, currency)}`)
+          .join(', ')}`}
+      >
+        <line x1={left} y1={bottom} x2={right} y2={bottom} stroke="var(--border)" strokeWidth="1" />
+        <path d={area} fill={color} opacity="0.16" />
+        <polyline
+          points={line}
+          fill="none"
+          stroke={color}
+          strokeWidth="2"
+          strokeLinejoin="round"
+          strokeLinecap="round"
+        />
+        {points.map((point, index) => (
+          <g key={point.month}>
+            <circle cx={x(index)} cy={y(point.cents)} r="3" fill={color} />
+            {/* A bigger, invisible target: 3px of circle is not a hit area. */}
+            <circle cx={x(index)} cy={y(point.cents)} r="9" fill="transparent">
+              <title>{`${monthLabel(point.month)}: ${formatMoney(point.cents, currency)}`}</title>
+            </circle>
+          </g>
+        ))}
+        {/* Only the ends are labelled; a tick per month collides once a range
+            runs past a handful of them. */}
+        <text x={left} y="86" fontSize="9" fill="var(--muted)">
+          {shortMonthLabel(points[0].month)}
+        </text>
+        <text x={right} y="86" fontSize="9" fill="var(--muted)" textAnchor="end">
+          {shortMonthLabel(points[points.length - 1].month)}
+        </text>
+      </svg>
+      <p className="muted small" style={{ margin: 0 }}>
+        {formatMoney(Math.round(spent / points.length), currency)} a month on average · highest{' '}
+        {formatMoney(busiest.cents, currency)} in {monthLabel(busiest.month)}
+      </p>
+    </div>
+  );
+}
+
 export default function StatsPage() {
   const { household } = useSession();
   const currency = household?.currency ?? 'USD';
@@ -62,6 +144,8 @@ export default function StatsPage() {
   const [from, setFrom] = useState(() => shiftMonth(currentMonth(), -5));
   const [stats, setStats] = useState<Stats | null>(null);
   const [error, setError] = useState('');
+  /** Which category's trend is open, by id — 'uncategorised' for the null one. */
+  const [openCategory, setOpenCategory] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setStats(await api.get<Stats>(`/expenses/stats?from=${from}&to=${to}`));
@@ -319,35 +403,67 @@ export default function StatsPage() {
           {spentCategories.length === 0 ? (
             <p className="empty small">No spending to break down yet.</p>
           ) : (
-            spentCategories.map((row) => (
-              <div className="budget-row" key={row.category_id ?? 'uncategorised'}>
-                <div className="budget-head">
-                  <span className="row" style={{ gap: '0.4rem' }}>
-                    <span
-                      className="dot"
-                      style={{ background: row.color ?? 'var(--muted)' }}
-                      aria-hidden="true"
-                    />
-                    <span className={row.name === null ? 'muted' : undefined}>
-                      {categoryName(row.name)}
-                    </span>
-                  </span>
-                  <span className="num">
-                    <span className="strong">{formatMoney(row.spent_cents, currency)}</span>{' '}
-                    <span className="muted small">{share(row.spent_cents)}%</span>
-                  </span>
-                </div>
-                <div className="bar-track">
-                  <div
-                    className="bar-fill"
-                    style={{
-                      width: `${(row.spent_cents / categoryMax) * 100}%`,
-                      background: row.color ?? 'var(--muted)',
-                    }}
-                  />
-                </div>
-              </div>
-            ))
+            <>
+              <p className="muted small" style={{ margin: '-0.4rem 0 0.7rem' }}>
+                Pick a category to see how it moved over the range.
+              </p>
+              {spentCategories.map((row) => {
+                const key = row.category_id ?? 'uncategorised';
+                const open = openCategory === key;
+                return (
+                  <div className="budget-row" key={key}>
+                    <button
+                      type="button"
+                      className={`category-row${open ? ' open' : ''}`}
+                      aria-expanded={open}
+                      onClick={() => setOpenCategory(open ? null : key)}
+                    >
+                      <div className="budget-head">
+                        <span className="row" style={{ gap: '0.4rem', flexWrap: 'nowrap' }}>
+                          <span
+                            className="dot"
+                            style={{ background: row.color ?? 'var(--muted)' }}
+                            aria-hidden="true"
+                          />
+                          <span className={row.name === null ? 'muted' : undefined}>
+                            {categoryName(row.name)}
+                          </span>
+                          <span className="chevron" aria-hidden="true">
+                            {open ? '▾' : '▸'}
+                          </span>
+                        </span>
+                        <span className="num">
+                          <span className="strong">{formatMoney(row.spent_cents, currency)}</span>{' '}
+                          <span className="muted small">{share(row.spent_cents)}%</span>
+                        </span>
+                      </div>
+                      <div className="bar-track">
+                        <div
+                          className="bar-fill"
+                          style={{
+                            width: `${(row.spent_cents / categoryMax) * 100}%`,
+                            background: row.color ?? 'var(--muted)',
+                          }}
+                        />
+                      </div>
+                    </button>
+                    {open && (
+                      <CategoryTrend
+                        label={categoryName(row.name)}
+                        color={row.color ?? 'var(--muted)'}
+                        currency={currency}
+                        points={(stats?.monthly ?? []).map((point) => ({
+                          month: point.month,
+                          cents:
+                            point.by_category.find((entry) => entry.category_id === row.category_id)
+                              ?.spent_cents ?? 0,
+                        }))}
+                      />
+                    )}
+                  </div>
+                );
+              })}
+            </>
           )}
         </div>
       </div>

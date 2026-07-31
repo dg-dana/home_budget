@@ -552,6 +552,43 @@ input[type='checkbox'] {
   flex: none;
 }
 
+/* A category row is a button: pressing it opens that category's trend. It must
+   still look like the plain row it replaced, so everything a button brings with
+   it is stripped back out. */
+.category-row {
+  display: block;
+  width: 100%;
+  padding: 0.2rem 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 8px;
+}
+.category-row:hover .chevron,
+.category-row.open .chevron { color: var(--accent-text); }
+.chevron {
+  color: var(--muted);
+  font-size: 0.7rem;
+}
+
+.trend-panel {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0.5rem 0 0.2rem;
+  padding: 0.6rem 0.7rem;
+  background: var(--surface-alt);
+  border-radius: 9px;
+}
+.trend-chart {
+  width: 100%;
+  height: auto;
+  display: block;
+  overflow: visible;
+}
+
 /* One pie per person, so the same slice colours can be compared across people.
    They shrink to two per row on a phone rather than becoming unreadable. */
 .pie-grid {
