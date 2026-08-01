@@ -98,18 +98,30 @@ export async function seedStatsHousehold(
   return { email, api, members, categories: await (await api.get('/api/categories')).json() };
 }
 
-/** Signs a seeded household's owner into the browser and opens Statistics. */
-export async function openStatistics(page: Page, email: string) {
+/** Signs a seeded household's owner into the browser, landing on Expenses. */
+export async function signIn(page: Page, email: string) {
   await page.goto('/login');
   await page.getByLabel('Email').fill(email);
   await page.getByLabel('Password').fill(PASSWORD);
   await page.getByRole('button', { name: 'Sign in' }).click();
   await page.waitForURL('/');
-  // Through the header link, not a direct URL: a page nobody can navigate to is
-  // a page nobody has.
-  await page.getByRole('link', { name: 'Statistics' }).click();
-  await page.waitForURL('/stats');
 }
+
+/**
+ * Signs in and reaches a member page **through the header link**, never a
+ * direct URL: a page nobody can navigate to is a page nobody has.
+ */
+export async function openFromHeader(page: Page, email: string, link: string, url: string) {
+  await signIn(page, email);
+  // Exact, because the brand link carries the household's name and a household
+  // called "… Household" would otherwise match the Household nav link too.
+  await page.getByRole('link', { name: link, exact: true }).click();
+  await page.waitForURL(url);
+}
+
+/** Signs a seeded household's owner into the browser and opens Statistics. */
+export const openStatistics = (page: Page, email: string) =>
+  openFromHeader(page, email, 'Statistics', '/stats');
 
 /** The 15th of a month N months back, in local time — the app's own reckoning. */
 export function monthsAgo(count: number): string {

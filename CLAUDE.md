@@ -10,7 +10,7 @@ Household expenses tracker + shared shopping lists. npm workspace: `server/` (Ex
 npm install
 npm run dev        # API :4000 + Vite :5173
 npm test           # vitest, server integration suite (143 tests)
-npm run test:e2e   # playwright, guest flow + statistics page (12 tests)
+npm run test:e2e   # playwright, guest flow + statistics + narrow rows (14 tests)
 npm run test:all   # both
 npm run typecheck  # both workspaces + e2e/
 npm run build      # server/dist + web/dist
@@ -24,7 +24,7 @@ npm run backup     # consistent SQLite snapshot (online backup API, not cp)
 - `npm test` — `server/test/`, real HTTP against a real SQLite DB, no mocks. Each test file gets its own database.
 - `npm run test:e2e` — `e2e/`, Playwright against the **production build** (it runs `npm run build && npm start` itself). Covers the guest flow and the statistics page. It runs the server with `RATE_LIMITS=off`, which `config.ts` ignores in production.
 - **Do not run `playwright install`** — the sandbox ships a prebuilt Chromium and the config finds it.
-- Coverage gap: everything in `web/` except the guest flow, the sign-in page's theme toggle and the statistics page — the expenses dashboard, budgets, recurring, invites, settings. Changes there still need checking by hand.
+- Coverage gap: everything in `web/` except the guest flow, the sign-in page's theme toggle, the statistics page and the row widths `narrow-rows.spec.ts` pins at 390px — the expenses dashboard, budgets, recurring, invites, settings. Changes there still need checking by hand.
 - **To check a UI change by hand, run `node .claude/skills/preview-ui/preview.mjs <route>`** rather than reasoning about the CSS. It builds, runs the production build on a spare port against a throwaway database, seeds a three-person household, signs in, and screenshots the route in both themes at 1100px and 390px — reporting the body colour (proof the theme applied) and whether the header links to the page at all. `--skip-build` on repeat runs. See `.claude/skills/preview-ui/SKILL.md`.
 - Beware `pkill -f <pattern>` in a tool call: the pattern matches the shell's own command line, so it kills the call itself (exit 144, no output). Use a self-excluding pattern like `dist/inde[x].js`.
 - Adding a route means adding cases to `isolation.test.ts` (if household-scoped) and `share.test.ts` (if guest-reachable). **`node .claude/skills/route-coverage/audit.mjs` lists which routes no test calls at all** — it reads every file in `server/test/`, and matches on path shape, so it proves a route is reached, not that the case asserts anything. Its second list (exercised outside the file §15 names) is usually fine: `recurring.test.ts` keeps its own cross-household case. See `.claude/skills/route-coverage/SKILL.md`.
