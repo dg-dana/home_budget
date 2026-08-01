@@ -18,3 +18,6 @@ data/
 # Playwright
 test-results/
 playwright-report/
+
+# Screenshots from .claude/skills/preview-ui
+.preview/

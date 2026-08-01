@@ -360,6 +360,19 @@ The statistics suite also earned its place on the way in: the one-month test fai
 
 (Worth knowing: regression 5 initially failed to *compile* rather than failing a test, because `noUnusedLocals` caught the orphaned variable. Typecheck is part of the safety net, not separate from it.)
 
+### Looking at the pages the suites do not cover
+
+Everything in `web/` outside the guest flow, the sign-in toggle and the statistics page is unproven by any test, so a change there has to be looked at. `.claude/skills/preview-ui/` is the tool for that: it builds, runs the production build on a spare port against a throwaway database, seeds a three-person household with three months of expenses, signs in, and screenshots the routes you name in both themes at 1100px and 390px.
+
+```bash
+node .claude/skills/preview-ui/preview.mjs /            # the expenses dashboard
+node .claude/skills/preview-ui/preview.mjs /stats /lists/:id /s/:token --skip-build
+```
+
+Alongside each screenshot it reports the body colour — the cheap proof a theme applied (§9.1) — whether the header links to the page at all, and any console errors. Share links are opened in a context with no cookie, because a guest is defined by having none (§6).
+
+**It is for looking, not for proving.** A screenshot confirms today's change; only a test stops it regressing. When what you checked is an invariant rather than an appearance, write the test as well — and break the code once to watch it fail.
+
 ---
 
 ## 11. Deployment
