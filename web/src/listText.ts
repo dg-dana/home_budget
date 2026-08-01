@@ -23,18 +23,25 @@ export function listAsText(name: string, items: ShoppingItem[]): string {
   const done = items.filter((item) => item.is_checked === 1);
 
   if (items.length === 0) {
-    lines.push('', 'Nothing on the list yet.');
+    lines.push('Nothing on the list yet.');
     return lines.join('\n');
   }
 
-  if (open.length > 0) {
-    lines.push('', 'To buy:', ...open.flatMap(itemLines));
-  }
-  // Only worth a section when there is something outstanding to tell it apart
-  // from; a fully bought list reads better as a plain list of what was bought.
-  if (done.length > 0) {
-    lines.push('', open.length > 0 ? 'Already in the basket:' : 'All bought:', ...done.flatMap(itemLines));
-  }
+  /**
+   * The name runs straight into the first heading — a blank line there just
+   * pushes the shopping further down a phone screen. Blank lines earn their
+   * place *between* sections, where they separate two groups.
+   */
+  const section = (heading: string, rows: ShoppingItem[]) => {
+    if (lines.length > 1) lines.push('');
+    lines.push(heading, ...rows.flatMap(itemLines));
+  };
+
+  if (open.length > 0) section('To buy:', open);
+  // Only worth its own heading when there is something outstanding to tell it
+  // apart from; a fully bought list reads better as a plain list of what was
+  // bought.
+  if (done.length > 0) section(open.length > 0 ? 'Already in the basket:' : 'All bought:', done);
 
   return lines.join('\n');
 }

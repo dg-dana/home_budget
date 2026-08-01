@@ -266,7 +266,9 @@ different questions. Keep them apart rather than merging them.
   whole message to UCS-2 and halves that to 70. Names and comments may of
   course carry anything, but the app's own scaffolding — `- ` bullets, a
   two-space indent for a comment, `To buy:` / `Already in the basket:` headings
-  — adds nothing that costs a segment. Who added an item and who picked it up
+  — adds nothing that costs a segment. The name runs straight into the first
+  heading: a blank line there only pushes the shopping further down a phone
+  screen, and blank lines earn their place *between* sections. Who added an item and who picked it up
   are left out: useful on screen, noise in a message read in a shop.
 - **The comment sits behind a disclosure in the composer**, and is edited from
   the row through `window.prompt` — the same thing renaming a list does. Most
