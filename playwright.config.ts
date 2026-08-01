@@ -57,6 +57,10 @@ export default defineConfig({
       PORT: String(PORT),
       NODE_ENV: 'development',
       JWT_SECRET: 'e2e-secret-not-used-anywhere-real',
+      // A seven-person household plus every other test signs in far more often
+      // in 15 minutes than a real visitor ever would, and the auth limiter is
+      // right to refuse that. Production ignores this variable (config.ts).
+      RATE_LIMITS: 'off',
       DATABASE_PATH: process.env.E2E_DATABASE_PATH,
     },
   },

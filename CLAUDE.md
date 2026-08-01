@@ -10,7 +10,7 @@ Household expenses tracker + shared shopping lists. npm workspace: `server/` (Ex
 npm install
 npm run dev        # API :4000 + Vite :5173
 npm test           # vitest, server integration suite (143 tests)
-npm run test:e2e   # playwright, guest-flow smoke test (8 tests)
+npm run test:e2e   # playwright, guest flow + statistics page (12 tests)
 npm run test:all   # both
 npm run typecheck  # both workspaces + e2e/
 npm run build      # server/dist + web/dist
@@ -22,9 +22,9 @@ npm run backup     # consistent SQLite snapshot (online backup API, not cp)
 
 - CI (`.github/workflows/ci.yml`) runs typecheck plus both suites on every push.
 - `npm test` — `server/test/`, real HTTP against a real SQLite DB, no mocks. Each test file gets its own database.
-- `npm run test:e2e` — `e2e/`, Playwright against the **production build** (it runs `npm run build && npm start` itself). Covers the guest flow only.
+- `npm run test:e2e` — `e2e/`, Playwright against the **production build** (it runs `npm run build && npm start` itself). Covers the guest flow and the statistics page. It runs the server with `RATE_LIMITS=off`, which `config.ts` ignores in production.
 - **Do not run `playwright install`** — the sandbox ships a prebuilt Chromium and the config finds it.
-- Coverage gap: everything in `web/` except the guest flow and the sign-in page's theme toggle — the expenses dashboard, budgets, statistics, invites, settings. Changes there still need checking by hand.
+- Coverage gap: everything in `web/` except the guest flow, the sign-in page's theme toggle and the statistics page — the expenses dashboard, budgets, recurring, invites, settings. Changes there still need checking by hand.
 - **To check a UI change by hand**, build and run the real thing rather than reasoning about the CSS: `npm run build`, then `npm start` on a spare port with a throwaway `DATA_DIR`, and drive it with Playwright using the sandbox's Chromium (`executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome'` — the version dir moves, so glob `/opt/pw-browsers/chromium-*`). Screenshot at 1100px and 390px. Reading `getComputedStyle(document.body).backgroundColor` is the cheap way to prove a theme actually applied.
 - Beware `pkill -f <pattern>` in a tool call: the pattern matches the shell's own command line, so it kills the call itself (exit 144, no output). Use a self-excluding pattern like `dist/inde[x].js`.
 - Adding a route means adding cases to `isolation.test.ts` (if household-scoped) and `share.test.ts` (if guest-reachable).

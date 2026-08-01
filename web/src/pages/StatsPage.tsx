@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { api, type Stats } from '../api';
 import { currentMonth, formatMoney, monthLabel, shiftMonth, shortMonthLabel } from '../format';
 import { useSession } from '../session';
@@ -157,14 +157,29 @@ export default function StatsPage() {
   /** Which category's trend is open, by id — 'uncategorised' for the null one. */
   const [openCategory, setOpenCategory] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setStats(await api.get<Stats>(`/expenses/stats?from=${from}&to=${to}`));
-  }, [from, to]);
-
+  /**
+   * Changing the range while a request is still in flight leaves two of them
+   * racing, and the one that answers last wins — which can be the older one.
+   * The guard makes a superseded response land nowhere, so the charts can
+   * never disagree with the range the controls are showing. (The other pages
+   * fetch once per screen and do not need this; this one has four presets and
+   * two month pickers a click apart.)
+   */
   useEffect(() => {
+    let current = true;
     setError('');
-    load().catch((err: Error) => setError(err.message));
-  }, [load]);
+    api
+      .get<Stats>(`/expenses/stats?from=${from}&to=${to}`)
+      .then((data) => {
+        if (current) setStats(data);
+      })
+      .catch((err: Error) => {
+        if (current) setError(err.message);
+      });
+    return () => {
+      current = false;
+    };
+  }, [from, to]);
 
   const applyPreset = (months: number) => {
     const end = currentMonth();
