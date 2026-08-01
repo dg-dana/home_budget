@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api, type ShoppingListDetail } from '../api';
+import CopyListButton from '../components/CopyListButton';
 import ItemComposer from '../components/ItemComposer';
 import ItemRow from '../components/ItemRow';
 import { memberItemApi } from '../shoppingApi';
@@ -100,15 +101,18 @@ export default function ListDetailPage() {
       <div className="card">
         <div className="card-title">
           <h2>To buy</h2>
-          {done.length > 0 && (
-            <button
-              type="button"
-              className="button secondary small"
-              onClick={() => run(() => api.post(`/lists/${id}/items/clear-checked`))}
-            >
-              Clear {done.length} bought
-            </button>
-          )}
+          <div className="row">
+            <CopyListButton name={list.name} items={list.items} onError={setError} />
+            {done.length > 0 && (
+              <button
+                type="button"
+                className="button secondary small"
+                onClick={() => run(() => api.post(`/lists/${id}/items/clear-checked`))}
+              >
+                Clear {done.length} bought
+              </button>
+            )}
+          </div>
         </div>
 
         {list.items.length === 0 ? (

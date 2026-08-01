@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import { api, type SharedListView } from '../api';
 import ThemeToggle from '../components/ThemeToggle';
 import AuthPage from '../components/AuthPage';
+import CopyListButton from '../components/CopyListButton';
 import ItemComposer from '../components/ItemComposer';
 import ItemRow from '../components/ItemRow';
 import { guestItemApi } from '../shoppingApi';
@@ -148,7 +149,10 @@ export default function SharedListPage() {
         <div className="card">
           <div className="card-title">
             <h2>To buy</h2>
-            <span className="muted small">{open.length} left</span>
+            <div className="row">
+              <span className="muted small">{open.length} left</span>
+              <CopyListButton name={view.name} items={view.items} onError={setError} />
+            </div>
           </div>
 
           {view.items.length === 0 ? (
