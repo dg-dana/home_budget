@@ -211,6 +211,7 @@ different questions. Keep them apart rather than merging them.
 - `format.ts` — money and date helpers. **Month/day helpers use local time, not UTC**, so "today" matches the user's calendar rather than the server's.
 - `styles.css` — plain CSS, custom properties, light/dark themes (§9.1). No CSS framework, no CSS-in-JS.
 - `theme.ts` — reads/writes the theme preference and applies it to `<html>`.
+- **A row that wraps needs a flex *basis*, not just `flex-wrap`.** `.item` is the shared row on six pages, and its rows carry anything from one icon button to an amount plus a text button plus two icons. `.item-main` holds `flex: 1 1 12rem` so that when the text no longer fits beside the buttons the row wraps and gives it a line of its own. At `flex: 1` the basis is 0, which never overflows however little room is left — it just shrinks, and on a phone that put a recurring rule's details in a one-word-per-line column and hid a member's email underneath the "Reset password" button. Same trap as `.card { min-width: 0 }` in §9.2, opposite direction.
 
 ### 9.1 Theming
 

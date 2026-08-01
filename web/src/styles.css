@@ -395,7 +395,12 @@ input[type='checkbox'] {
 .item.checked { opacity: 0.6; }
 .item.checked .item-name { text-decoration: line-through; }
 
-.item-main { flex: 1; min-width: 0; }
+/* The basis is what makes the `flex-wrap` above do anything. At `flex: 1` the
+   basis is 0, so this never overflows however little room is left — it just
+   shrinks, and on a recurring rule (amount + Pause + two icons) that left the
+   text wrapping one word per line instead of taking a line of its own. With a
+   real basis the row wraps when the text no longer fits beside the buttons. */
+.item-main { flex: 1 1 12rem; min-width: 0; }
 .item-name { font-weight: 500; word-break: break-word; }
 .item-meta {
   color: var(--muted);
