@@ -361,6 +361,27 @@ The statistics suite also earned its place on the way in: the one-month test fai
 
 (Worth knowing: regression 5 initially failed to *compile* rather than failing a test, because `noUnusedLocals` caught the orphaned variable. Typecheck is part of the safety net, not separate from it.)
 
+### Which routes the suites reach
+
+`node .claude/skills/route-coverage/audit.mjs` reads the routers, resolves their mount prefixes from `app.ts`, and reports two things: routes **no test file calls at all**, marking those that take a client-supplied id (what rule 1 and `assertOwned()` are about), and routes exercised somewhere other than the file §15 names. The second list is usually fine — `recurring.test.ts` holds its own cross-household case rather than putting it in `isolation.test.ts`. `--strict` fails on the first list only.
+
+As of this commit the first list is two routes: `DELETE /api/lists/:id/items/:itemId` and `POST /api/lists/:id/items/clear-checked`. Both go through `ownedList()`, which other tested routes already exercise, so the guard is proven even though these two paths are not.
+
+It matches on method and path shape, so it proves a suite *reaches* a route and nothing more; a case that asserts nothing counts as reached. Uncalled does not mean broken either — everything it has flagged so far was correctly filtered code. Treat it as the checklist for §15 step 6, not as evidence.
+
+### Looking at the pages the suites do not cover
+
+Everything in `web/` outside the guest flow, the sign-in toggle and the statistics page is unproven by any test, so a change there has to be looked at. `.claude/skills/preview-ui/` is the tool for that: it builds, runs the production build on a spare port against a throwaway database, seeds a three-person household with three months of expenses, signs in, and screenshots the routes you name in both themes at 1100px and 390px.
+
+```bash
+node .claude/skills/preview-ui/preview.mjs /            # the expenses dashboard
+node .claude/skills/preview-ui/preview.mjs /stats /lists/:id /s/:token --skip-build
+```
+
+Alongside each screenshot it reports the body colour — the cheap proof a theme applied (§9.1) — whether the header links to the page at all, and any console errors. Share links are opened in a context with no cookie, because a guest is defined by having none (§6).
+
+**It is for looking, not for proving.** A screenshot confirms today's change; only a test stops it regressing. When what you checked is an invariant rather than an appearance, write the test as well — and break the code once to watch it fail.
+
 ---
 
 ## 11. Deployment
