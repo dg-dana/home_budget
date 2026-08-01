@@ -85,6 +85,7 @@ export default function ListDetailPage() {
           </p>
         </div>
         <div className="row">
+          <CopyListButton load={() => Promise.resolve(list)} onError={setError} />
           <button type="button" className="button secondary small" onClick={handleRename}>
             Rename
           </button>
@@ -101,18 +102,15 @@ export default function ListDetailPage() {
       <div className="card">
         <div className="card-title">
           <h2>To buy</h2>
-          <div className="row">
-            <CopyListButton name={list.name} items={list.items} onError={setError} />
-            {done.length > 0 && (
-              <button
-                type="button"
-                className="button secondary small"
-                onClick={() => run(() => api.post(`/lists/${id}/items/clear-checked`))}
-              >
-                Clear {done.length} bought
-              </button>
-            )}
-          </div>
+          {done.length > 0 && (
+            <button
+              type="button"
+              className="button secondary small"
+              onClick={() => run(() => api.post(`/lists/${id}/items/clear-checked`))}
+            >
+              Clear {done.length} bought
+            </button>
+          )}
         </div>
 
         {list.items.length === 0 ? (

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api, type ShoppingList } from '../api';
+import { api, type ShoppingList, type ShoppingListDetail } from '../api';
+import CopyListButton from '../components/CopyListButton';
 
 export default function ListsPage() {
   const [lists, setLists] = useState<ShoppingList[]>([]);
@@ -63,23 +64,35 @@ export default function ListsPage() {
       ) : (
         <div className="stack" style={{ gap: '0.6rem' }}>
           {lists.map((list) => (
-            <Link className="list-card" to={`/lists/${list.id}`} key={list.id}>
-              <div className="item-main">
-                <div className="item-name">{list.name}</div>
-                <div className="item-meta">
-                  <span>
-                    {list.openCount} of {list.itemCount} still to buy
-                  </span>
-                  {list.shareToken && (
-                    <>
-                      <span>·</span>
-                      <span className="tag">🔗 Shared{list.shareCanEdit ? '' : ' (view only)'}</span>
-                    </>
-                  )}
+            // The card is a div wrapping the link, not a link itself: a button
+            // nested inside an anchor is invalid, and every press of it would
+            // also navigate.
+            <div className="list-card" key={list.id}>
+              <Link className="list-card-link" to={`/lists/${list.id}`}>
+                <div className="item-main">
+                  <div className="item-name">{list.name}</div>
+                  <div className="item-meta">
+                    <span>
+                      {list.openCount} of {list.itemCount} still to buy
+                    </span>
+                    {list.shareToken && (
+                      <>
+                        <span>·</span>
+                        <span className="tag">🔗 Shared{list.shareCanEdit ? '' : ' (view only)'}</span>
+                      </>
+                    )}
+                  </div>
                 </div>
-              </div>
-              <span className="muted">›</span>
-            </Link>
+                <span className="muted">›</span>
+              </Link>
+              {/* The index knows the counts but not the items, so this one
+                  fetches the list it is copying. */}
+              <CopyListButton
+                load={() => api.get<ShoppingListDetail>(`/lists/${list.id}`)}
+                onError={setError}
+                label="Copy"
+              />
+            </div>
           ))}
         </div>
       )}

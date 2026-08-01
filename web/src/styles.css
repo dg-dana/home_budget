@@ -720,10 +720,19 @@ input[type='checkbox'] {
   background: var(--surface);
   color: var(--text);
 }
-.list-card:hover {
-  text-decoration: none;
-  border-color: var(--accent);
+.list-card:hover { border-color: var(--accent); }
+
+/* The row's tappable area. It is the anchor; the card around it is a plain div
+   so the copy button can sit beside it without being nested in a link. */
+.list-card-link {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--text);
 }
+.list-card-link:hover { text-decoration: none; }
 
 table {
   width: 100%;
