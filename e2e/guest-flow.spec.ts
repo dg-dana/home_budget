@@ -158,7 +158,7 @@ test.describe('guest shopping list', () => {
     expect(copied).not.toContain(owner.shareToken);
     expect(copied).not.toContain('Added by');
 
-    // --- Member: the same button, on the page they are looking at ----------
+    // --- Member: from the index, and from the list itself -------------------
     await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
     await page.goto('/login');
     await page.getByLabel('Email').fill(owner.email);
@@ -166,8 +166,17 @@ test.describe('guest shopping list', () => {
     await page.getByRole('button', { name: 'Sign in' }).click();
     await page.waitForURL('/');
     await page.getByRole('link', { name: 'Shopping' }).click();
-    await page.getByRole('link', { name: /Supermarket/ }).click();
 
+    // The index knows the counts but not the items, so this button fetches the
+    // list mid-click — the case the promise-based clipboard write exists for.
+    await page.getByRole('button', { name: 'Copy', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Copied' })).toBeVisible();
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(copied);
+    // And it copied rather than navigating: a button inside the row's link
+    // would have opened the list instead.
+    await expect(page).toHaveURL('/lists');
+
+    await page.getByRole('link', { name: /Supermarket/ }).click();
     await page.getByRole('button', { name: 'Copy list' }).click();
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(copied);
 

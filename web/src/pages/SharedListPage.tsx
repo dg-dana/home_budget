@@ -151,7 +151,7 @@ export default function SharedListPage() {
             <h2>To buy</h2>
             <div className="row">
               <span className="muted small">{open.length} left</span>
-              <CopyListButton name={view.name} items={view.items} onError={setError} />
+              <CopyListButton load={() => Promise.resolve(view)} onError={setError} />
             </div>
           </div>
 

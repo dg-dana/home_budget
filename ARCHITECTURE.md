@@ -243,9 +243,24 @@ different questions. Keep them apart rather than merging them.
 - **"Copy list" produces plain text, not a screenshot or a link** (`listText.ts`,
   `CopyListButton`). The list goes out to whoever is near the shop through
   WhatsApp or a text message as often as through the share link, and pasted
-  text works for someone with no smartphone browser at all. It sits in the
-  "To buy" card on both pages, next to the items it copies, and a guest gets it
-  too — they can already read every word of what it produces.
+  text works for someone with no smartphone browser at all. It is on all three
+  shopping screens — beside Rename on a list, on every row of the index, and on
+  the guest page — because the moment someone wants to send a list on is not
+  predictable. A guest gets it too: they can already read every word it
+  produces.
+- **The index's copy button fetches the list mid-click**, which is why
+  `clipboard.ts` exists. `GET /lists` returns counts, not items, so the text is
+  not ready when the button is pressed — and Safari only honours a clipboard
+  write still attached to the click that began it, which an `await` breaks. The
+  fix is to hand the *promise* to `ClipboardItem` so the browser waits inside
+  the gesture; `writeText` after an await is the fallback for browsers with no
+  `ClipboardItem`, which are also the ones that do not enforce the gesture.
+  Loading every list's items into the index instead would have made the common
+  case — opening the page — pay for the rare one.
+- **A row on the lists index is a `div` wrapping a link, not a link itself.**
+  A `<button>` nested inside an `<a>` is invalid, and every press would also
+  navigate. `.list-card-link` is the tappable area; the copy button sits beside
+  it. There is a test asserting the page has not navigated after a copy.
 - **The copied text is deliberately plain ASCII.** A text message written in the
   7-bit GSM alphabet fits 160 characters; a single tick or arrow switches the
   whole message to UCS-2 and halves that to 70. Names and comments may of
@@ -387,7 +402,7 @@ Two suites, run together with `npm run test:all`.
 - Every guest gets `browser.newContext()` — a guest is *defined* by having no cookies and no carried-over storage, so sharing a context would defeat the point.
 - Tests create their own household, so they share nothing but the server and can run in parallel.
 
-What it asserts: a member creates and shares a list through the UI; a guest with no account opens the link, names themselves, adds an item and ticks one off; the member sees those changes. A second journey covers the comment: a guest adds an item carrying one, the household reads it and rewrites it, and the guest sees the new wording. A third covers "Copy list": the clipboard is read back and compared to the exact expected text, and asserted not to contain the share token. Plus view-only enforcement — including that a view-only guest can read a comment but is offered no control to change it — instant revocation, the name prompt appearing only once, a dead token, that a guest is bounced off every private route, that a chosen theme survives a reload without a flash, and that the sign-in page carries the toggle at all — the one signed-out screen everybody sees.
+What it asserts: a member creates and shares a list through the UI; a guest with no account opens the link, names themselves, adds an item and ticks one off; the member sees those changes. A second journey covers the comment: a guest adds an item carrying one, the household reads it and rewrites it, and the guest sees the new wording. A third covers "Copy list" on all three screens it appears on: the clipboard is read back and compared to the exact expected text, and asserted not to contain the share token. The index case also asserts the page did not navigate, since that button lives inside a row that is otherwise a link. Plus view-only enforcement — including that a view-only guest can read a comment but is offered no control to change it — instant revocation, the name prompt appearing only once, a dead token, that a guest is bounced off every private route, that a chosen theme survives a reload without a flash, and that the sign-in page carries the toggle at all — the one signed-out screen everybody sees.
 
 **Use `click()`, not `check()`, on the item checkboxes.** They are controlled inputs that only flip once the server round-trip lands, so `check()`'s immediate state assertion fails. Assert the visible outcome instead.
 
