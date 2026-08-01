@@ -16,8 +16,18 @@ if (isProduction && (!jwtSecret || jwtSecret === 'change-me-in-production')) {
   throw new Error('JWT_SECRET must be set to a unique value when NODE_ENV=production');
 }
 
+/**
+ * The browser suite signs a seven-person household in and out inside one
+ * 15-minute window, which the auth limiter is right to refuse from a real
+ * visitor. `RATE_LIMITS=off` lets that run turn it off — and **production
+ * ignores the request entirely**, so setting it on the server can never
+ * un-protect the live site.
+ */
+const rateLimitsDisabled = process.env.RATE_LIMITS === 'off' && !isProduction;
+
 export const config = {
   isProduction,
+  rateLimitsDisabled,
   port: Number(process.env.PORT ?? 4000),
   jwtSecret: jwtSecret || 'dev-only-insecure-secret',
   databasePath: path.resolve(repoRoot, process.env.DATABASE_PATH ?? 'data/home-budget.sqlite'),

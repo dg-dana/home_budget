@@ -1,4 +1,4 @@
-import type { APIRequestContext, Browser, Page } from '@playwright/test';
+import type { APIRequest, APIRequestContext, Browser, Page } from '@playwright/test';
 
 let counter = 0;
 
@@ -52,6 +52,70 @@ export async function seedSharedList(
     shareToken: shared.shareToken,
     shareUrl: `${baseURL}/s/${shared.shareToken}`,
   };
+}
+
+export interface StatsHousehold {
+  email: string;
+  /** The owner's own signed-in API context; expenses are posted through it. */
+  api: APIRequestContext;
+  members: Array<{ id: string; name: string }>;
+  categories: Array<{ id: string; name: string }>;
+}
+
+/**
+ * A household with people and categories, built through the API — the
+ * statistics tests are about what the page draws, not about how the data got
+ * in. Each member joins in a **context of their own**, because joining sets a
+ * session cookie and a shared jar would sign the owner out halfway through.
+ * Their expenses are then posted by the owner with an explicit `paidBy`.
+ */
+export async function seedStatsHousehold(
+  apiRequest: APIRequest,
+  baseURL: string,
+  { memberNames = [] as string[], currency = 'USD', householdName = 'Stats Household' } = {},
+): Promise<StatsHousehold> {
+  const email = uniqueEmail('stats');
+  const api = await apiRequest.newContext({ baseURL });
+
+  const registered = await api.post('/api/auth/register', {
+    data: { householdName, currency, name: 'Dana', email, password: PASSWORD },
+  });
+  if (!registered.ok()) throw new Error(`register failed: ${registered.status()}`);
+  const owner = await registered.json();
+
+  const members = [{ id: owner.user.id as string, name: 'Dana' }];
+  for (const name of memberNames) {
+    const invite = await (await api.post('/api/household/invites', { data: { role: 'member' } })).json();
+    const joiner = await apiRequest.newContext({ baseURL });
+    const joined = await joiner.post('/api/auth/join', {
+      data: { token: invite.token, name, email: uniqueEmail(name.toLowerCase()), password: PASSWORD },
+    });
+    if (!joined.ok()) throw new Error(`join failed: ${joined.status()}`);
+    members.push({ id: (await joined.json()).user.id as string, name });
+    await joiner.dispose();
+  }
+
+  return { email, api, members, categories: await (await api.get('/api/categories')).json() };
+}
+
+/** Signs a seeded household's owner into the browser and opens Statistics. */
+export async function openStatistics(page: Page, email: string) {
+  await page.goto('/login');
+  await page.getByLabel('Email').fill(email);
+  await page.getByLabel('Password').fill(PASSWORD);
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await page.waitForURL('/');
+  // Through the header link, not a direct URL: a page nobody can navigate to is
+  // a page nobody has.
+  await page.getByRole('link', { name: 'Statistics' }).click();
+  await page.waitForURL('/stats');
+}
+
+/** The 15th of a month N months back, in local time — the app's own reckoning. */
+export function monthsAgo(count: number): string {
+  const now = new Date();
+  const date = new Date(now.getFullYear(), now.getMonth() - count, 15);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-15`;
 }
 
 /**

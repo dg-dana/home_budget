@@ -266,6 +266,13 @@ charting library — and follow a few rules that are easy to undo by accident:
 - **One month is not a trend.** With a single point the drill-down prints the
   figure and says to widen the range, rather than drawing a lone dot between two
   identical axis labels.
+- **This page guards its fetches; the others do not need to.** The per-page
+  pattern in §9 fetches once per screen, but here four presets and two month
+  pickers sit a click apart, so two requests can be in flight at once and the
+  older one can answer last. The effect flips a `current` flag in its cleanup
+  and a superseded response lands nowhere. Without it the charts can show one
+  range while the controls say another — which is exactly what the one-month
+  browser test caught.
 - **A category row in "Where it went" is a `<button>`** that opens that
   category's month-by-month line. It has to keep looking like the plain row it
   replaced, so `.category-row` strips the border, background, font and padding a
@@ -315,10 +322,13 @@ Two suites, run together with `npm run test:all`.
 - `password.test.ts` — self-service change, owner-issued recovery, and that both evict other devices.
 - `compression.test.ts` — measures **raw wire bytes** with `node:http`, because `fetch` transparently decompresses and would compare a number with itself.
 
-### Browser smoke test — Playwright, `e2e/`
+### Browser tests — Playwright, `e2e/`
 
-- 8 tests, run with `npm run test:e2e`. Config is `playwright.config.ts` at the repo root.
-- **Covers the guest flow only** — the riskiest path, because it is the one surface reachable without an account. It is a smoke test, not broad UI coverage. (The theme test lives here because the toggle is on the guest header too, so the guest suite can reach it.)
+- 12 tests, run with `npm run test:e2e`. Config is `playwright.config.ts` at the repo root.
+- **Two areas: the guest flow and the statistics page.** The guest flow is the riskiest path — the one surface reachable without an account — and was the only coverage for a long time. (The theme test lives there because the toggle is on the guest header too.)
+- `statistics.spec.ts` exists because **every bug that page has had was invisible to the server suite**: a fold bucket that borrowed a real category's name, a one-month range drawing a lone dot, a stale response overwriting a newer one. Those are questions about what is on the screen. It reaches the page through the header link, never a direct URL — a page nobody can navigate to is a page nobody has.
+- `seedStatsHousehold()` builds a household through the API, giving **each joining member its own request context**: joining sets a session cookie, and a shared jar would sign the owner out halfway through.
+- **The e2e server runs with `RATE_LIMITS=off`.** An eight-person household signs in and out far more often inside one 15-minute window than a real visitor would, and the auth limiter is right to refuse that. `config.ts` ignores the variable when `NODE_ENV=production`, so it cannot un-protect the live site.
 - Playwright's `webServer` runs `npm run build && npm start`, so the tests drive **the production build**: one process serving the API and the built frontend, exactly as a deployment does.
 - The run gets a throwaway SQLite file, created in the config and deleted by `e2e/teardown.ts`.
 - Chromium: the config uses the sandbox's prebuilt binary when `/opt/pw-browsers/chromium` exists (override with `CHROMIUM_PATH`) and a normally installed browser otherwise. **Never run `playwright install` in the sandbox.**
@@ -341,6 +351,10 @@ Eight deliberate regressions were introduced, and each was caught by a failing t
 6. Deleting the pre-paint theme script from `index.html` → the Playwright theme test failed on the JS-blocked reload (React alone cannot satisfy it).
 7. Removing `:root[data-theme='dark'] { color-scheme: dark }` → the same test failed, because picking Dark then changed no colour.
 8. Taking `ThemeToggle` back out of `AuthPage` → the sign-in-page test failed, with no control to click.
+9. Putting the category fold bucket back on the word "Other" → the statistics fold test failed.
+10. Removing the Statistics link from the header → all four statistics tests failed, since none of them types a URL.
+
+The statistics suite also earned its place on the way in: the one-month test failed against the unguarded fetch, which is how the stale-response race in §9.2 was found.
 
 **Keep it that way.** When you add a test for an invariant, break the code once and confirm it fails. A test that has never failed has not been shown to test anything.
 
