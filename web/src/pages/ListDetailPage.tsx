@@ -1,16 +1,18 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { api, type ShoppingItem, type ShoppingListDetail } from '../api';
+import { api, type ShoppingListDetail } from '../api';
+import ItemComposer from '../components/ItemComposer';
+import ItemRow from '../components/ItemRow';
+import { memberItemApi } from '../shoppingApi';
 
 export default function ListDetailPage() {
   const { id = '' } = useParams();
   const navigate = useNavigate();
 
   const [list, setList] = useState<ShoppingListDetail | null>(null);
-  const [name, setName] = useState('');
-  const [quantity, setQuantity] = useState('');
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
+  const items = useMemo(() => memberItemApi(id), [id]);
 
   const load = useCallback(
     () =>
@@ -34,18 +36,6 @@ export default function ListDetailPage() {
       setError(err instanceof Error ? err.message : 'Something went wrong');
     }
   };
-
-  const handleAdd = (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!name.trim()) return;
-    const payload = { name, quantity };
-    setName('');
-    setQuantity('');
-    void run(() => api.post<ShoppingItem>(`/lists/${id}/items`, payload));
-  };
-
-  const toggle = (item: ShoppingItem) =>
-    run(() => api.patch(`/lists/${id}/items/${item.id}`, { isChecked: item.is_checked === 0 }));
 
   const shareUrl = list?.shareToken ? `${window.location.origin}/s/${list.shareToken}` : null;
 
@@ -105,25 +95,7 @@ export default function ListDetailPage() {
 
       {error && <div className="alert">{error}</div>}
 
-      <form className="card row" onSubmit={handleAdd}>
-        <input
-          aria-label="Item"
-          placeholder="Add an item…"
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-          style={{ flex: 2, minWidth: '180px' }}
-        />
-        <input
-          aria-label="Quantity"
-          placeholder="Qty (2 kg)"
-          value={quantity}
-          onChange={(event) => setQuantity(event.target.value)}
-          style={{ flex: 1, minWidth: '110px' }}
-        />
-        <button type="submit" className="button" disabled={!name.trim()}>
-          Add
-        </button>
-      </form>
+      <ItemComposer onAdd={(input) => run(() => items.add(input))} />
 
       <div className="card">
         <div className="card-title">
@@ -144,32 +116,7 @@ export default function ListDetailPage() {
         ) : (
           <ul className="item-list">
             {[...open, ...done].map((item) => (
-              <li className={`item${item.is_checked ? ' checked' : ''}`} key={item.id}>
-                <input
-                  type="checkbox"
-                  checked={item.is_checked === 1}
-                  onChange={() => toggle(item)}
-                  aria-label={`Mark ${item.name} as bought`}
-                />
-                <div className="item-main">
-                  <div className="item-name">
-                    {item.name}
-                    {item.quantity && <span className="muted small"> · {item.quantity}</span>}
-                  </div>
-                  <div className="item-meta">
-                    <span>Added by {item.added_by_name}</span>
-                    {item.checked_by_name && <span>· picked up by {item.checked_by_name}</span>}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  className="icon-button danger"
-                  title="Remove"
-                  onClick={() => run(() => api.delete(`/lists/${id}/items/${item.id}`))}
-                >
-                  ✕
-                </button>
-              </li>
+              <ItemRow key={item.id} item={item} api={items} editable canDelete run={run} />
             ))}
           </ul>
         )}

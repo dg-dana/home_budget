@@ -44,12 +44,28 @@ describe('guest access via a share link', () => {
   });
 
   it('exposes only the list, never the surrounding household', async () => {
-    const { token } = await createSharedList(owner);
+    const { listId, token } = await createSharedList(owner);
     const view = await guest.get(`/api/share/${token}`);
 
     // Whitelist the shape rather than blacklisting known-bad keys, so a field
     // added to the response later has to be considered deliberately.
     expect(Object.keys(view.body).sort()).toEqual(['canEdit', 'items', 'name']);
+
+    await owner.client.post(`/api/lists/${listId}/items`, { name: 'Milk', note: 'The glass bottle' });
+    const item = (await guest.get(`/api/share/${token}`)).body.items[0];
+    // Same rule one level down, so a field added to an item is considered too.
+    expect(Object.keys(item).sort()).toEqual([
+      'added_by_name',
+      'checked_by_name',
+      'created_at',
+      'id',
+      'is_checked',
+      'list_id',
+      'name',
+      'note',
+      'quantity',
+      'updated_at',
+    ]);
 
     const serialised = JSON.stringify(view.body);
     expect(serialised).not.toContain(owner.householdId);
@@ -195,6 +211,20 @@ describe('guest access via a share link', () => {
     const remaining = (await guest.get(`/api/share/${token}`)).body.items;
     expect(remaining).toHaveLength(1);
     expect(remaining[0].name).toBe('Outstanding');
+  });
+
+  it('lets a guest add an item with a comment on it', async () => {
+    const { listId, token } = await createSharedList(owner);
+    const added = await guest.post(`/api/share/${token}/items`, {
+      name: 'Bread',
+      note: 'Sourdough if they have it',
+      guestName: 'Ruti',
+    });
+    expect(added.status).toBe(201);
+    expect(added.body.note).toBe('Sourdough if they have it');
+
+    const seenByOwner = (await owner.client.get(`/api/lists/${listId}`)).body.items[0];
+    expect(seenByOwner.note).toBe('Sourdough if they have it');
   });
 
   it('shows members and guests the same list state', async () => {

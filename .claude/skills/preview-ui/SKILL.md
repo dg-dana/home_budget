@@ -37,7 +37,7 @@ paste an id:
 | You write | It opens |
 | --- | --- |
 | `/lists/:id` | the seeded "Supermarket" list |
-| `/s/:token` | that list's share link, **in a context with no cookie** |
+| `/s/:token` | that list's share link, **in a context with no cookie** but with a guest name already chosen, so it opens on the list rather than the name prompt |
 
 Flags:
 
@@ -74,6 +74,8 @@ Each line of the summary carries three things worth reading:
 Enough that no page is empty: a household of three (Dana the owner, Yossi,
 Noa), expenses over the current and previous two months across six categories,
 one active monthly recurring rule, and two shopping lists — one of them shared.
+One item on the shared list carries a comment, so that row is looked at the way
+it renders when it is full rather than bare.
 Built through the API, the same shape `e2e/helpers.ts` uses.
 
 If you need a different shape — an empty state, one person, a category past the

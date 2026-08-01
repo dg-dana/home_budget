@@ -103,11 +103,31 @@ describe('cross-household isolation', () => {
     ).toBe(404);
     expect((await bob.client.post(`/api/lists/${list.body.id}/share`, { canEdit: true })).status).toBe(404);
 
+    expect((await bob.client.delete(`/api/lists/${list.body.id}/items/${item.body.id}`)).status).toBe(404);
+    expect((await bob.client.post(`/api/lists/${list.body.id}/items/clear-checked`)).status).toBe(404);
+
     const aliceView = await alice.client.get(`/api/lists/${list.body.id}`);
     expect(aliceView.body.name).toBe('Alice list');
     expect(aliceView.body.items).toHaveLength(1);
     expect(aliceView.body.items[0].is_checked).toBe(0);
     expect(aliceView.body.shareToken).toBeNull();
+  });
+
+  it('never hands another household a comment from a list', async () => {
+    const list = await alice.client.post('/api/lists', { name: 'Alice list' });
+    const item = await alice.client.post(`/api/lists/${list.body.id}/items`, {
+      name: 'Milk',
+      note: 'The one in the glass bottle',
+    });
+
+    expect(
+      (await bob.client.patch(`/api/lists/${list.body.id}/items/${item.body.id}`, { note: 'Mine now' }))
+        .status,
+    ).toBe(404);
+
+    // Alice's comment is still hers, untouched.
+    const aliceItem = (await alice.client.get(`/api/lists/${list.body.id}`)).body.items[0];
+    expect(aliceItem.note).toBe('The one in the glass bottle');
   });
 
   it('never lists another household members', async () => {

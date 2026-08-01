@@ -69,6 +69,72 @@ test.describe('guest shopping list', () => {
     await guest.context().close();
   });
 
+  test('a guest adds an item with a comment, and the household sees it', async ({
+    page,
+    browser,
+    request,
+    baseURL,
+  }) => {
+    const owner = await seedSharedList(request, baseURL!, { items: [] });
+    const guest = await openAsGuest(browser, owner.shareUrl);
+    await identifyAs(guest, 'Ruti next door');
+
+    // The comment lives behind a disclosure, closed by default.
+    await expect(guest.getByLabel('Comment', { exact: true })).toHaveCount(0);
+    await guest.getByRole('button', { name: 'Add a comment' }).click();
+
+    await guest.getByLabel('Item', { exact: true }).fill('Olive oil');
+    await guest.getByLabel('Comment', { exact: true }).fill('The tall green tin, not the bottle');
+    await guest.getByRole('button', { name: 'Add', exact: true }).click();
+
+    await expect(guest.getByText('The tall green tin, not the bottle')).toBeVisible();
+    // The composer resets, so the next item does not inherit the last comment.
+    await expect(guest.getByLabel('Comment', { exact: true })).toHaveCount(0);
+
+    // --- Member: the same comment on the same item -------------------------
+    await page.goto('/login');
+    await page.getByLabel('Email').fill(owner.email);
+    await page.getByLabel('Password').fill(PASSWORD);
+    await page.getByRole('button', { name: 'Sign in' }).click();
+    await page.waitForURL('/');
+    await page.getByRole('link', { name: 'Shopping' }).click();
+    await page.getByRole('link', { name: /Supermarket/ }).click();
+
+    await expect(page.getByText('The tall green tin, not the bottle')).toBeVisible();
+    await expect(page.getByText('Added by Ruti next door')).toBeVisible();
+
+    // A member can rewrite it, and the guest sees the new wording.
+    page.once('dialog', (dialog) => dialog.accept('Any brand will do'));
+    await page.getByRole('button', { name: 'Edit the comment on Olive oil' }).click();
+    await expect(page.getByText('Any brand will do')).toBeVisible();
+
+    await guest.reload();
+    await expect(guest.getByText('Any brand will do')).toBeVisible();
+
+    await guest.context().close();
+  });
+
+  test('a view-only guest sees a comment but is given no way to change it', async ({
+    browser,
+    request,
+    baseURL,
+  }) => {
+    const owner = await seedSharedList(request, baseURL!, { canEdit: false });
+    const item = (await (await request.get(`/api/lists/${owner.listId}`)).json()).items[0];
+    await request.patch(`/api/lists/${owner.listId}/items/${item.id}`, {
+      data: { note: 'Semi-skimmed' },
+    });
+
+    const guest = await openAsGuest(browser, owner.shareUrl);
+    await expect(guest.getByText('Semi-skimmed')).toBeVisible();
+
+    // Reading is the whole point of a view-only link; changing is not.
+    await expect(guest.getByRole('button', { name: /comment on Milk/i })).toHaveCount(0);
+    await expect(guest.getByLabel('Comment', { exact: true })).toHaveCount(0);
+
+    await guest.context().close();
+  });
+
   test('the share link gives a guest no way into the rest of the app', async ({
     browser,
     request,

@@ -410,6 +410,31 @@ input[type='checkbox'] {
   flex-wrap: wrap;
 }
 
+/* The comment on an item: a sentence, so it wraps and keeps its line breaks
+   rather than being squeezed onto the name's line. */
+.item-note {
+  margin: 0.2rem 0;
+  font-size: 0.9rem;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+  border-left: 2px solid var(--border);
+  padding-left: 0.5rem;
+}
+.item.checked .item-note { text-decoration: none; }
+
+/* The row's trailing controls travel together: pushed to the right, and
+   wrapping to a line of their own as a block rather than one at a time. */
+.item-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.1rem;
+  margin-left: auto;
+  flex: none;
+}
+
+.composer textarea { resize: vertical; }
+
 .expense-row {
   display: flex;
   align-items: center;

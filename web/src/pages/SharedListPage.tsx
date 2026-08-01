@@ -1,8 +1,11 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { api, type SharedListView, type ShoppingItem } from '../api';
+import { api, type SharedListView } from '../api';
 import ThemeToggle from '../components/ThemeToggle';
 import AuthPage from '../components/AuthPage';
+import ItemComposer from '../components/ItemComposer';
+import ItemRow from '../components/ItemRow';
+import { guestItemApi } from '../shoppingApi';
 
 const GUEST_NAME_KEY = 'home-budget:guest-name';
 
@@ -17,10 +20,9 @@ export default function SharedListPage() {
   const [view, setView] = useState<SharedListView | null>(null);
   const [guestName, setGuestName] = useState(() => localStorage.getItem(GUEST_NAME_KEY) ?? '');
   const [nameConfirmed, setNameConfirmed] = useState(() => Boolean(localStorage.getItem(GUEST_NAME_KEY)));
-  const [name, setName] = useState('');
-  const [quantity, setQuantity] = useState('');
   const [error, setError] = useState('');
   const [loadError, setLoadError] = useState('');
+  const items = useMemo(() => guestItemApi(token, guestName), [token, guestName]);
 
   const load = useCallback(
     () =>
@@ -59,20 +61,6 @@ export default function SharedListPage() {
     setGuestName(trimmed);
     setNameConfirmed(true);
   };
-
-  const handleAdd = (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!name.trim()) return;
-    const payload = { name, quantity, guestName };
-    setName('');
-    setQuantity('');
-    void run(() => api.post<ShoppingItem>(`/share/${token}/items`, payload));
-  };
-
-  const toggle = (item: ShoppingItem) =>
-    run(() =>
-      api.patch(`/share/${token}/items/${item.id}`, { isChecked: item.is_checked === 0, guestName }),
-    );
 
   if (loadError) {
     return (
@@ -154,25 +142,7 @@ export default function SharedListPage() {
         )}
 
         {view.canEdit && (
-          <form className="card row" onSubmit={handleAdd}>
-            <input
-              aria-label="Item"
-              placeholder="Add an item…"
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              style={{ flex: 2, minWidth: '180px' }}
-            />
-            <input
-              aria-label="Quantity"
-              placeholder="Qty"
-              value={quantity}
-              onChange={(event) => setQuantity(event.target.value)}
-              style={{ flex: 1, minWidth: '100px' }}
-            />
-            <button type="submit" className="button" disabled={!name.trim()}>
-              Add
-            </button>
-          </form>
+          <ItemComposer onAdd={(input) => run(() => items.add(input))} quantityPlaceholder="Qty" />
         )}
 
         <div className="card">
@@ -186,25 +156,7 @@ export default function SharedListPage() {
           ) : (
             <ul className="item-list">
               {[...open, ...done].map((item) => (
-                <li className={`item${item.is_checked ? ' checked' : ''}`} key={item.id}>
-                  <input
-                    type="checkbox"
-                    checked={item.is_checked === 1}
-                    disabled={!view.canEdit}
-                    onChange={() => toggle(item)}
-                    aria-label={`Mark ${item.name} as bought`}
-                  />
-                  <div className="item-main">
-                    <div className="item-name">
-                      {item.name}
-                      {item.quantity && <span className="muted small"> · {item.quantity}</span>}
-                    </div>
-                    <div className="item-meta">
-                      <span>Added by {item.added_by_name}</span>
-                      {item.checked_by_name && <span>· picked up by {item.checked_by_name}</span>}
-                    </div>
-                  </div>
-                </li>
+                <ItemRow key={item.id} item={item} api={items} editable={view.canEdit} run={run} />
               ))}
             </ul>
           )}

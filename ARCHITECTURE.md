@@ -45,7 +45,7 @@ Reference for how this app is put together and why. Read this before extending i
 - `expenses` — per household. FKs to category and to the paying user.
 - `recurring_expenses` — per household. A rule (amount, frequency, start/end) plus `last_generated_on`, the marker that makes generation idempotent.
 - `shopping_lists` — per household. Holds the nullable `share_token` and the `share_can_edit` flag.
-- `shopping_items` — per list. Records `added_by_name` and `checked_by_name` as **plain text, not FKs** — because a guest with no account may have set them.
+- `shopping_items` — per list. Records `added_by_name` and `checked_by_name` as **plain text, not FKs** — because a guest with no account may have set them. `note` is the item's comment.
 - `password_resets` — single-use recovery tokens. Cascades with the user, so a link cannot resurrect a deleted account.
 
 ### Deletion behaviour (deliberate)
@@ -108,7 +108,8 @@ Reference for how this app is put together and why. Read this before extending i
 
 - A list's `share_token` is 24 random bytes (`crypto.randomBytes(24).toString('base64url')`), nullable. `NULL` = not shared.
 - Guest routes live under `/api/share/:token` and are mounted **without any auth middleware**. That is intentional, not an oversight.
-- The guest response is deliberately narrow: `{ name, canEdit, items }`. No household name, no member names, no ids beyond item ids, no other lists.
+- The guest response is deliberately narrow: `{ name, canEdit, items }`. No household name, no member names, no ids beyond item ids, no other lists. There is a test that whitelists the keys at both levels, so a field added to an item has to be added to that list deliberately.
+- A guest can write an item's comment as well as its name — same routes, same shared service, and only while `share_can_edit` is on.
 - **Revocation is instant** — setting `share_token = NULL` makes the old URL 404 on the very next request. No token blocklist needed.
 - Re-enabling sharing **reuses the existing token** so links already sent out keep working; only an explicit *Stop sharing* invalidates them.
 - `share_can_edit = 0` gives a view-only link: reads pass, all mutations 403.
@@ -161,6 +162,25 @@ so the UI can badge them.
 - `shoppingItems.ts` — **item operations shared by both the member and guest routes.** Both paths call the same functions with a different `actorName`, so guest and member edits can never diverge in behaviour.
 - `routes/` — `auth`, `household`, `categories`, `expenses`, `recurring`, `lists`, `share`.
 
+### Item comments
+
+An item carries a free-text **comment** (`shopping_items.note` — "the blue box,
+not the red one"), settable when it is added and editable afterwards, by a
+member or by a guest.
+
+- **A column, not a thread.** One shopping item does not need a conversation; it
+  needs the sentence that stops the wrong thing being bought. The column was
+  already in the schema, unused by the UI, before this was built — so exposing
+  it needed no migration.
+- Capped at 500 characters in the Zod schema. Long enough for a sentence or
+  two, short enough that the list response stays small.
+- **Deliberately not photos.** A photo of the right shelf was the obvious next
+  step and was written, then dropped: the bytes have to live somewhere, and
+  every option grows a database sized in single-digit MB after ten years (§14)
+  and inflates the nightly backup artifact along with it. It is worth doing
+  only alongside an answer to storage — object storage off the box, or a
+  retention policy — not before.
+
 ### The two reporting endpoints
 
 `GET /expenses/summary` and `GET /expenses/stats` look similar and answer
@@ -211,6 +231,22 @@ different questions. Keep them apart rather than merging them.
 - `format.ts` — money and date helpers. **Month/day helpers use local time, not UTC**, so "today" matches the user's calendar rather than the server's.
 - `styles.css` — plain CSS, custom properties, light/dark themes (§9.1). No CSS framework, no CSS-in-JS.
 - `theme.ts` — reads/writes the theme preference and applies it to `<html>`.
+- **The two shopping pages share their components, not just their API.**
+  `shoppingApi.ts` is the frontend's half of `shoppingItems.ts`: one `ItemApi`
+  interface, two implementations (`memberItemApi(listId)` and
+  `guestItemApi(token, guestName)`), and `ItemComposer` / `ItemRow` take that
+  object rather than a URL. A guest and a member therefore get the same add
+  form and the same row, and the pages cannot drift the way two copies would.
+  `editable` is what a view-only link turns off; `canDelete` is the one thing
+  members have and guests do not.
+- **The comment sits behind a disclosure in the composer**, and is edited from
+  the row through `window.prompt` — the same thing renaming a list does. Most
+  items are two words and a quantity; a permanent textarea above the list, or
+  an inline editor on every row, would be a lot of machinery for a string that
+  is usually empty.
+- A row's trailing controls are wrapped in `.item-actions` so that on a phone
+  they wrap **as a group**, instead of peeling off one at a time under the
+  checkbox.
 - **A row that wraps needs a flex *basis*, not just `flex-wrap`.** `.item` is the shared row on six pages, and its rows carry anything from one icon button to an amount plus a text button plus two icons. `.item-main` holds `flex: 1 1 12rem` so that when the text no longer fits beside the buttons the row wraps and gives it a line of its own. At `flex: 1` the basis is 0, which never overflows however little room is left — it just shrinks, and on a phone that put a recurring rule's details in a one-word-per-line column and hid a member's email underneath the "Reset password" button. Same trap as `.card { min-width: 0 }` in §9.2, opposite direction.
 
 ### 9.1 Theming
@@ -304,7 +340,7 @@ Two suites, run together with `npm run test:all`.
 
 ### Server integration suite — Vitest, `server/test/`
 
-- 143 tests, run with `npm test` from the repo root.
+- 149 tests, run with `npm test` from the repo root.
 - They are **integration tests over real HTTP**, not unit tests: each file boots the actual app on an ephemeral port and drives it with a cookie-aware client. There is no mocking of the database, the router or the session.
 - `test/setup.ts` runs before any application module is imported and points `DATABASE_PATH` at a unique temp file. Vitest gives each test file its own module registry, so **every test file gets its own SQLite database** and files can run in parallel.
 - `resetDatabase()` truncates every table in `beforeEach`.
@@ -316,6 +352,7 @@ Two suites, run together with `npm run test:all`.
 - `isolation.test.ts` — **the most important file.** Two households, and every route checked to confirm one cannot see or touch the other's rows.
 - `share.test.ts` — guest access: what a guest can do, what the link must never expose, view-only enforcement, revocation, token reuse.
 - `auth.test.ts` — registration, login, forged/expired/tampered cookies, and the full invite lifecycle.
+- `itemComments.test.ts` — the comment on a shopping item: set on add, edited, cleared, and the length cap.
 - `expenses.test.ts` — cents arithmetic, month-boundary maths, summary aggregation, and what survives a category or member deletion. Also the statistics endpoint: the per-member and per-category splits, the member/category cross-tab adding up to the same money as the totals, months with no spending, the name ordering that pins each member's colour, and the range validation.
 - `household.test.ts` — owner vs member permissions, cascade behaviour, list mechanics.
 - `recurring.test.ts` — recurrence date maths as a pure function (month-end clamping, leap years, rollovers), then catch-up, idempotency, pause/resume.
@@ -325,7 +362,7 @@ Two suites, run together with `npm run test:all`.
 
 ### Browser tests — Playwright, `e2e/`
 
-- 12 tests, run with `npm run test:e2e`. Config is `playwright.config.ts` at the repo root.
+- 14 tests, run with `npm run test:e2e`. Config is `playwright.config.ts` at the repo root.
 - **Two areas: the guest flow and the statistics page.** The guest flow is the riskiest path — the one surface reachable without an account — and was the only coverage for a long time. (The theme test lives there because the toggle is on the guest header too.)
 - `statistics.spec.ts` exists because **every bug that page has had was invisible to the server suite**: a fold bucket that borrowed a real category's name, a one-month range drawing a lone dot, a stale response overwriting a newer one. Those are questions about what is on the screen. It reaches the page through the header link, never a direct URL — a page nobody can navigate to is a page nobody has.
 - `seedStatsHousehold()` builds a household through the API, giving **each joining member its own request context**: joining sets a session cookie, and a shared jar would sign the owner out halfway through.
@@ -336,13 +373,13 @@ Two suites, run together with `npm run test:all`.
 - Every guest gets `browser.newContext()` — a guest is *defined* by having no cookies and no carried-over storage, so sharing a context would defeat the point.
 - Tests create their own household, so they share nothing but the server and can run in parallel.
 
-What it asserts: a member creates and shares a list through the UI; a guest with no account opens the link, names themselves, adds an item and ticks one off; the member sees those changes. Plus view-only enforcement, instant revocation, the name prompt appearing only once, a dead token, that a guest is bounced off every private route, that a chosen theme survives a reload without a flash, and that the sign-in page carries the toggle at all — the one signed-out screen everybody sees.
+What it asserts: a member creates and shares a list through the UI; a guest with no account opens the link, names themselves, adds an item and ticks one off; the member sees those changes. A second journey covers the comment: a guest adds an item carrying one, the household reads it and rewrites it, and the guest sees the new wording. Plus view-only enforcement — including that a view-only guest can read a comment but is offered no control to change it — instant revocation, the name prompt appearing only once, a dead token, that a guest is bounced off every private route, that a chosen theme survives a reload without a flash, and that the sign-in page carries the toggle at all — the one signed-out screen everybody sees.
 
 **Use `click()`, not `check()`, on the item checkboxes.** They are controlled inputs that only flip once the server round-trip lands, so `check()`'s immediate state assertion fails. Assert the visible outcome instead.
 
 ### Both suites were verified by breaking the code
 
-Eight deliberate regressions were introduced, and each was caught by a failing test:
+Twelve deliberate regressions were introduced, and each was caught by a failing test:
 
 1. Removing the `household_id` filter from the expenses list query → `isolation` failed.
 2. Adding `householdId` to the guest share response → `share` failed.
@@ -354,6 +391,8 @@ Eight deliberate regressions were introduced, and each was caught by a failing t
 8. Taking `ThemeToggle` back out of `AuthPage` → the sign-in-page test failed, with no control to click.
 9. Putting the category fold bucket back on the word "Other" → the statistics fold test failed.
 10. Removing the Statistics link from the header → all four statistics tests failed, since none of them types a URL.
+11. Dropping `note` from the item update statement → `itemComments` failed, an edit silently doing nothing.
+12. Rendering `ItemRow`'s comment button regardless of `editable` → the Playwright view-only test failed, with an edit control on a read-only link.
 
 The statistics suite also earned its place on the way in: the one-month test failed against the unguarded fetch, which is how the stale-response race in §9.2 was found.
 
@@ -365,7 +404,7 @@ The statistics suite also earned its place on the way in: the one-month test fai
 
 `node .claude/skills/route-coverage/audit.mjs` reads the routers, resolves their mount prefixes from `app.ts`, and reports two things: routes **no test file calls at all**, marking those that take a client-supplied id (what rule 1 and `assertOwned()` are about), and routes exercised somewhere other than the file §15 names. The second list is usually fine — `recurring.test.ts` holds its own cross-household case rather than putting it in `isolation.test.ts`. `--strict` fails on the first list only.
 
-As of this commit the first list is two routes: `DELETE /api/lists/:id/items/:itemId` and `POST /api/lists/:id/items/clear-checked`. Both go through `ownedList()`, which other tested routes already exercise, so the guard is proven even though these two paths are not.
+As of this commit the first list is empty: the two that were on it — `DELETE /api/lists/:id/items/:itemId` and `POST /api/lists/:id/items/clear-checked` — now have cases in `isolation.test.ts`.
 
 It matches on method and path shape, so it proves a suite *reaches* a route and nothing more; a case that asserts nothing counts as reached. Uncalled does not mean broken either — everything it has flagged so far was correctly filtered code. Treat it as the checklist for §15 step 6, not as evidence.
 
