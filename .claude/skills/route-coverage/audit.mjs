@@ -103,6 +103,15 @@ function readCalls(file) {
   }));
 }
 
+/** Which test files call each route, across the whole suite. */
+function readAllCalls() {
+  const byFile = {};
+  for (const file of fs.readdirSync(serverTest).sort()) {
+    if (file.endsWith('.test.ts')) byFile[file] = readCalls(file);
+  }
+  return byFile;
+}
+
 // ---------------------------------------------------------------------------
 // Report
 // ---------------------------------------------------------------------------
@@ -128,68 +137,68 @@ function main() {
     return;
   }
 
-  const calls = {
-    'isolation.test.ts': readCalls('isolation.test.ts'),
-    'share.test.ts': readCalls('share.test.ts'),
-  };
+  const byFile = readAllCalls();
 
-  const covered = (route, suite) =>
-    calls[suite].some((call) => call.method === route.method && call.shape === shape(route.path));
+  const callers = (route) =>
+    Object.entries(byFile)
+      .filter(([, calls]) =>
+        calls.some((call) => call.method === route.method && call.shape === shape(route.path)),
+      )
+      .map(([file]) => file);
 
   const rows = routes.map((route) => {
     const suite = obligation(route);
-    return { ...route, suite, covered: suite ? covered(route, suite) : null };
+    const files = callers(route);
+    return { ...route, suite, files, home: suite ? files.includes(suite) : null };
   });
 
-  for (const suite of ['isolation.test.ts', 'share.test.ts']) {
-    const group = rows.filter((row) => row.suite === suite);
-    const gaps = group.filter((row) => !row.covered);
-    console.log(`\n${suite} — ${group.length - gaps.length}/${group.length} routes reached`);
+  // Untouched by the whole suite. Nothing anywhere would notice if the handler
+  // stopped filtering, so this is the list that actually matters.
+  const untested = rows.filter((row) => row.suite && row.files.length === 0);
+  console.log(`\nCalled by no test at all — ${untested.length} route(s)`);
+  for (const row of untested) {
+    // A path parameter means the route accepts an id from the caller, which is
+    // what `assertOwned()` exists for and what one household would use to reach
+    // into another's rows.
+    const aimed = row.path.includes('/:') ? '  <- takes an id from the caller' : '';
+    console.log(`  -> ${row.method.padEnd(6)} ${row.path}${aimed}`);
+  }
+  if (untested.length === 0) console.log('  none — every route is exercised somewhere');
 
-    if (showAll) {
-      for (const row of group) {
-        console.log(`  ${row.covered ? '  ' : '->'} ${row.method.padEnd(6)} ${row.path}`);
-      }
-    }
-    if (gaps.length === 0) {
-      console.log('  every route is reached');
-      continue;
-    }
-
-    // A route with a path parameter accepts an id from the caller, which is
-    // exactly what `assertOwned()` exists for and what one household would use
-    // to reach into another. A route without one can still leak, but it cannot
-    // be *aimed*, so it is the less urgent half of the list.
-    const takesId = gaps.filter((row) => row.path.includes('/:'));
-    const rest = gaps.filter((row) => !row.path.includes('/:'));
-    if (!showAll) {
-      if (takesId.length > 0) {
-        console.log('  takes an id from the caller — what rule 1 is about:');
-        for (const row of takesId) console.log(`    -> ${row.method.padEnd(6)} ${row.path}`);
-      }
-      if (rest.length > 0) {
-        console.log('  no path parameter — cannot be aimed at another household, still worth a case:');
-        for (const row of rest) console.log(`    -> ${row.method.padEnd(6)} ${row.path}`);
-      }
-    }
+  // Covered, but somewhere other than the file §15 names. Often legitimate:
+  // recurring keeps its own cross-household case in `recurring.test.ts`. Worth
+  // an eye, never an alarm.
+  const elsewhere = rows.filter((row) => row.suite && row.files.length > 0 && !row.home);
+  console.log(`\nExercised elsewhere, not in the file §15 names — ${elsewhere.length} route(s)`);
+  for (const row of elsewhere) {
+    console.log(`     ${row.method.padEnd(6)} ${row.path.padEnd(44)} ${row.files.join(', ')}`);
   }
 
-  const exempt = rows.filter((row) => row.suite === null);
-  console.log(`\n${exempt.length} auth routes exempt (auth.test.ts covers them on its own terms)`);
   if (showAll) {
+    for (const suite of ['isolation.test.ts', 'share.test.ts']) {
+      const group = rows.filter((row) => row.suite === suite);
+      console.log(`\n${suite} — ${group.filter((row) => row.home).length}/${group.length} routes`);
+      for (const row of group) {
+        console.log(`  ${row.home ? '  ' : '->'} ${row.method.padEnd(6)} ${row.path}`);
+      }
+    }
+    const exempt = rows.filter((row) => row.suite === null);
+    console.log(`\n${exempt.length} auth routes exempt:`);
     for (const row of exempt) console.log(`     ${row.method.padEnd(6)} ${row.path}`);
+  } else {
+    const exempt = rows.filter((row) => row.suite === null).length;
+    console.log(`\n${exempt} auth routes exempt (auth.test.ts covers them on its own terms).`);
   }
 
-  const gaps = rows.filter((row) => row.suite && !row.covered);
   console.log(
-    gaps.length === 0
-      ? '\nEvery household-scoped and guest-reachable route is reached by its suite.'
-      : `\n${gaps.length} route(s) above are never called by the suite that owes them a case.` +
-          '\nReaching a route is the floor, not the bar: the case still has to assert that the' +
-          '\nother household gets nothing, and you still break the code once to watch it fail.',
+    untested.length === 0
+      ? '\nEvery household-scoped and guest-reachable route is exercised by some test.'
+      : '\nA route no test calls is definitely untested. One that is called is only a' +
+          '\ncandidate: reaching it is the floor, and the case still has to assert that the' +
+          '\nother household gets nothing. Break the code once to find out which you have.',
   );
 
-  if (strict && gaps.length > 0) process.exitCode = 1;
+  if (strict && untested.length > 0) process.exitCode = 1;
 }
 
 main();

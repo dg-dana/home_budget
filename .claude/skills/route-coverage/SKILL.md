@@ -28,18 +28,22 @@ which routes the two suites never call.
 
 ## Reading the output
 
-Gaps are split in two, and the split is the point:
+Two lists, and the difference between them is the whole point:
 
-- **"takes an id from the caller"** — the route accepts a `:id` or `:token` from
-  whoever called it. That is precisely what one household would use to reach
-  into another's rows, and precisely what `assertOwned()` exists for. Treat
-  these as a to-do list.
-- **"no path parameter"** — the route can still return the wrong household's
-  data if its `WHERE` clause is wrong, but nobody can *aim* it. Worth a case,
-  less urgent.
+- **"Called by no test at all"** — no file in `server/test/` touches the route.
+  Nothing would notice if the handler stopped filtering on `household_id`. This
+  is the list that matters. A `<- takes an id from the caller` marker means the
+  route accepts a `:id` or `:token`, which is what `assertOwned()` exists for
+  and what one household would use to reach into another's rows.
+- **"Exercised elsewhere"** — some test calls it, just not the file §15 names.
+  **Usually fine.** `recurring.test.ts` keeps its own cross-household case
+  rather than putting it in `isolation.test.ts`, and that is a reasonable place
+  for it. Scan the column, do not act on it reflexively.
 
 Auth routes are exempt: they are not household-scoped, and `auth.test.ts`
 covers registration, cookies and the invite lifecycle in its own terms.
+
+`--strict` fails only on the first list.
 
 ## What it does not tell you
 
@@ -50,12 +54,17 @@ counts as reached here and protects nothing.
 
 So this is a checklist, not a guarantee. The guarantee is still the same one
 §10 describes: write the case, then **break the code once and watch it fail.**
-An unreached route is definitely untested; a reached one is merely a candidate.
+An uncalled route is definitely untested; a called one is merely a candidate.
 
-Nor does an unreached route mean a broken one. When this was first run, all 15
-gaps turned out to be correctly filtered code that no test had ever exercised.
-Untested and broken are different findings — check the handler before reporting
-one as the other.
+Nor does uncalled mean broken. Every route this flagged on its first run turned
+out to be correctly filtered code — some of it simply tested in another file.
+Untested and broken are different findings, and so are "untested" and "tested
+somewhere I did not look". Read the handler before reporting any of them.
+
+That last mistake is the one this script was rewritten to stop making: it first
+read only `isolation.test.ts` and `share.test.ts`, called 15 routes gaps, and
+13 of them were covered elsewhere. **A tool that cries wolf gets ignored**, so
+it now reads every `*.test.ts` in `server/test/` before calling anything a gap.
 
 ## If it misses something
 

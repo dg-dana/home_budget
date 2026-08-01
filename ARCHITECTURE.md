@@ -362,9 +362,11 @@ The statistics suite also earned its place on the way in: the one-month test fai
 
 ### Which routes the suites reach
 
-`node .claude/skills/route-coverage/audit.mjs` reads the routers, resolves their mount prefixes from `app.ts`, and lists the routes `isolation.test.ts` and `share.test.ts` never call — separating the ones that take a client-supplied id, which is what rule 1 and `assertOwned()` are about, from the ones that cannot be aimed at another household. `--strict` exits non-zero for a hook or CI.
+`node .claude/skills/route-coverage/audit.mjs` reads the routers, resolves their mount prefixes from `app.ts`, and reports two things: routes **no test file calls at all**, marking those that take a client-supplied id (what rule 1 and `assertOwned()` are about), and routes exercised somewhere other than the file §15 names. The second list is usually fine — `recurring.test.ts` holds its own cross-household case rather than putting it in `isolation.test.ts`. `--strict` fails on the first list only.
 
-It matches on method and path shape, so it proves a suite *reaches* a route and nothing more; a case that asserts nothing counts as reached. And unreached does not mean broken — when it was first run all 15 gaps were correctly filtered code that no test had exercised. Treat it as the checklist for §15 step 6, not as evidence.
+As of this commit the first list is two routes: `DELETE /api/lists/:id/items/:itemId` and `POST /api/lists/:id/items/clear-checked`. Both go through `ownedList()`, which other tested routes already exercise, so the guard is proven even though these two paths are not.
+
+It matches on method and path shape, so it proves a suite *reaches* a route and nothing more; a case that asserts nothing counts as reached. Uncalled does not mean broken either — everything it has flagged so far was correctly filtered code. Treat it as the checklist for §15 step 6, not as evidence.
 
 ### Looking at the pages the suites do not cover
 
