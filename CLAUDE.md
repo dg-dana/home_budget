@@ -27,7 +27,7 @@ npm run backup     # consistent SQLite snapshot (online backup API, not cp)
 - Coverage gap: everything in `web/` except the guest flow, the sign-in page's theme toggle and the statistics page — the expenses dashboard, budgets, recurring, invites, settings. Changes there still need checking by hand.
 - **To check a UI change by hand, run `node .claude/skills/preview-ui/preview.mjs <route>`** rather than reasoning about the CSS. It builds, runs the production build on a spare port against a throwaway database, seeds a three-person household, signs in, and screenshots the route in both themes at 1100px and 390px — reporting the body colour (proof the theme applied) and whether the header links to the page at all. `--skip-build` on repeat runs. See `.claude/skills/preview-ui/SKILL.md`.
 - Beware `pkill -f <pattern>` in a tool call: the pattern matches the shell's own command line, so it kills the call itself (exit 144, no output). Use a self-excluding pattern like `dist/inde[x].js`.
-- Adding a route means adding cases to `isolation.test.ts` (if household-scoped) and `share.test.ts` (if guest-reachable).
+- Adding a route means adding cases to `isolation.test.ts` (if household-scoped) and `share.test.ts` (if guest-reachable). **`node .claude/skills/route-coverage/audit.mjs` lists which routes neither suite calls** — it matches on path shape, so it proves a route is reached, not that the case asserts anything. See `.claude/skills/route-coverage/SKILL.md`.
 - **Break the code once and watch the new test fail before trusting it.** A test that has never failed has not been shown to test anything.
 
 ## Deployment

@@ -360,6 +360,12 @@ The statistics suite also earned its place on the way in: the one-month test fai
 
 (Worth knowing: regression 5 initially failed to *compile* rather than failing a test, because `noUnusedLocals` caught the orphaned variable. Typecheck is part of the safety net, not separate from it.)
 
+### Which routes the suites reach
+
+`node .claude/skills/route-coverage/audit.mjs` reads the routers, resolves their mount prefixes from `app.ts`, and lists the routes `isolation.test.ts` and `share.test.ts` never call — separating the ones that take a client-supplied id, which is what rule 1 and `assertOwned()` are about, from the ones that cannot be aimed at another household. `--strict` exits non-zero for a hook or CI.
+
+It matches on method and path shape, so it proves a suite *reaches* a route and nothing more; a case that asserts nothing counts as reached. And unreached does not mean broken — when it was first run all 15 gaps were correctly filtered code that no test had exercised. Treat it as the checklist for §15 step 6, not as evidence.
+
 ### Looking at the pages the suites do not cover
 
 Everything in `web/` outside the guest flow, the sign-in toggle and the statistics page is unproven by any test, so a change there has to be looked at. `.claude/skills/preview-ui/` is the tool for that: it builds, runs the production build on a spare port against a throwaway database, seeds a three-person household with three months of expenses, signs in, and screenshots the routes you name in both themes at 1100px and 390px.
