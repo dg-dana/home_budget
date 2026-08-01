@@ -275,9 +275,14 @@ async function seed(baseURL) {
   });
 
   const groceries = await post(api, '/api/lists', { name: 'Supermarket' });
+  const items = {};
   for (const name of ['Milk', 'Bread', 'Olive oil', 'Coffee']) {
-    await post(api, `/api/lists/${groceries.id}/items`, { name });
+    items[name] = await post(api, `/api/lists/${groceries.id}/items`, { name });
   }
+  // One comment, so the list pages are looked at with a row carrying one.
+  await api.patch(`/api/lists/${groceries.id}/items/${items.Bread.id}`, {
+    data: { note: 'The seeded rye from the back shelf, not the sliced white one.' },
+  });
   const hardware = await post(api, '/api/lists', { name: 'Hardware store' });
   for (const name of ['Light bulbs', 'Picture hooks']) {
     await post(api, `/api/lists/${hardware.id}/items`, { name });
@@ -355,6 +360,14 @@ async function captureGroup(browser, options, context, group, theme, width) {
     },
     ['home-budget:theme', theme],
   );
+  // A guest who has not said who they are gets the name prompt, which is a
+  // screen of its own and not the list anybody asked to look at.
+  if (group.asGuest) {
+    await browserContext.addInitScript(
+      ([key, value]) => localStorage.setItem(key, value),
+      ['home-budget:guest-name', 'Ruti next door'],
+    );
+  }
 
   const page = await browserContext.newPage();
   const problems = [];

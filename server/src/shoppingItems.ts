@@ -4,16 +4,19 @@ import { db } from './db.js';
 import { notFound } from './http.js';
 import type { ShoppingItemRow, ShoppingListRow } from './types.js';
 
+/** Comments run longer than a quantity — a sentence about which brand to buy. */
+const NOTE_MAX = 500;
+
 export const newItemSchema = z.object({
   name: z.string().trim().min(1, 'Item name is required').max(120),
   quantity: z.string().trim().max(40).default(''),
-  note: z.string().trim().max(200).default(''),
+  note: z.string().trim().max(NOTE_MAX).default(''),
 });
 
 export const updateItemSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
   quantity: z.string().trim().max(40).optional(),
-  note: z.string().trim().max(200).optional(),
+  note: z.string().trim().max(NOTE_MAX).optional(),
   isChecked: z.boolean().optional(),
 });
 

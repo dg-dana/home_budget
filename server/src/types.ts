@@ -94,6 +94,7 @@ export interface ShoppingItemRow {
   list_id: string;
   name: string;
   quantity: string;
+  /** The free-text comment on the item ("the blue box, not the red one"). */
   note: string;
   is_checked: number;
   added_by_name: string;
