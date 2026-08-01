@@ -211,7 +211,7 @@ different questions. Keep them apart rather than merging them.
 - `format.ts` — money and date helpers. **Month/day helpers use local time, not UTC**, so "today" matches the user's calendar rather than the server's.
 - `styles.css` — plain CSS, custom properties, light/dark themes (§9.1). No CSS framework, no CSS-in-JS.
 - `theme.ts` — reads/writes the theme preference and applies it to `<html>`.
-- **A row that wraps needs a flex *basis*, not just `flex-wrap`.** `.item` is the shared row on six pages, and its rows carry anything from one icon button to an amount plus a text button plus two icons. `.item-main` holds `flex: 1 1 12rem` so that when the text no longer fits beside the buttons the row wraps and gives it a line of its own. At `flex: 1` the basis is 0, which never overflows however little room is left — it just shrinks, and on a phone that put a recurring rule's details in a one-word-per-line column and hid a member's email underneath the "Reset password" button. Same trap as `.card { min-width: 0 }` in §9.2, opposite direction.
+- **A row that wraps needs a flex *basis*, not just `flex-wrap`.** `.item` is the shared row on six pages, and its rows carry anything from one icon button to an amount plus a text button plus two icons. `.item-main` holds `flex: 1 1 12rem` so that when the text no longer fits beside the buttons the row wraps and gives it a line of its own. At `flex: 1` the basis is 0, which never overflows however little room is left — it just shrinks, and on a phone that put a recurring rule's details in a one-word-per-line column and hid a member's email underneath the "Reset password" button. Same trap as `.card { min-width: 0 }` in §9.2, opposite direction. `e2e/narrow-rows.spec.ts` holds it in place at 390px, so the shorthand cannot be "simplified" back without a test failing.
 
 ### 9.1 Theming
 
@@ -325,8 +325,9 @@ Two suites, run together with `npm run test:all`.
 
 ### Browser tests — Playwright, `e2e/`
 
-- 12 tests, run with `npm run test:e2e`. Config is `playwright.config.ts` at the repo root.
-- **Two areas: the guest flow and the statistics page.** The guest flow is the riskiest path — the one surface reachable without an account — and was the only coverage for a long time. (The theme test lives there because the toggle is on the guest header too.)
+- 14 tests, run with `npm run test:e2e`. Config is `playwright.config.ts` at the repo root.
+- **Three areas: the guest flow, the statistics page and narrow rows.** The guest flow is the riskiest path — the one surface reachable without an account — and was the only coverage for a long time. (The theme test lives there because the toggle is on the guest header too.)
+- `narrow-rows.spec.ts` runs at 390px and guards the flex basis on `.item-main` (§9). `.item` is the shared row on six pages, and at `flex: 1` its basis is 0, so the `flex-wrap: wrap` beside it never fires — the text shrinks instead of taking a line. That shipped twice over: a recurring rule's details in a sixty-pixel column, and a member's email painted under the "Reset password" button. Both assertions were confirmed against the old rule: the meta line measures 268px tall instead of under 60, and `.item-main` overflows its own box. **Rectangles are the wrong tool for the second one** — the boxes never overlapped, only the ink did, so it asks whether the content fits (`scrollWidth <= clientWidth`) rather than comparing positions.
 - `statistics.spec.ts` exists because **every bug that page has had was invisible to the server suite**: a fold bucket that borrowed a real category's name, a one-month range drawing a lone dot, a stale response overwriting a newer one. Those are questions about what is on the screen. It reaches the page through the header link, never a direct URL — a page nobody can navigate to is a page nobody has.
 - `seedStatsHousehold()` builds a household through the API, giving **each joining member its own request context**: joining sets a session cookie, and a shared jar would sign the owner out halfway through.
 - **The e2e server runs with `RATE_LIMITS=off`.** An eight-person household signs in and out far more often inside one 15-minute window than a real visitor would, and the auth limiter is right to refuse that. `config.ts` ignores the variable when `NODE_ENV=production`, so it cannot un-protect the live site.
@@ -354,8 +355,11 @@ Eight deliberate regressions were introduced, and each was caught by a failing t
 8. Taking `ThemeToggle` back out of `AuthPage` → the sign-in-page test failed, with no control to click.
 9. Putting the category fold bucket back on the word "Other" → the statistics fold test failed.
 10. Removing the Statistics link from the header → all four statistics tests failed, since none of them types a URL.
+11. Putting `.item-main` back to `flex: 1` → both narrow-row tests failed, on every assertion they make.
 
 The statistics suite also earned its place on the way in: the one-month test failed against the unguarded fetch, which is how the stale-response race in §9.2 was found.
+
+Regression 11 is worth reading before writing a layout assertion. The first version of the member-row check compared the email's rectangle with the button's and **passed against the broken stylesheet** — the boxes never overlapped, the glyphs simply painted outside their box. An assertion that cannot fail is worse than none, because it reads like cover. Breaking the code is what found that; nothing else would have.
 
 **Keep it that way.** When you add a test for an invariant, break the code once and confirm it fails. A test that has never failed has not been shown to test anything.
 
