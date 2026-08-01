@@ -10,7 +10,7 @@ Household expenses tracker + shared shopping lists. npm workspace: `server/` (Ex
 npm install
 npm run dev        # API :4000 + Vite :5173
 npm test           # vitest, server integration suite (149 tests)
-npm run test:e2e   # playwright, guest flow + statistics page (14 tests)
+npm run test:e2e   # playwright, guest flow + statistics page (15 tests)
 npm run test:all   # both
 npm run typecheck  # both workspaces + e2e/
 npm run build      # server/dist + web/dist
@@ -22,7 +22,7 @@ npm run backup     # consistent SQLite snapshot (online backup API, not cp)
 
 - CI (`.github/workflows/ci.yml`) runs typecheck plus both suites on every push.
 - `npm test` — `server/test/`, real HTTP against a real SQLite DB, no mocks. Each test file gets its own database.
-- `npm run test:e2e` — `e2e/`, Playwright against the **production build** (it runs `npm run build && npm start` itself). Covers the guest flow — including adding an item with a comment — and the statistics page. It runs the server with `RATE_LIMITS=off`, which `config.ts` ignores in production.
+- `npm run test:e2e` — `e2e/`, Playwright against the **production build** (it runs `npm run build && npm start` itself). Covers the guest flow — including adding an item with a comment and copying the list as text — and the statistics page. It runs the server with `RATE_LIMITS=off`, which `config.ts` ignores in production.
 - **Do not run `playwright install`** — the sandbox ships a prebuilt Chromium and the config finds it.
 - Coverage gap: everything in `web/` except the guest flow, the sign-in page's theme toggle and the statistics page — the expenses dashboard, budgets, recurring, invites, settings. Changes there still need checking by hand.
 - **To check a UI change by hand, run `node .claude/skills/preview-ui/preview.mjs <route>`** rather than reasoning about the CSS. It builds, runs the production build on a spare port against a throwaway database, seeds a three-person household, signs in, and screenshots the route in both themes at 1100px and 390px — reporting the body colour (proof the theme applied) and whether the header links to the page at all. `--skip-build` on repeat runs. See `.claude/skills/preview-ui/SKILL.md`.
@@ -60,6 +60,7 @@ they stop being true.
 - **"Merged" and "deployed" and "reachable" are three different things**, and the dark mode work missed on all three in turn: PR #1 merged and sat undeployed; deploy run #4 shipped it and it still could not be found, because the toggle was in the two headers only and the sign-in page — the screen you land on — had no control on it. When someone says a feature is missing, check what is actually deployed *and* whether the control exists on the screen they are looking at, before defending the code.
 - **Swap is newly added and unproven over time.** It was holding ~114 MB within eight minutes of boot, so the pressure is continuous rather than a spike. The nightly backup at 03:17 UTC is the suspected trigger for both wedges, but the evidence went with the reboot (`dmesg` is per-boot), so that stays a theory.
 - The `DOMAIN` repository variable is set, so **Diagnose the deployment** needs no inputs.
+- **"Copy list" puts the whole list on the clipboard as plain text** for pasting into WhatsApp or a text message — written but not yet merged or deployed. It is deliberately plain ASCII (an emoji halves an SMS segment) and **deliberately excludes the share link**, since the text is written to be pasted into group chats (`ARCHITECTURE.md` §6, §9).
 - **Shopping items show their comment** (PR #17, live). No migration was needed: `note` was already a column, just never on screen. **Photos were built alongside it and deliberately removed** before it was ever merged — the bytes would have grown a database sized in single-digit MB after ten years, and the nightly backup artifact with it. Do not re-add them without an answer to storage first (`ARCHITECTURE.md` §8, "Item comments").
 
 ## Schema changes

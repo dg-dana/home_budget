@@ -113,6 +113,7 @@ Reference for how this app is put together and why. Read this before extending i
 - **Revocation is instant** — setting `share_token = NULL` makes the old URL 404 on the very next request. No token blocklist needed.
 - Re-enabling sharing **reuses the existing token** so links already sent out keep working; only an explicit *Stop sharing* invalidates them.
 - `share_can_edit = 0` gives a view-only link: reads pass, all mutations 403.
+- **"Copy list" never includes the share link.** The copied text is written to be pasted into group chats, and the token is the one credential this app hands out — putting it in the clipboard alongside the shopping would eventually put it somewhere public. Sending the link stays a separate, deliberate button. There is a test asserting the token is absent from the copied text.
 - Guests identify themselves with a free-text `guestName` in the request body, persisted to `localStorage` on their device. It is a **label, not an identity** — it is never authenticated and must never be used for any access decision.
 
 ---
@@ -239,6 +240,19 @@ different questions. Keep them apart rather than merging them.
   form and the same row, and the pages cannot drift the way two copies would.
   `editable` is what a view-only link turns off; `canDelete` is the one thing
   members have and guests do not.
+- **"Copy list" produces plain text, not a screenshot or a link** (`listText.ts`,
+  `CopyListButton`). The list goes out to whoever is near the shop through
+  WhatsApp or a text message as often as through the share link, and pasted
+  text works for someone with no smartphone browser at all. It sits in the
+  "To buy" card on both pages, next to the items it copies, and a guest gets it
+  too — they can already read every word of what it produces.
+- **The copied text is deliberately plain ASCII.** A text message written in the
+  7-bit GSM alphabet fits 160 characters; a single tick or arrow switches the
+  whole message to UCS-2 and halves that to 70. Names and comments may of
+  course carry anything, but the app's own scaffolding — `- ` bullets, a
+  two-space indent for a comment, `To buy:` / `Already in the basket:` headings
+  — adds nothing that costs a segment. Who added an item and who picked it up
+  are left out: useful on screen, noise in a message read in a shop.
 - **The comment sits behind a disclosure in the composer**, and is edited from
   the row through `window.prompt` — the same thing renaming a list does. Most
   items are two words and a quantity; a permanent textarea above the list, or
@@ -362,7 +376,7 @@ Two suites, run together with `npm run test:all`.
 
 ### Browser tests — Playwright, `e2e/`
 
-- 14 tests, run with `npm run test:e2e`. Config is `playwright.config.ts` at the repo root.
+- 15 tests, run with `npm run test:e2e`. Config is `playwright.config.ts` at the repo root.
 - **Two areas: the guest flow and the statistics page.** The guest flow is the riskiest path — the one surface reachable without an account — and was the only coverage for a long time. (The theme test lives there because the toggle is on the guest header too.)
 - `statistics.spec.ts` exists because **every bug that page has had was invisible to the server suite**: a fold bucket that borrowed a real category's name, a one-month range drawing a lone dot, a stale response overwriting a newer one. Those are questions about what is on the screen. It reaches the page through the header link, never a direct URL — a page nobody can navigate to is a page nobody has.
 - `seedStatsHousehold()` builds a household through the API, giving **each joining member its own request context**: joining sets a session cookie, and a shared jar would sign the owner out halfway through.
@@ -373,13 +387,13 @@ Two suites, run together with `npm run test:all`.
 - Every guest gets `browser.newContext()` — a guest is *defined* by having no cookies and no carried-over storage, so sharing a context would defeat the point.
 - Tests create their own household, so they share nothing but the server and can run in parallel.
 
-What it asserts: a member creates and shares a list through the UI; a guest with no account opens the link, names themselves, adds an item and ticks one off; the member sees those changes. A second journey covers the comment: a guest adds an item carrying one, the household reads it and rewrites it, and the guest sees the new wording. Plus view-only enforcement — including that a view-only guest can read a comment but is offered no control to change it — instant revocation, the name prompt appearing only once, a dead token, that a guest is bounced off every private route, that a chosen theme survives a reload without a flash, and that the sign-in page carries the toggle at all — the one signed-out screen everybody sees.
+What it asserts: a member creates and shares a list through the UI; a guest with no account opens the link, names themselves, adds an item and ticks one off; the member sees those changes. A second journey covers the comment: a guest adds an item carrying one, the household reads it and rewrites it, and the guest sees the new wording. A third covers "Copy list": the clipboard is read back and compared to the exact expected text, and asserted not to contain the share token. Plus view-only enforcement — including that a view-only guest can read a comment but is offered no control to change it — instant revocation, the name prompt appearing only once, a dead token, that a guest is bounced off every private route, that a chosen theme survives a reload without a flash, and that the sign-in page carries the toggle at all — the one signed-out screen everybody sees.
 
 **Use `click()`, not `check()`, on the item checkboxes.** They are controlled inputs that only flip once the server round-trip lands, so `check()`'s immediate state assertion fails. Assert the visible outcome instead.
 
 ### Both suites were verified by breaking the code
 
-Twelve deliberate regressions were introduced, and each was caught by a failing test:
+Fourteen deliberate regressions were introduced, and each was caught by a failing test:
 
 1. Removing the `household_id` filter from the expenses list query → `isolation` failed.
 2. Adding `householdId` to the guest share response → `share` failed.
@@ -393,6 +407,8 @@ Twelve deliberate regressions were introduced, and each was caught by a failing 
 10. Removing the Statistics link from the header → all four statistics tests failed, since none of them types a URL.
 11. Dropping `note` from the item update statement → `itemComments` failed, an edit silently doing nothing.
 12. Rendering `ItemRow`'s comment button regardless of `editable` → the Playwright view-only test failed, with an edit control on a read-only link.
+13. Dropping the comment from `listAsText` → the copy test failed on the exact text.
+14. Appending the current URL to the copied text → the copy test failed on the token assertion, which is the whole point of that line.
 
 The statistics suite also earned its place on the way in: the one-month test failed against the unguarded fetch, which is how the stale-response race in §9.2 was found.
 

@@ -114,6 +114,66 @@ test.describe('guest shopping list', () => {
     await guest.context().close();
   });
 
+  test('copies the whole list as plain text, ready to paste into a chat', async ({
+    page,
+    browser,
+    request,
+    baseURL,
+  }) => {
+    const owner = await seedSharedList(request, baseURL!, { items: [] });
+    const add = async (data: Record<string, unknown>) =>
+      (await request.post(`/api/lists/${owner.listId}/items`, { data })).json();
+
+    await add({ name: 'Milk', quantity: '2 L', note: 'The one in the glass bottle' });
+    await add({ name: 'Bread' });
+    const coffee = await add({ name: 'Coffee' });
+    await request.patch(`/api/lists/${owner.listId}/items/${coffee.id}`, {
+      data: { isChecked: true },
+    });
+
+    const guest = await openAsGuest(browser, owner.shareUrl);
+    await guest.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+    await identifyAs(guest, 'Ruti');
+    await expect(guest.getByText('Coffee')).toBeVisible();
+
+    await guest.getByRole('button', { name: 'Copy list' }).click();
+    await expect(guest.getByRole('button', { name: 'Copied' })).toBeVisible();
+
+    const copied = await guest.evaluate(() => navigator.clipboard.readText());
+    expect(copied).toBe(
+      [
+        'Supermarket',
+        '',
+        'To buy:',
+        '- Milk (2 L)',
+        '  The one in the glass bottle',
+        '- Bread',
+        '',
+        'Already in the basket:',
+        '- Coffee',
+      ].join('\n'),
+    );
+
+    // The share link is a credential and this text goes into group chats.
+    expect(copied).not.toContain(owner.shareToken);
+    expect(copied).not.toContain('Added by');
+
+    // --- Member: the same button, on the page they are looking at ----------
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+    await page.goto('/login');
+    await page.getByLabel('Email').fill(owner.email);
+    await page.getByLabel('Password').fill(PASSWORD);
+    await page.getByRole('button', { name: 'Sign in' }).click();
+    await page.waitForURL('/');
+    await page.getByRole('link', { name: 'Shopping' }).click();
+    await page.getByRole('link', { name: /Supermarket/ }).click();
+
+    await page.getByRole('button', { name: 'Copy list' }).click();
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(copied);
+
+    await guest.context().close();
+  });
+
   test('a view-only guest sees a comment but is given no way to change it', async ({
     browser,
     request,
