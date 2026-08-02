@@ -142,8 +142,9 @@ test.describe('guest shopping list', () => {
     const copied = await guest.evaluate(() => navigator.clipboard.readText());
     expect(copied).toBe(
       [
+        // The name runs straight into the first heading; blank lines separate
+        // sections, not the title from its list.
         'Supermarket',
-        '',
         'To buy:',
         '- Milk (2 L)',
         '  The one in the glass bottle',
