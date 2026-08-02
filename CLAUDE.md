@@ -9,7 +9,7 @@ Household expenses tracker + shared shopping lists. npm workspace: `server/` (Ex
 ```bash
 npm install
 npm run dev        # API :4000 + Vite :5173
-npm test           # vitest, server integration suite (149 tests)
+npm test           # vitest, server integration suite (160 tests)
 npm run test:e2e   # playwright, guest flow + statistics page (15 tests)
 npm run test:all   # both
 npm run typecheck  # both workspaces + e2e/
@@ -63,6 +63,7 @@ they stop being true.
 - **"Copy list" puts the whole list on the clipboard as plain text** for pasting into WhatsApp or a text message (PRs #19-#21, live). It sits beside Rename on a list, on every row of the lists index, and on the guest page. The text is deliberately plain ASCII (an emoji halves an SMS segment) and **deliberately excludes the share link**, since it is written to be pasted into group chats (`ARCHITECTURE.md` §6, §9).
 - **Both copy follow-ups came from a real paste, not from a test.** The button was first put in the "To buy" card heading, where it read as belonging to the items rather than the list, and the text carried a blank line under the list name that only pushed the shopping down a phone screen. A screenshot showed neither. The paste also confirmed the two-space indent under a comment survives WhatsApp intact.
 - **The index's copy button is the one to re-check on iOS after any change to it.** It fetches the list mid-click, and Safari only honours a clipboard write still inside the originating gesture — `web/src/clipboard.ts` works around that, and Chromium cannot prove the workaround is needed or working.
+- **The "Danger zone" at the foot of `/household` deletes an account or the whole household** (`DELETE /auth/account`, `DELETE /household`). Both confirm with the caller's **password**, not just a dialog, and no migration was needed — the schema's `ON DELETE CASCADE` already did the work (`ARCHITECTURE.md` §3, "Closing an account or a household"). Two things to know before touching it: a household's **only** owner is refused while anyone else is still in it, and **there is still no route to promote an existing member to owner** (§14), so "hand ownership over first" currently means inviting a new owner account. Not deployed yet.
 - **Shopping items show their comment** (PR #17, live). No migration was needed: `note` was already a column, just never on screen. **Photos were built alongside it and deliberately removed** before it was ever merged — the bytes would have grown a database sized in single-digit MB after ten years, and the nightly backup artifact with it. Do not re-add them without an answer to storage first (`ARCHITECTURE.md` §8, "Item comments").
 
 ## Schema changes

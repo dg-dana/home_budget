@@ -56,6 +56,38 @@ Reference for how this app is put together and why. Read this before extending i
 - Delete a **category** → its expenses survive and show as "Uncategorised".
 - Delete a **recurring rule** → the expenses it already generated survive and lose their `recurring_id`. They record money that really was spent.
 
+### Closing an account or a household
+
+Two routes end things for good: `DELETE /auth/account` (your own account) and
+`DELETE /household` (owner only, the whole tenant). Both take the caller's
+password in the body and clear the session cookie on the way out.
+
+- **The password is the confirmation, not a dialog.** A session cookie proves a
+  browser signed in once, not who is holding it now — the same reasoning that
+  makes `POST /auth/password` ask for the current one. `assertPassword()` in
+  `auth.ts` is the shared check.
+- **The household delete is one statement.** Every table hangs off `households`
+  with `ON DELETE CASCADE`, so there is no delete order to get wrong and no
+  orphan to leave behind, and share tokens die with their lists rather than
+  needing separate revocation. `DELETE FROM households WHERE id = ?` — the
+  `WHERE` is the §5 invariant, not a convenience.
+- **Deleting your account is the same deletion the owner could already perform
+  from the other side**, so the household's history is untouched: `paid_by`
+  goes `NULL` and the money stays counted (above). Leaving must not silently
+  rewrite what everybody else's totals say.
+- **A household must keep an owner.** Its *only* owner is refused while anyone
+  else is still there: nobody would be left able to invite, rename or remove,
+  and promoting somebody on their behalf is not a decision this app should be
+  making. The ways out are handing ownership over first — an invite can carry
+  the `owner` role — or deleting the household. One owner among several may
+  leave freely.
+- **The last person out takes the household with them**, since its rows would
+  otherwise sit there forever with no account able to reach them.
+- Other members' cookies need no eviction: the user row is re-read on every
+  request (§4), so a deleted user's next call is a 401 by construction.
+- There is no undo, no export and no grace period. It is a household budget,
+  not a bank.
+
 ### Money
 
 - **Always integer cents (`amount_cents`, `monthly_budget_cents`). Never floats, never at any layer.**
@@ -91,8 +123,8 @@ Reference for how this app is put together and why. Read this before extending i
 
 ## 5. Authorization model
 
-- **Owner only**: household settings, create/revoke invites, remove members.
-- **Any member**: categories, expenses, shopping lists, sharing controls.
+- **Owner only**: household settings, create/revoke invites, remove members, delete the household.
+- **Any member**: categories, expenses, shopping lists, sharing controls, deleting their own account (§3).
 - **Guest (share token only)**: read one list; add/edit/tick/delete its items, and only while `share_can_edit` is on.
 
 ### The invariant that matters most
@@ -227,7 +259,7 @@ different questions. Keep them apart rather than merging them.
 
 - React 18, React Router 7, **no state-management library and no data-fetching library**. Deliberate: the app is small and every page's data is scoped to one screen.
 - Per-page pattern: `useState` + a `load()` callback + `useEffect`. Mutations call the API then re-run `load()`. **Refetch rather than mutate local state** — it keeps guest/member concurrency honest at the cost of an extra request.
-- `api.ts` — thin typed `fetch` wrapper; unwraps `{error}` bodies into `ApiError` carrying the status. Also the single home for all response type definitions.
+- `api.ts` — thin typed `fetch` wrapper; unwraps `{error}` bodies into `ApiError` carrying the status. Also the single home for all response type definitions. `delete` takes an optional body, which is how the two deletions in §3 send their password confirmation.
 - `session.tsx` — the only global state. Holds `user` + `household`, hydrates from `GET /auth/me` on mount, treats a 401 as "signed out" rather than an error.
 - `format.ts` — money and date helpers. **Month/day helpers use local time, not UTC**, so "today" matches the user's calendar rather than the server's.
 - `styles.css` — plain CSS, custom properties, light/dark themes (§9.1). No CSS framework, no CSS-in-JS.
@@ -275,6 +307,16 @@ different questions. Keep them apart rather than merging them.
   items are two words and a quantity; a permanent textarea above the list, or
   an inline editor on every row, would be a lot of machinery for a string that
   is usually empty.
+- **The two deletions live in a "Danger zone" card at the foot of
+  `/household`**, red-bordered and last, so nobody arrives at one by scrolling
+  past a form that looked like the ones above it. Each has its own password
+  field and its own `window.confirm`, worded with what the household actually
+  loses — the confirm counts the other accounts that go with it. `.button
+  .danger-solid` is filled rather than the ghost `.button.danger` used for the
+  ✕ on a single row: ending an account should not look like the quietest
+  control on the page. **The sole owner's "Delete my account" is disabled with
+  the reason printed underneath**, since the server refuses it anyway (§3) and
+  saying so beats a round trip that only produces an error.
 - A row's trailing controls are wrapped in `.item-actions` so that on a phone
   they wrap **as a group**, instead of peeling off one at a time under the
   checkbox.
@@ -371,7 +413,7 @@ Two suites, run together with `npm run test:all`.
 
 ### Server integration suite — Vitest, `server/test/`
 
-- 149 tests, run with `npm test` from the repo root.
+- 160 tests, run with `npm test` from the repo root.
 - They are **integration tests over real HTTP**, not unit tests: each file boots the actual app on an ephemeral port and drives it with a cookie-aware client. There is no mocking of the database, the router or the session.
 - `test/setup.ts` runs before any application module is imported and points `DATABASE_PATH` at a unique temp file. Vitest gives each test file its own module registry, so **every test file gets its own SQLite database** and files can run in parallel.
 - `resetDatabase()` truncates every table in `beforeEach`.
@@ -385,7 +427,7 @@ Two suites, run together with `npm run test:all`.
 - `auth.test.ts` — registration, login, forged/expired/tampered cookies, and the full invite lifecycle.
 - `itemComments.test.ts` — the comment on a shopping item: set on add, edited, cleared, and the length cap.
 - `expenses.test.ts` — cents arithmetic, month-boundary maths, summary aggregation, and what survives a category or member deletion. Also the statistics endpoint: the per-member and per-category splits, the member/category cross-tab adding up to the same money as the totals, months with no spending, the name ordering that pins each member's colour, and the range validation.
-- `household.test.ts` — owner vs member permissions, cascade behaviour, list mechanics.
+- `household.test.ts` — owner vs member permissions, list mechanics, and the two irreversible deletions (§3): the cascade including other people's accounts and their share links, the password confirmation, the refusal of a sole owner with company, the last owner taking the household with them, and a member leaving without moving anybody's totals.
 - `recurring.test.ts` — recurrence date maths as a pure function (month-end clamping, leap years, rollovers), then catch-up, idempotency, pause/resume.
 - `migrations.test.ts` — fresh builds, repeat runs being no-ops, and the pre-migration-system adoption path.
 - `password.test.ts` — self-service change, owner-issued recovery, and that both evict other devices.
@@ -410,7 +452,7 @@ What it asserts: a member creates and shares a list through the UI; a guest with
 
 ### Both suites were verified by breaking the code
 
-Fourteen deliberate regressions were introduced, and each was caught by a failing test:
+Nineteen deliberate regressions were introduced, and each was caught by a failing test:
 
 1. Removing the `household_id` filter from the expenses list query → `isolation` failed.
 2. Adding `householdId` to the guest share response → `share` failed.
@@ -426,6 +468,11 @@ Fourteen deliberate regressions were introduced, and each was caught by a failin
 12. Rendering `ItemRow`'s comment button regardless of `editable` → the Playwright view-only test failed, with an edit control on a read-only link.
 13. Dropping the comment from `listAsText` → the copy test failed on the exact text.
 14. Appending the current URL to the copied text → the copy test failed on the token assertion, which is the whole point of that line.
+15. Dropping `requireOwner` from `DELETE /household` → `household` failed, a member able to close the family's household down.
+16. Skipping `assertPassword` in `DELETE /auth/account` → `household` failed, a borrowed browser enough to delete the account.
+17. Neutering the "anyone else still here" half of the sole-owner guard → `household` failed, the last owner walking out of a household full of people.
+18. Making a member's own deletion drop the household rather than the user → `household` failed, one person leaving taking everyone's money with them.
+19. Removing `WHERE id = ?` from the household delete → `isolation` failed, one family's departure emptying every other family's tables.
 
 The statistics suite also earned its place on the way in: the one-month test failed against the unguarded fetch, which is how the stale-response race in §9.2 was found.
 
@@ -504,6 +551,14 @@ Alongside each screenshot it reports the body colour — the cheap proof a theme
 Honest list — these are real, and none is currently blocking.
 
 - **Frontend coverage is the guest flow plus one sign-in page test.** The expenses dashboard, budgets, statistics, invites and household settings have no browser tests — changes there still need checking by hand, against the built app rather than by reading the CSS.
+- **There is no way to promote an existing member to owner.** A role is fixed
+  at the moment the account is created, from the invite; no route changes one
+  afterwards. It shows up in the sole-owner rule in §3 — "make someone else an
+  owner first" today means inviting a *new* owner account, not handing the
+  badge to the person already sitting there. An owner who wants out can still
+  remove the others and then delete, or delete the household, so nothing is a
+  dead end; a `PUT /household/members/:id/role` would make the intended path
+  the obvious one.
 - **Links are generated, not delivered.** Invites and password recovery links are copied by the owner and sent by hand; there is no email integration. This is why recovery is owner-issued rather than self-service "forgot password".
 - **The guest list page polls every 15 s; the member list page does not poll at all.** So a member can be looking at a stale list while a guest shops. Unifying this — or moving both to SSE/WebSocket — is the natural fix.
 - Rate limiting is in-process and will not survive horizontal scaling (see §13) — moot while the deployment is deliberately one machine.
