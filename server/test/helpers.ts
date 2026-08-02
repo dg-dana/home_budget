@@ -19,7 +19,7 @@ export interface Client {
   post<T = any>(path: string, body?: unknown): Promise<Response<T>>;
   put<T = any>(path: string, body?: unknown): Promise<Response<T>>;
   patch<T = any>(path: string, body?: unknown): Promise<Response<T>>;
-  delete<T = any>(path: string): Promise<Response<T>>;
+  delete<T = any>(path: string, body?: unknown): Promise<Response<T>>;
   cookies(): string;
 }
 
@@ -101,7 +101,7 @@ export function createClient(): Client {
     post: (path, body) => send('POST', path, body ?? {}),
     put: (path, body) => send('PUT', path, body),
     patch: (path, body) => send('PATCH', path, body),
-    delete: (path) => send('DELETE', path),
+    delete: (path, body) => send('DELETE', path, body),
     cookies: () => [...jar.keys()].join(','),
   };
 }

@@ -143,6 +143,30 @@ describe('cross-household isolation', () => {
     expect((await alice.client.get('/api/auth/me')).status).toBe(200);
   });
 
+  it('deletes only the calling household, never the other one', async () => {
+    await alice.client.post('/api/expenses', { amount: 100, spentOn: '2026-03-04' });
+    await bob.client.post('/api/expenses', { amount: 7, spentOn: '2026-03-04' });
+
+    expect((await bob.client.delete('/api/household', { password: 'password123' })).status).toBe(204);
+
+    // Alice never shared a household id with that request, and keeps everything.
+    expect((await alice.client.get('/api/auth/me')).status).toBe(200);
+    expect((await alice.client.get('/api/household')).body.name).toBe("Alice's home");
+    expect((await alice.client.get('/api/expenses?month=2026-03')).body).toHaveLength(1);
+    expect((await alice.client.get('/api/categories')).body.length).toBeGreaterThan(0);
+  });
+
+  it('leaves the other household alone when someone deletes their account', async () => {
+    const alicePartner = await addMember(alice, 'Alice partner');
+    await alicePartner.client.post('/api/expenses', { amount: 12, spentOn: '2026-03-04' });
+
+    expect((await bob.client.delete('/api/auth/account', { password: 'password123' })).status).toBe(204);
+
+    expect((await alice.client.get('/api/household/members')).body).toHaveLength(2);
+    expect((await alicePartner.client.get('/api/auth/me')).status).toBe(200);
+    expect((await alice.client.get('/api/expenses?month=2026-03')).body).toHaveLength(1);
+  });
+
   it('scopes the monthly summary to the calling household', async () => {
     await alice.client.post('/api/expenses', { amount: 100, spentOn: '2026-03-04' });
     await bob.client.post('/api/expenses', { amount: 7, spentOn: '2026-03-04' });

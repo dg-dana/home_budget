@@ -21,6 +21,9 @@
   --muted: light-dark(#64748b, #94a3b8);
   --danger: light-dark(#dc2626, #f87171);
   --danger-soft: light-dark(#fee2e2, #45161a);
+  /* Text sitting on a solid --danger fill. The dark step is a light red, so
+     white on it would be the unreadable pair. */
+  --on-danger: light-dark(#ffffff, #2b0b0d);
   --success: light-dark(#16a34a, #4ade80);
   --warning: light-dark(#d97706, #fbbf24);
   /* Categorical series colours, for charts where each family member is a mark
@@ -195,6 +198,13 @@ a:hover { text-decoration: underline; }
   min-width: 0;
 }
 
+/* Irreversible actions live in their own card, marked out so nobody arrives at
+   one by scrolling past a form that looked like the ones above it. */
+.danger-zone {
+  border-color: var(--danger);
+}
+.danger-zone .card-title h2 { color: var(--danger); }
+
 .card-title {
   display: flex;
   align-items: center;
@@ -298,6 +308,16 @@ input[type='checkbox'] {
   border-color: transparent;
 }
 .button.danger:hover:not(:disabled) { background: var(--danger-soft); }
+
+/* The ghost `.button.danger` is right for the ✕ on one row among many. An
+   action that ends an account or a household should not look like the quietest
+   control on the page, so it gets the fill instead. */
+.button.danger-solid {
+  background: var(--danger);
+  color: var(--on-danger);
+  border-color: transparent;
+}
+.button.danger-solid:hover:not(:disabled) { filter: brightness(0.93); }
 
 .button.small {
   padding: 0.3rem 0.6rem;

@@ -2,10 +2,12 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   addMember,
   createClient,
+  createSharedList,
   registerHousehold,
   resetDatabase,
   startServer,
   stopServer,
+  uniqueEmail,
   type Client,
   type Household,
 } from './helpers.js';
@@ -108,20 +110,167 @@ describe('member permissions', () => {
     expect((await guest.get(`/api/share/${shared.body.shareToken}`)).status).toBe(200);
   });
 
-  it('cascades everything away when the household is deleted', async () => {
-    // No API deletes a household, so this asserts the schema's ON DELETE rules
-    // rather than a route — they are what make account deletion safe to add.
+});
+
+/**
+ * The two irreversible ones. Both are confirmed with the caller's own password
+ * — a cookie proves a browser signed in once, not who is holding it now.
+ */
+describe('deleting a household', () => {
+  beforeAll(async () => {
+    await startServer({ enableRateLimits: false });
+  });
+  afterAll(stopServer);
+
+  let owner: Household;
+  let member: { client: Client; userId: string; email: string };
+
+  beforeEach(async () => {
+    resetDatabase();
+    owner = await registerHousehold({ householdName: 'The Cohens' });
+    member = await addMember(owner, 'Yossi');
+  });
+
+  it('cascades everything away, including the other accounts', async () => {
     const list = await owner.client.post('/api/lists', { name: 'Doomed' });
     await owner.client.post(`/api/lists/${list.body.id}/items`, { name: 'Milk' });
+    await owner.client.post(`/api/lists/${list.body.id}/share`, { canEdit: true });
     await owner.client.post('/api/expenses', { amount: 5, spentOn: '2026-04-10' });
+    await owner.client.post('/api/recurring', {
+      amount: 900,
+      frequency: 'monthly',
+      startsOn: '2026-04-01',
+    });
+    await owner.client.post('/api/household/invites', { role: 'member' });
+
+    expect((await owner.client.delete('/api/household', { password: 'password123' })).status).toBe(204);
 
     const { db } = await import('../src/db.js');
-    db.prepare('DELETE FROM households WHERE id = ?').run(owner.householdId);
-
-    for (const table of ['users', 'expenses', 'categories', 'shopping_lists', 'shopping_items', 'invites']) {
+    for (const table of [
+      'households',
+      'users',
+      'expenses',
+      'recurring_expenses',
+      'categories',
+      'shopping_lists',
+      'shopping_items',
+      'invites',
+    ]) {
       const row = db.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get() as { count: number };
       expect(row.count, `${table} should be empty after the household is deleted`).toBe(0);
     }
+
+    // Everybody's session dies with the rows, the owner's included.
+    expect((await owner.client.get('/api/auth/me')).status).toBe(401);
+    expect((await member.client.get('/api/auth/me')).status).toBe(401);
+  });
+
+  it('kills the share links along with the lists', async () => {
+    const { token } = await createSharedList(owner);
+    const guest = createClient();
+    expect((await guest.get(`/api/share/${token}`)).status).toBe(200);
+
+    await owner.client.delete('/api/household', { password: 'password123' });
+    expect((await guest.get(`/api/share/${token}`)).status).toBe(404);
+  });
+
+  it('refuses without the right password, and changes nothing', async () => {
+    expect((await owner.client.delete('/api/household', { password: 'wrong-password' })).status).toBe(400);
+    expect((await owner.client.delete('/api/household')).status).toBe(400);
+
+    expect((await owner.client.get('/api/household')).body.name).toBe('The Cohens');
+    expect((await member.client.get('/api/auth/me')).status).toBe(200);
+  });
+
+  it('refuses a member, even with their own password', async () => {
+    const response = await member.client.delete('/api/household', { password: 'password123' });
+    expect(response.status).toBe(403);
+    expect((await owner.client.get('/api/household')).status).toBe(200);
+  });
+});
+
+describe('deleting your own account', () => {
+  beforeAll(async () => {
+    await startServer({ enableRateLimits: false });
+  });
+  afterAll(stopServer);
+
+  let owner: Household;
+  let member: { client: Client; userId: string; email: string };
+
+  beforeEach(async () => {
+    resetDatabase();
+    owner = await registerHousehold({ householdName: 'The Cohens' });
+    member = await addMember(owner, 'Yossi');
+  });
+
+  it('lets a member go, and leaves the money behind', async () => {
+    await member.client.post('/api/expenses', {
+      amount: 40,
+      description: 'Yossi shop',
+      spentOn: '2026-04-10',
+    });
+
+    expect((await member.client.delete('/api/auth/account', { password: 'password123' })).status).toBe(204);
+    expect((await member.client.get('/api/auth/me')).status).toBe(401);
+    expect((await owner.client.get('/api/household/members')).body).toHaveLength(1);
+
+    // History survives the person: the expense is still there, with no payer.
+    const expenses = (await owner.client.get('/api/expenses?month=2026-04')).body;
+    expect(expenses).toHaveLength(1);
+    expect(expenses[0].amount_cents).toBe(4000);
+    expect(expenses[0].paid_by).toBeNull();
+    expect(expenses[0].paid_by_name).toBeNull();
+  });
+
+  it('frees the email address for a fresh account', async () => {
+    await member.client.delete('/api/auth/account', { password: 'password123' });
+    const again = await addMember(owner, 'Yossi');
+    expect((await again.client.get('/api/auth/me')).status).toBe(200);
+  });
+
+  it('refuses without the right password', async () => {
+    expect((await member.client.delete('/api/auth/account', { password: 'nope' })).status).toBe(400);
+    expect((await member.client.delete('/api/auth/account')).status).toBe(400);
+    expect((await member.client.get('/api/auth/me')).status).toBe(200);
+  });
+
+  it('refuses the only owner while anyone else is still here', async () => {
+    const response = await owner.client.delete('/api/auth/account', { password: 'password123' });
+    expect(response.status).toBe(400);
+    expect(response.body.error).toMatch(/only owner/i);
+    expect((await owner.client.get('/api/auth/me')).status).toBe(200);
+    expect((await member.client.get('/api/auth/me')).status).toBe(200);
+  });
+
+  it('lets the last owner out, taking the household with them', async () => {
+    await owner.client.post('/api/expenses', { amount: 5, spentOn: '2026-04-10' });
+    expect((await owner.client.delete(`/api/household/members/${member.userId}`)).status).toBe(204);
+
+    expect((await owner.client.delete('/api/auth/account', { password: 'password123' })).status).toBe(204);
+    expect((await owner.client.get('/api/auth/me')).status).toBe(401);
+
+    const { db } = await import('../src/db.js');
+    for (const table of ['households', 'users', 'expenses', 'categories']) {
+      const row = db.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get() as { count: number };
+      expect(row.count, `${table} should be empty once the last owner leaves`).toBe(0);
+    }
+  });
+
+  it('lets an owner leave once someone else owns the place', async () => {
+    // Ownership is handed over with an invite carrying the owner role.
+    const invite = await owner.client.post('/api/household/invites', { role: 'owner' });
+    const heir = createClient();
+    await heir.post('/api/auth/join', {
+      token: invite.body.token,
+      name: 'Heir',
+      email: uniqueEmail('heir'),
+      password: 'password123',
+    });
+
+    expect((await owner.client.delete('/api/auth/account', { password: 'password123' })).status).toBe(204);
+    expect((await heir.get('/api/household')).body.name).toBe('The Cohens');
+    expect((await heir.get('/api/household/members')).body).toHaveLength(2);
   });
 });
 

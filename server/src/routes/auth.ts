@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import {
+  assertPassword,
   currentUser,
   clearSession,
   hashPassword,
@@ -199,6 +200,58 @@ authRouter.post(
     await setPassword(user.id, input.newPassword);
     // Every other device is signed out; this one gets a fresh cookie.
     issueSession(res, getUser(user.id));
+    res.status(204).end();
+  }),
+);
+
+const deleteAccountSchema = z.object({
+  password: z.string().min(1, 'Enter your password to confirm'),
+});
+
+/**
+ * Deleting your own account. Confirmed with your password, like changing it.
+ *
+ * The household's history is not yours to destroy: `paid_by` / `created_by` go
+ * NULL and the expenses stay, so the totals everyone else reads do not move
+ * when someone leaves (§3). Removing a member is the same deletion the owner
+ * can already perform from the other side.
+ *
+ * A household must keep an owner, so the *only* owner cannot walk out on
+ * people who are still in it: nobody would be left able to invite, rename or
+ * remove, and quietly promoting somebody is not a decision to make on their
+ * behalf. The two honest ways out are handing ownership over first (an invite
+ * can carry the `owner` role) or deleting the household outright. One owner
+ * among several may leave freely. The last person here — necessarily an owner
+ * — takes the household with them, since its rows would otherwise sit there
+ * forever with no account able to reach them.
+ */
+authRouter.delete(
+  '/account',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const session = currentUser(req);
+    const input = parseBody(deleteAccountSchema, req.body);
+    await assertPassword(session.id, input.password);
+
+    const remaining = db
+      .prepare(
+        `SELECT COUNT(*) AS total, COUNT(CASE WHEN role = 'owner' THEN 1 END) AS owners
+         FROM users WHERE household_id = ? AND id != ?`,
+      )
+      .get(session.householdId, session.id) as { total: number; owners: number };
+
+    if (session.role === 'owner' && remaining.owners === 0) {
+      if (remaining.total > 0) {
+        throw badRequest(
+          'You are the only owner of this household. Make someone else an owner first, or delete the household itself.',
+        );
+      }
+      db.prepare('DELETE FROM households WHERE id = ?').run(session.householdId);
+    } else {
+      db.prepare('DELETE FROM users WHERE id = ?').run(session.id);
+    }
+
+    clearSession(res);
     res.status(204).end();
   }),
 );

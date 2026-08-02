@@ -4,7 +4,7 @@ import jwt from 'jsonwebtoken';
 import type { RequestHandler } from 'express';
 import { config } from './config.js';
 import { db } from './db.js';
-import { forbidden, unauthorized } from './http.js';
+import { badRequest, forbidden, unauthorized } from './http.js';
 import type { SessionUser, UserRow } from './types.js';
 
 const COOKIE_NAME = 'hb_session';
@@ -81,6 +81,23 @@ export async function setPassword(userId: string, plainPassword: string): Promis
   db.prepare(
     'UPDATE users SET password_hash = ?, session_generation = session_generation + 1 WHERE id = ?',
   ).run(hash, userId);
+}
+
+/**
+ * Re-checks the caller's own password before something irreversible.
+ *
+ * The same guard as `POST /auth/password`, for the same reason: a session
+ * cookie proves a browser was signed in once, not that the person at the
+ * keyboard is its owner. Deleting an account — or a whole household — is not
+ * something an unlocked laptop should be able to do on its way past.
+ */
+export async function assertPassword(userId: string, plain: string): Promise<void> {
+  const row = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(userId) as
+    | Pick<UserRow, 'password_hash'>
+    | undefined;
+  if (!row || !(await verifyPassword(plain, row.password_hash))) {
+    throw badRequest('That is not your password');
+  }
 }
 
 /** Attaches `req.user` when a valid session cookie is present, otherwise 401s. */

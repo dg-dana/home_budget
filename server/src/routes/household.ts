@@ -1,7 +1,15 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { config } from '../config.js';
-import { currentUser, newToken, nowIso, requireAuth, requireOwner } from '../auth.js';
+import {
+  assertPassword,
+  clearSession,
+  currentUser,
+  newToken,
+  nowIso,
+  requireAuth,
+  requireOwner,
+} from '../auth.js';
 import { db } from '../db.js';
 import { asyncHandler, badRequest, notFound, parseBody } from '../http.js';
 import type { HouseholdRow, InviteRow, UserRow } from '../types.js';
@@ -13,6 +21,11 @@ householdRouter.use(requireAuth);
 const settingsSchema = z.object({
   name: z.string().trim().min(1, 'Household name is required').max(80),
   currency: z.string().trim().length(3).toUpperCase(),
+});
+
+/** Typing your password is the confirmation for anything irreversible. */
+const confirmSchema = z.object({
+  password: z.string().min(1, 'Enter your password to confirm'),
 });
 
 const inviteSchema = z.object({
@@ -43,6 +56,37 @@ householdRouter.put(
       user.householdId,
     );
     res.json({ id: user.householdId, name: input.name, currency: input.currency });
+  }),
+);
+
+/**
+ * Closes the household down: every member's account, and all of the money,
+ * categories, rules, lists and share links underneath it.
+ *
+ * One statement does the whole thing, because the schema already says so —
+ * every table hangs off `households` with `ON DELETE CASCADE` (§3), so there
+ * is no delete order here to get wrong and no orphan to leave behind. Share
+ * tokens die with their lists, which makes revocation part of the same
+ * transaction rather than an afterthought.
+ *
+ * Owner-only, and it costs the owner their password. There is no undo and no
+ * export.
+ */
+householdRouter.delete(
+  '/',
+  requireOwner,
+  asyncHandler(async (req, res) => {
+    const user = currentUser(req);
+    const input = parseBody(confirmSchema, req.body);
+    await assertPassword(user.id, input.password);
+
+    db.prepare('DELETE FROM households WHERE id = ?').run(user.householdId);
+
+    // Every other member's cookie stops working on its next request anyway —
+    // the user row is re-read every time (§4) — but the caller's own browser
+    // should not be left holding one either.
+    clearSession(res);
+    res.status(204).end();
   }),
 );
 
