@@ -9,8 +9,8 @@ Household expenses tracker + shared shopping lists. npm workspace: `server/` (Ex
 ```bash
 npm install
 npm run dev        # API :4000 + Vite :5173
-npm test           # vitest, server integration suite (160 tests)
-npm run test:e2e   # playwright, guest flow + statistics page (15 tests)
+npm test           # vitest, server integration suite (181 tests)
+npm run test:e2e   # playwright, guest flow + statistics + households (17 tests)
 npm run test:all   # both
 npm run typecheck  # both workspaces + e2e/
 npm run build      # server/dist + web/dist
@@ -21,11 +21,11 @@ npm run backup     # consistent SQLite snapshot (online backup API, not cp)
 ## Testing
 
 - CI (`.github/workflows/ci.yml`) runs typecheck plus both suites on every push.
-- `npm test` — `server/test/`, real HTTP against a real SQLite DB, no mocks. Each test file gets its own database.
-- `npm run test:e2e` — `e2e/`, Playwright against the **production build** (it runs `npm run build && npm start` itself). Covers the guest flow — including adding an item with a comment and copying the list as text — and the statistics page. It runs the server with `RATE_LIMITS=off`, which `config.ts` ignores in production.
+- `npm test` — `server/test/`, real HTTP against a real SQLite DB, no mocks. Each test file gets its own database. **Always `npm test`, never `npx vitest` from the repo root** — the config lives in `server/`, so a root run skips `setupFiles` and every file silently shares one database, which looks like a flood of unrelated failures.
+- `npm run test:e2e` — `e2e/`, Playwright against the **production build** (it runs `npm run build && npm start` itself). Covers the guest flow — including adding an item with a comment and copying the list as text — the statistics page, and the household switcher. It runs the server with `RATE_LIMITS=off`, which `config.ts` ignores in production.
 - **Do not run `playwright install`** — the sandbox ships a prebuilt Chromium and the config finds it.
-- Coverage gap: everything in `web/` except the guest flow, the sign-in page's theme toggle and the statistics page — the expenses dashboard, budgets, recurring, invites, settings. Changes there still need checking by hand.
-- **To check a UI change by hand, run `node .claude/skills/preview-ui/preview.mjs <route>`** rather than reasoning about the CSS. It builds, runs the production build on a spare port against a throwaway database, seeds a three-person household, signs in, and screenshots the route in both themes at 1100px and 390px — reporting the body colour (proof the theme applied) and whether the header links to the page at all. `--skip-build` on repeat runs. See `.claude/skills/preview-ui/SKILL.md`.
+- Coverage gap: everything in `web/` except the guest flow, the sign-in page's theme toggle, the statistics page and the household switcher — the expenses dashboard, budgets, recurring, invites, settings. Changes there still need checking by hand.
+- **To check a UI change by hand, run `node .claude/skills/preview-ui/preview.mjs <route>`** rather than reasoning about the CSS. It builds, runs the production build on a spare port against a throwaway database, seeds a three-person household (plus a second household on the owner's account, so the header switcher is exercised), signs in, and screenshots the route in both themes at 1100px and 390px — reporting the body colour (proof the theme applied) and whether the header links to the page at all. `--skip-build` on repeat runs. See `.claude/skills/preview-ui/SKILL.md`.
 - Beware `pkill -f <pattern>` in a tool call: the pattern matches the shell's own command line, so it kills the call itself (exit 144, no output). Use a self-excluding pattern like `dist/inde[x].js`.
 - Adding a route means adding cases to `isolation.test.ts` (if household-scoped) and `share.test.ts` (if guest-reachable). **`node .claude/skills/route-coverage/audit.mjs` lists which routes no test calls at all** — it reads every file in `server/test/`, and matches on path shape, so it proves a route is reached, not that the case asserts anything. Its second list (exercised outside the file §15 names) is usually fine: `recurring.test.ts` keeps its own cross-household case. See `.claude/skills/route-coverage/SKILL.md`.
 - **Break the code once and watch the new test fail before trusting it.** A test that has never failed has not been shown to test anything.
@@ -64,6 +64,8 @@ they stop being true.
 - **Both copy follow-ups came from a real paste, not from a test.** The button was first put in the "To buy" card heading, where it read as belonging to the items rather than the list, and the text carried a blank line under the list name that only pushed the shopping down a phone screen. A screenshot showed neither. The paste also confirmed the two-space indent under a comment survives WhatsApp intact.
 - **The index's copy button is the one to re-check on iOS after any change to it.** It fetches the list mid-click, and Safari only honours a clipboard write still inside the originating gesture — `web/src/clipboard.ts` works around that, and Chromium cannot prove the workaround is needed or working.
 - **The "Danger zone" at the foot of `/household` deletes an account or the whole household** (`DELETE /auth/account`, `DELETE /household`). Both confirm with the caller's **password**, not just a dialog, and no migration was needed — the schema's `ON DELETE CASCADE` already did the work (`ARCHITECTURE.md` §3, "Closing an account or a household"). Two things to know before touching it: a household's **only** owner is refused while anyone else is still in it, and **there is still no route to promote an existing member to owner** (§14), so "hand ownership over first" currently means inviting a new owner account. Deployed in run #16; **not yet confirmed by hand on a phone**, which is the check that counts.
+- **An account and a household are now separate things** (not yet deployed). Signing up creates an **account only**; a household is created or joined afterwards, and **one account can hold several** — switched from a `<select>` in the header, with a different display name in each. `users.household_id` is gone, replaced by a `memberships` table (migration `004`, which uses `DROP COLUMN` deliberately: the usual rebuild-and-rename recipe would have fired the `ON DELETE SET NULL` rules and erased who paid for what). Three things worth knowing before touching it: `requireHousehold` is what kept the change small — behind it `currentUser().householdId` still means "the household this request is about", so ~80 call sites never changed; removing a member now deletes only the **membership**, so `PAYER_IF_STILL_HERE` in `routes/expenses.ts` folds departed payers into the null-payer row or the per-member split stops adding up; and `Layout` keys its `<main>` on the household id, without which switching leaves the old household's money under the new household's name.
+- **Email confirmation exists but proves nothing yet.** There is still no mail provider, so the link is shown on screen (`NoticeCard`) exactly as invites and recovery links are — whoever registered is handed it immediately. It is a step in the flow, not a check. `server/src/notifications.ts` is the single seam: teach `deliver()` to send and it becomes real with no caller changes. **Do not describe it as verification anywhere user-facing** (`ARCHITECTURE.md` §14).
 - **Shopping items show their comment** (PR #17, live). No migration was needed: `note` was already a column, just never on screen. **Photos were built alongside it and deliberately removed** before it was ever merged — the bytes would have grown a database sized in single-digit MB after ten years, and the nightly backup artifact with it. Do not re-add them without an answer to storage first (`ARCHITECTURE.md` §8, "Item comments").
 
 ## Schema changes
@@ -72,7 +74,7 @@ Migrations live in `server/src/migrations.ts` and run on every boot. **Add a new
 
 ## The three rules most easily broken
 
-1. **Every household-scoped query filters on the caller's `household_id` in the SQL itself.** Never trust a client-supplied id; use `assertOwned()` for foreign ids.
+1. **Every household-scoped query filters on the caller's `household_id` in the SQL itself.** Never trust a client-supplied id; use `assertOwned()` for foreign ids. Since accounts may hold several households, "the caller's household" means **the one currently open**, resolved from a membership on every request — and "is this person one of ours" is a `memberships` question, not a `users` one.
 2. **Money is integer cents everywhere.** Convert only at the API boundary and at display time.
 3. **`/api/share/:token` and `/s/:token` are unauthenticated by design.** They must keep working with no cookie, and must never expose anything beyond the one list's name and items (comments included).
 

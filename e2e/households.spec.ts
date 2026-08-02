@@ -1,0 +1,86 @@
+import { expect, test } from '@playwright/test';
+import { PASSWORD, seedAccountWithHousehold, uniqueEmail } from './helpers';
+
+/**
+ * One account, more than one household.
+ *
+ * The server suite proves the data stays apart; these are the questions only a
+ * browser can answer — whether the control to move between them exists, whether
+ * using it actually repaints the page, and what a brand new account is shown
+ * before it has a household at all.
+ */
+test.describe('several households', () => {
+  test('switches between two households and shows each one’s own money', async ({
+    page,
+    request,
+  }) => {
+    const email = uniqueEmail('multi');
+    await seedAccountWithHousehold(request, {
+      email,
+      householdName: 'Home',
+      displayName: 'Dana',
+    });
+    await request.post('/api/expenses', {
+      data: { amount: 12.5, description: 'Home groceries', spentOn: monthDay() },
+    });
+
+    // A second household on the same account, which creating switches into.
+    const beach = await request.post('/api/households', {
+      data: { name: 'Beach Flat', currency: 'USD', displayName: 'Dana' },
+    });
+    expect(beach.ok()).toBeTruthy();
+    await request.post('/api/expenses', {
+      data: { amount: 99, description: 'Beach deckchair', spentOn: monthDay() },
+    });
+
+    await page.goto('/login');
+    await page.getByLabel('Email').fill(email);
+    await page.getByLabel('Password').fill(PASSWORD);
+    await page.getByRole('button', { name: 'Sign in' }).click();
+
+    // Signing in lands back in the household last open — the beach flat.
+    await page.waitForURL('/');
+    await expect(page.getByText('Beach deckchair')).toBeVisible();
+    await expect(page.getByText('Home groceries')).toHaveCount(0);
+
+    // The switcher is a real control, and using it changes what is on screen.
+    const switcher = page.getByLabel('Household');
+    await expect(switcher).toBeVisible();
+    await switcher.selectOption({ label: 'Home' });
+
+    await expect(page.getByText('Home groceries')).toBeVisible();
+    await expect(page.getByText('Beach deckchair')).toHaveCount(0);
+
+    // And it survives a reload, because the choice is in the session cookie
+    // rather than in the page's memory.
+    await page.reload();
+    await expect(page.getByText('Home groceries')).toBeVisible();
+  });
+
+  test('a brand new account is sent to the picker, and told to confirm first', async ({ page }) => {
+    await page.goto('/register');
+    await page.getByLabel('Email').fill(uniqueEmail('new'));
+    await page.getByLabel('Password').fill(PASSWORD);
+    await page.getByRole('button', { name: 'Create account' }).click();
+
+    await expect(page.getByRole('heading', { name: 'Confirm your address' })).toBeVisible();
+    await page.getByRole('button', { name: 'Continue' }).click();
+
+    // No household, so the app has nowhere else it can put them.
+    await expect(page).toHaveURL('/households');
+    await expect(page.getByText('You are not in a household yet.')).toBeVisible();
+
+    // And creating one is refused until the address is confirmed — said on the
+    // page rather than discovered by pressing the button.
+    await expect(page.getByRole('button', { name: 'Create a household' })).toBeDisabled();
+    await expect(page.getByText(/before creating or joining a household/)).toBeVisible();
+  });
+});
+
+/** Today, in the app's own local-time reckoning. */
+function monthDay(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(
+    now.getDate(),
+  ).padStart(2, '0')}`;
+}

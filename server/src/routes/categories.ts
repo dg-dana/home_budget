@@ -1,13 +1,13 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { currentUser, newId, nowIso, requireAuth } from '../auth.js';
+import { currentUser, newId, nowIso, requireAuth, requireHousehold } from '../auth.js';
 import { db } from '../db.js';
 import { asyncHandler, conflict, notFound, parseBody } from '../http.js';
 import type { CategoryRow } from '../types.js';
 
 export const categoriesRouter = Router();
 
-categoriesRouter.use(requireAuth);
+categoriesRouter.use(requireAuth, requireHousehold);
 
 const categorySchema = z.object({
   name: z.string().trim().min(1, 'Category name is required').max(60),

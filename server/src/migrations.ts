@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import type BetterSqlite3 from 'better-sqlite3';
 
 /**
@@ -152,5 +153,82 @@ CREATE INDEX IF NOT EXISTS idx_password_resets_user ON password_resets(user_id);
 -- issued by the password change from one stolen moments earlier.
 ALTER TABLE users ADD COLUMN session_generation INTEGER NOT NULL DEFAULT 0;
 `),
+  },
+
+  {
+    id: '004-memberships-and-email-verification',
+    up: (db) => {
+      db.exec(`
+-- An account's place in one household. Replaces users.household_id: the same
+-- email may now own or join several households, and carries a different name
+-- in each ("Dad" at home, "Dana" in the flat share).
+CREATE TABLE IF NOT EXISTS memberships (
+  id            TEXT PRIMARY KEY,
+  user_id       TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  household_id  TEXT NOT NULL REFERENCES households(id) ON DELETE CASCADE,
+  role          TEXT NOT NULL CHECK (role IN ('owner', 'member')),
+  display_name  TEXT NOT NULL,
+  created_at    TEXT NOT NULL,
+  UNIQUE (user_id, household_id)
+);
+CREATE INDEX IF NOT EXISTS idx_memberships_user ON memberships(user_id);
+CREATE INDEX IF NOT EXISTS idx_memberships_household ON memberships(household_id);
+
+-- Single-use links proving the address on an account is real. Same shape as
+-- invites and password resets, and cascades with the user for the same reason.
+CREATE TABLE IF NOT EXISTS email_verifications (
+  token       TEXT PRIMARY KEY,
+  user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  expires_at  TEXT NOT NULL,
+  used_at     TEXT,
+  created_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_email_verifications_user ON email_verifications(user_id);
+
+ALTER TABLE users ADD COLUMN email_verified_at TEXT;
+
+-- The household this account last had open. Only a convenience: it decides
+-- where a fresh sign-in lands, so someone who mostly uses one household is not
+-- asked to pick it every time. Never trusted for access — the membership is
+-- still checked — and ON DELETE SET NULL so a deleted household just means
+-- "ask again".
+ALTER TABLE users ADD COLUMN last_household_id TEXT REFERENCES households(id) ON DELETE SET NULL;
+`);
+
+      // Every existing account becomes a membership of the household it was
+      // pinned to, keeping its role and the name it already went by.
+      const existing = db
+        .prepare('SELECT id, household_id, name, role, created_at FROM users')
+        .all() as Array<{
+        id: string;
+        household_id: string;
+        name: string;
+        role: string;
+        created_at: string;
+      }>;
+      const insert = db.prepare(
+        `INSERT INTO memberships (id, user_id, household_id, role, display_name, created_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      );
+      for (const row of existing) {
+        insert.run(crypto.randomUUID(), row.id, row.household_id, row.role, row.name, row.created_at);
+      }
+      // Existing accounts carry on landing exactly where they always did.
+      db.prepare('UPDATE users SET last_household_id = household_id').run();
+
+      // Accounts that predate verification are verified by definition. A deploy
+      // must not lock out the people already using the app.
+      db.prepare('UPDATE users SET email_verified_at = created_at WHERE email_verified_at IS NULL').run();
+
+      // The one-household-per-user assumption, finally gone. DROP COLUMN leaves
+      // every other table's rows untouched; the usual rebuild-and-rename recipe
+      // would have fired the ON DELETE SET NULL rules on the way through and
+      // quietly erased who paid for what.
+      db.exec(`
+ALTER TABLE users DROP COLUMN household_id;
+ALTER TABLE users DROP COLUMN role;
+ALTER TABLE users DROP COLUMN name;
+`);
+    },
   },
 ];

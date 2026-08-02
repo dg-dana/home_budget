@@ -39,4 +39,7 @@ export const config = {
   /** How long a password recovery link stays valid. Shorter than an invite:
    *  it grants access to an existing account rather than creating a new one. */
   passwordResetMaxAgeMs: 24 * 60 * 60 * 1000,
+  /** How long an email confirmation link stays valid. Same day-long window as
+   *  a recovery link: both are proof of reaching one particular inbox. */
+  emailVerificationMaxAgeMs: 24 * 60 * 60 * 1000,
 } as const;

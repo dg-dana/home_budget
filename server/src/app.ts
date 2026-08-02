@@ -11,6 +11,7 @@ import { authRouter } from './routes/auth.js';
 import { categoriesRouter } from './routes/categories.js';
 import { expensesRouter } from './routes/expenses.js';
 import { householdRouter } from './routes/household.js';
+import { householdsRouter } from './routes/households.js';
 import { listsRouter } from './routes/lists.js';
 import { recurringRouter } from './routes/recurring.js';
 import { shareRouter } from './routes/share.js';
@@ -55,6 +56,10 @@ export function createApp({ enableRateLimits = true }: CreateAppOptions = {}): E
     : [];
 
   app.use('/api/auth', ...authLimiter, authRouter);
+  // Plural: the households an account belongs to, and which one is open.
+  // Singular: administering the one that is open. Mounted in this order
+  // because `/households` must not sit behind `requireHousehold`.
+  app.use('/api/households', householdsRouter);
   app.use('/api/household', householdRouter);
   app.use('/api/categories', categoriesRouter);
   app.use('/api/expenses', expensesRouter);

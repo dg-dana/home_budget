@@ -7,15 +7,39 @@ export interface HouseholdRow {
   created_at: string;
 }
 
+/**
+ * An account. Deliberately says nothing about households — which ones a person
+ * belongs to, what they are called there and what they may do lives in
+ * `memberships`, because the answer differs per household.
+ */
 export interface UserRow {
   id: string;
-  household_id: string;
   email: string;
-  name: string;
   password_hash: string;
-  role: Role;
   /** Bumped on password change; session tokens carrying an older value are refused. */
   session_generation: number;
+  /** NULL until the address is confirmed. */
+  email_verified_at: string | null;
+  /** Where a fresh sign-in lands. A convenience, never an access decision. */
+  last_household_id: string | null;
+  created_at: string;
+}
+
+/** One account's place in one household: its name there, and its role. */
+export interface MembershipRow {
+  id: string;
+  user_id: string;
+  household_id: string;
+  role: Role;
+  display_name: string;
+  created_at: string;
+}
+
+export interface EmailVerificationRow {
+  token: string;
+  user_id: string;
+  expires_at: string;
+  used_at: string | null;
   created_at: string;
 }
 
@@ -103,11 +127,36 @@ export interface ShoppingItemRow {
   updated_at: string;
 }
 
-/** The signed-in user attached to a request by `requireAuth`. */
+/**
+ * The signed-in account, attached by `requireAuth`.
+ *
+ * The household-shaped fields are nullable because a freshly registered
+ * account has no household yet — that is the whole point of the two-step
+ * sign-up. Routes that need one sit behind `requireHousehold`, which is what
+ * lets `currentUser()` hand them the narrowed `SessionUser` below.
+ */
+export interface SessionAccount {
+  id: string;
+  email: string;
+  emailVerified: boolean;
+  /** The household being looked at right now, not "the" household. */
+  householdId: string | null;
+  /** Display name in the current household. */
+  name: string | null;
+  role: Role | null;
+}
+
+/**
+ * An account known to be inside a household. Identical in shape to what every
+ * household-scoped handler used before memberships existed, which is why those
+ * handlers did not have to change: `householdId` still means "the household
+ * this request is about".
+ */
 export interface SessionUser {
   id: string;
   householdId: string;
   email: string;
+  emailVerified: boolean;
   name: string;
   role: Role;
 }
@@ -116,7 +165,7 @@ declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Express {
     interface Request {
-      user?: SessionUser;
+      user?: SessionAccount;
     }
   }
 }

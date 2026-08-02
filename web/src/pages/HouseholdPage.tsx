@@ -23,6 +23,8 @@ export default function HouseholdPage() {
   const [passwords, setPasswords] = useState({ current: '', next: '' });
   const [passwordNotice, setPasswordNotice] = useState('');
   const [resetLinks, setResetLinks] = useState<Record<string, string>>({});
+  const [displayName, setDisplayName] = useState('');
+  const [displayNameNotice, setDisplayNameNotice] = useState('');
   const [dangerPasswords, setDangerPasswords] = useState({ account: '', household: '' });
   const [dangerError, setDangerError] = useState('');
 
@@ -43,6 +45,11 @@ export default function HouseholdPage() {
   useEffect(() => {
     if (household) setSettings({ name: household.name, currency: household.currency });
   }, [household]);
+
+  // The name follows the household, so it has to be re-read when one is opened.
+  useEffect(() => {
+    if (user?.name) setDisplayName(user.name);
+  }, [user?.name]);
 
   const run = async (action: () => Promise<unknown>) => {
     setError('');
@@ -105,14 +112,20 @@ export default function HouseholdPage() {
     }
   };
 
-  /**
-   * Both deletions end the session server-side, so the page it is on is about
-   * to stop existing. Clear the client's copy and leave, rather than letting
-   * `load()` run into a 401.
-   */
+  /** Deleting the account really does end the session. */
   const leaveAfterDeletion = async () => {
     await signOut();
     navigate('/login', { replace: true });
+  };
+
+  /**
+   * Deleting a household does not. The account outlives it and may hold others,
+   * so the picker is where this lands — signing someone out of an account that
+   * still exists would be a lie about what just happened.
+   */
+  const returnToHouseholds = async () => {
+    await refresh();
+    navigate('/households', { replace: true });
   };
 
   const handleDeleteAccount = async (event: React.FormEvent) => {
@@ -136,13 +149,16 @@ export default function HouseholdPage() {
     setDangerError('');
     const others = members.length - 1;
     const warning =
-      `Delete "${household?.name ?? 'this household'}"? Every expense, budget, recurring rule and shopping list goes` +
-      (others > 0 ? `, and ${others} other account${others === 1 ? '' : 's'} here` : '') +
-      '. Share links stop working. This cannot be undone.';
+      `Delete "${household?.name ?? 'this household'}"? Every expense, budget, recurring rule and shopping list goes, ` +
+      'and share links stop working' +
+      (others > 0
+        ? `. ${others} other ${others === 1 ? 'person' : 'people'} lose access to it — their accounts survive`
+        : '') +
+      '. This cannot be undone.';
     if (!window.confirm(warning)) return;
     try {
       await api.delete('/household', { password: dangerPasswords.household });
-      await leaveAfterDeletion();
+      await returnToHouseholds();
     } catch (err) {
       setDangerError(err instanceof Error ? err.message : 'Could not delete the household');
     }
@@ -377,6 +393,47 @@ export default function HouseholdPage() {
 
         <div className="card stack">
           <div className="card-title">
+            <h2>Your name here</h2>
+          </div>
+
+          {displayNameNotice && <div className="alert info">{displayNameNotice}</div>}
+
+          <form
+            className="stack"
+            onSubmit={(event) => {
+              event.preventDefault();
+              setDisplayNameNotice('');
+              void run(async () => {
+                await api.put('/household/me', { displayName });
+                await refresh();
+                setDisplayNameNotice('Saved.');
+              });
+            }}
+          >
+            <div>
+              <label htmlFor="displayName">Name in {household?.name ?? 'this household'}</label>
+              <input
+                id="displayName"
+                required
+                maxLength={80}
+                value={displayName}
+                onChange={(event) => setDisplayName(event.target.value)}
+              />
+            </div>
+            <div>
+              <button type="submit" className="button">
+                Save name
+              </button>
+            </div>
+            <p className="small muted" style={{ margin: 0 }}>
+              Only for this household — you can go by something different in each one. Your email
+              and password belong to your account and are shared across all of them.
+            </p>
+          </form>
+        </div>
+
+        <div className="card stack">
+          <div className="card-title">
             <h2>Your password</h2>
           </div>
 
@@ -579,8 +636,8 @@ export default function HouseholdPage() {
               <div>
                 <h3 style={{ margin: 0 }}>Delete this household</h3>
                 <p className="small muted" style={{ margin: '0.25rem 0 0' }}>
-                  Removes every expense, budget, recurring rule, shopping list and share link — and
-                  everyone's account, not only yours.
+                  Removes every expense, budget, recurring rule, shopping list and share link, for
+                  everyone in it. Their accounts survive — only this household goes.
                 </p>
               </div>
               <div>

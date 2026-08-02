@@ -7,10 +7,16 @@ Reference for how this app is put together and why. Read this before extending i
 ## 1. What the app is
 
 - A household finance + shopping web app, with **two deliberately different kinds of access**:
-  - **Members** — have accounts, belong to exactly one household, share all of its data.
+  - **Members** — have accounts, belong to one or more households, share all of each one's data.
   - **Guests** — have *no account*. They reach a single shopping list via a share link and nothing else.
 - That two-tier access is the defining constraint of the whole design. Most decisions below exist to serve it.
-- One household per user. There is no cross-household anything, no user switching between households.
+- **An account and a household are separate things.** Signing up creates an account; a household is
+  created or joined afterwards, and one account may hold several. What connects them is a
+  `memberships` row, which also carries the name that account goes by *in that household* and what it
+  may do there.
+- **Exactly one household is "open" at a time**, chosen per session. Every household-scoped query
+  still filters on that single id, so the isolation rule in §5 is unchanged — "the caller's
+  household" simply means "the one currently open" rather than "the only one they have".
 
 ---
 
@@ -39,8 +45,10 @@ Reference for how this app is put together and why. Read this before extending i
 ### Tables
 
 - `households` — id, name, currency. The top-level tenant.
-- `users` — belongs to a household, has `role` of `owner` or `member`. Email is globally unique.
-- `invites` — single-use tokens for adding members. Carries `used_at`/`used_by`, `expires_at`, optional pinned `email`.
+- `users` — an **account**: email (globally unique), password hash, `email_verified_at`. Deliberately says nothing about households. `last_household_id` is a convenience only — where a fresh sign-in lands — and is never an access decision.
+- `memberships` — one account's place in one household: its `role` (`owner`/`member`) and its `display_name` *there*. Unique on (user, household). This table is what replaced `users.household_id`.
+- `email_verifications` — single-use address-confirmation tokens. Cascades with the user.
+- `invites` — single-use tokens for adding members. Carries `used_at`/`used_by`, `expires_at`, optional pinned `email`. Redeeming one now adds a membership to an **existing** account rather than creating one.
 - `categories` — per household, unique name, colour, optional `monthly_budget_cents`.
 - `expenses` — per household. FKs to category and to the paying user.
 - `recurring_expenses` — per household. A rule (amount, frequency, start/end) plus `last_generated_on`, the marker that makes generation idempotent.
@@ -52,15 +60,16 @@ Reference for how this app is put together and why. Read this before extending i
 
 - Delete a household → cascades to everything under it.
 - Delete a list → cascades to its items.
-- Delete a **member** → their expenses survive; `paid_by` / `created_by` go `NULL`. History is never destroyed by removing a person.
+- Remove a **member** from a household → the membership goes; their **account survives** (it may belong to other households) and so do their expenses. `paid_by` still points at a real user row, so every per-member breakdown asks whether that person is *still here* and folds those who are not into the existing null-payer row — see `PAYER_IF_STILL_HERE` in `routes/expenses.ts`. Without that the split would stop adding up to the total.
+- Delete an **account** → `paid_by` / `created_by` go `NULL` via the FKs. History is never destroyed by someone leaving.
 - Delete a **category** → its expenses survive and show as "Uncategorised".
 - Delete a **recurring rule** → the expenses it already generated survive and lose their `recurring_id`. They record money that really was spent.
 
 ### Closing an account or a household
 
-Two routes end things for good: `DELETE /auth/account` (your own account) and
-`DELETE /household` (owner only, the whole tenant). Both take the caller's
-password in the body and clear the session cookie on the way out.
+Two routes end things for good: `DELETE /auth/account` (your own account, and
+every membership it holds) and `DELETE /household` (owner only, the household
+currently open). Both take the caller's password in the body.
 
 - **The password is the confirmation, not a dialog.** A session cookie proves a
   browser signed in once, not who is holding it now — the same reasoning that
@@ -75,16 +84,28 @@ password in the body and clear the session cookie on the way out.
   from the other side**, so the household's history is untouched: `paid_by`
   goes `NULL` and the money stays counted (above). Leaving must not silently
   rewrite what everybody else's totals say.
-- **A household must keep an owner.** Its *only* owner is refused while anyone
-  else is still there: nobody would be left able to invite, rename or remove,
-  and promoting somebody on their behalf is not a decision this app should be
-  making. The ways out are handing ownership over first — an invite can carry
-  the `owner` role — or deleting the household. One owner among several may
-  leave freely.
+- **A household must keep an owner.** Deleting an account judges each of its
+  households separately, because it may be an owner in one and an ordinary
+  member in another. Being the *only* owner of a household with other people in
+  it is refused, and that household is named: nobody would be left able to
+  invite, rename or remove, and promoting somebody on their behalf is not a
+  decision this app should be making. The ways out are handing ownership over
+  first — an invite can carry the `owner` role — or deleting that household.
 - **The last person out takes the household with them**, since its rows would
   otherwise sit there forever with no account able to reach them.
-- Other members' cookies need no eviction: the user row is re-read on every
-  request (§4), so a deleted user's next call is a 401 by construction.
+- **Deleting a household does not sign anybody out.** It is not deleting
+  anyone's account, and the others may belong to more households than this one.
+  Their memberships are gone, so their next request resolves to no household and
+  they land on the picker; the caller's own cookie is re-issued pointing at
+  nothing.
+- Other members' cookies need no eviction: the user row *and the membership* are
+  re-read on every request (§4), so access ends on the next call by construction.
+- **Removing a member also retires any recovery link outstanding for them.** This
+  used to happen for free — removal deleted the account and `password_resets`
+  cascaded. Now the account survives, so without an explicit retirement an owner
+  could issue a link, remove the person, and redeem it to take over an account
+  that may belong to entirely different households. An owner's reach has to stop
+  at their own door.
 - There is no undo, no export and no grace period. It is a household budget,
   not a bank.
 
@@ -100,9 +121,18 @@ password in the body and clear the session cookie on the way out.
 
 - Passwords: **bcrypt, 12 rounds** (`bcryptjs`, pure JS — no native build step).
 - Sessions: **JWT in an httpOnly cookie** named `hb_session`, `SameSite=Lax`, `Secure` in production, 30-day expiry. Not readable from JavaScript; there is no token in `localStorage`.
-- The JWT carries `sub` (user id) and `gen` (session generation). **The user row is re-read from the DB on every request**, so role changes and member removal take effect immediately rather than waiting for the token to expire.
+- The JWT carries `sub` (user id), `gen` (session generation) and `hh` (the household currently open). **The user row and the membership are re-read from the DB on every request**, so role changes and member removal take effect immediately rather than waiting for the token to expire.
+- **`hh` is a claim, never an authorization.** It only counts while a matching membership still exists; being removed from a household, or having it deleted underneath you, drops it on the very next request. With it invalid or absent, an account holding exactly one household falls into that one and anyone with a real choice is left with none open.
+- **Switching household re-issues the cookie.** There is still exactly one thing to forge and it is still signed — the choice is never kept anywhere the client can edit.
 - Login returns an identical error for unknown-email and wrong-password, so the endpoint cannot be used to enumerate accounts.
 - `NODE_ENV=production` **refuses to boot** without a real `JWT_SECRET`.
+
+### Confirming an email address
+
+- Registration mints a single-use link (`email_verifications`, 24 hours, newest-only — the same shape as invites and recovery links). Redeeming it signs the person in, because holding a secret sent to that inbox is the proof.
+- **An unconfirmed account can sign in and look around, but cannot create or join a household** (`requireVerifiedEmail`). Blocking sign-in entirely would leave people at a dead end with nothing explaining why; blocking at the household is where an unreachable address stops being only its owner's problem, since a household is what invites and share links hang off.
+- Accounts that predate the requirement were backfilled as confirmed. A deploy must not lock out the people already using the app.
+- **There is still no email provider** (§14), so the link is returned to the caller and shown on screen by `NoticeCard`, exactly as invites and recovery links already are. `server/src/notifications.ts` is the single seam: when a provider is added, `deliver()` grows a body and no caller changes.
 
 ### Passwords and session invalidation
 
@@ -117,7 +147,10 @@ password in the body and clear the session cookie on the way out.
 - `requireAuth` — attaches `req.user`, else 401.
 - `optionalAuth` — attaches `req.user` if present, never rejects.
 - `requireOwner` — must run after `requireAuth`; restricts to the household owner.
-- `currentUser(req)` — narrows `req.user` for handlers already behind `requireAuth`.
+- `requireHousehold` — must run after `requireAuth`; refuses a request that is not about any household (403). **This is the guard that kept the multi-household change small**: behind it, `currentUser()` is guaranteed a household id, so all ~80 household-scoped call sites still read `user.householdId` exactly as they did when an account could only ever have one.
+- `requireVerifiedEmail` — must run after `requireAuth`; blocks creating or joining a household on an unconfirmed address.
+- `currentAccount(req)` — the signed-in account, household fields possibly null.
+- `currentUser(req)` — narrows to an account known to be *inside* a household. Throws rather than returning a nullable: a handler reaching it without a household is a routing mistake, not a user error.
 
 ---
 
@@ -188,12 +221,14 @@ so the UI can badge them.
 - `db.ts` — connection + the migration runner.
 - `migrations.ts` — the ordered, append-only migration list.
 - `recurring.ts` — recurrence date maths (pure) and materialisation.
-- `auth.ts` — hashing, cookies, id/token generation, auth middleware, `setPassword`.
+- `auth.ts` — hashing, cookies, id/token generation, auth middleware, `setPassword`, `assertPassword`, and the **membership resolution** that turns a cookie's `hh` claim into the household a request is about.
+- `notifications.ts` — the one place that decides how a "we would have emailed you" message travels. `deliver()` is the seam a real provider slots into; every caller is ignorant of how a message is sent.
 - `http.ts` — `HttpError` + status helpers, `asyncHandler`, `parseBody`, error middleware.
 - `rateLimit.ts` — in-process fixed-window limiter.
 - `backup.ts` — consistent snapshots via SQLite's online backup API.
 - `shoppingItems.ts` — **item operations shared by both the member and guest routes.** Both paths call the same functions with a different `actorName`, so guest and member edits can never diverge in behaviour.
-- `routes/` — `auth`, `household`, `categories`, `expenses`, `recurring`, `lists`, `share`.
+- `routes/` — `auth`, `households`, `household`, `categories`, `expenses`, `recurring`, `lists`, `share`.
+  - **`households` (plural) vs `household` (singular)** is a real distinction, not a naming accident. The plural router is the *only* place allowed to talk about a household the caller is not currently in — listing them, creating one, joining by invite, switching. The singular router administers the one that is open and therefore sits behind `requireHousehold`. Mounting order matters: `/api/households` must be registered before `/api/household`, and must not inherit that guard.
 
 ### Item comments
 
@@ -260,7 +295,11 @@ different questions. Keep them apart rather than merging them.
 - React 18, React Router 7, **no state-management library and no data-fetching library**. Deliberate: the app is small and every page's data is scoped to one screen.
 - Per-page pattern: `useState` + a `load()` callback + `useEffect`. Mutations call the API then re-run `load()`. **Refetch rather than mutate local state** — it keeps guest/member concurrency honest at the cost of an extra request.
 - `api.ts` — thin typed `fetch` wrapper; unwraps `{error}` bodies into `ApiError` carrying the status. Also the single home for all response type definitions. `delete` takes an optional body, which is how the two deletions in §3 send their password confirmation.
-- `session.tsx` — the only global state. Holds `user` + `household`, hydrates from `GET /auth/me` on mount, treats a 401 as "signed out" rather than an error.
+- `session.tsx` — the only global state. Holds `user`, the `household` currently open and the full `households` list; hydrates from `GET /auth/me` on mount, treats a 401 as "signed out" rather than an error. `switchHousehold` posts and then **refetches** rather than patching local state: the server decides what the new household contains.
+- **Two guards, not one.** `RequireAuth` sends the signed-out to `/login`; `RequireHousehold` sends an account with no household open to `/households`. The second is the client half of the server's `requireHousehold` — without it every page would render and then fill with 403s.
+- **`Layout` keys its `<main>` on the household id.** Every page loads its data once on mount, so switching household while already on a page would otherwise leave the previous household's money sitting under the new household's name — the route does not change, so nothing refetches. One key remounts whichever page is on screen, and beats adding a household-changed effect to each of six pages. A browser test covers exactly this.
+- `HouseholdSwitcher` renders as **plain text when there is only one household** and a `<select>` when there are more, so nothing suggests a choice that does not exist. A select rather than a menu: it is a one-of-n choice and gets the platform's own picker on a phone for free.
+- `NoticeCard` shows a message the app would have emailed, link included. Pretending an inbox will receive something it never will would be worse than saying so.
 - `format.ts` — money and date helpers. **Month/day helpers use local time, not UTC**, so "today" matches the user's calendar rather than the server's.
 - `styles.css` — plain CSS, custom properties, light/dark themes (§9.1). No CSS framework, no CSS-in-JS.
 - `theme.ts` — reads/writes the theme preference and applies it to `<html>`.
@@ -413,21 +452,23 @@ Two suites, run together with `npm run test:all`.
 
 ### Server integration suite — Vitest, `server/test/`
 
-- 160 tests, run with `npm test` from the repo root.
+- 181 tests, run with `npm test` from the repo root.
 - They are **integration tests over real HTTP**, not unit tests: each file boots the actual app on an ephemeral port and drives it with a cookie-aware client. There is no mocking of the database, the router or the session.
 - `test/setup.ts` runs before any application module is imported and points `DATABASE_PATH` at a unique temp file. Vitest gives each test file its own module registry, so **every test file gets its own SQLite database** and files can run in parallel.
 - `resetDatabase()` truncates every table in `beforeEach`.
 - `createApp({ enableRateLimits: false })` disables the limiter for tests that would otherwise trip it. This is why the share limiter lives in `app.ts` rather than inside `shareRouter`.
-- `test/helpers.ts` provides the vocabulary: `registerHousehold()`, `addMember()`, `createSharedList()`, `createClient()` (an independent cookie jar = an independent person).
+- `test/helpers.ts` provides the vocabulary: `registerAccount()` (register + confirm), `registerHousehold()` (that, plus a household to own), `createHousehold()` (another one on the same account), `addMember()`, `joinHousehold()`, `createSharedList()`, `createClient()` (an independent cookie jar = an independent person).
+- **Run it as `npm test`, never `npx vitest` from the repo root.** The Vitest config lives in `server/`, so a root invocation finds no config, skips `setupFiles`, and every test file silently shares the default database — which looks exactly like a flood of unrelated failures.
 
 ### What the files cover
 
 - `isolation.test.ts` — **the most important file.** Two households, and every route checked to confirm one cannot see or touch the other's rows.
 - `share.test.ts` — guest access: what a guest can do, what the link must never expose, view-only enforcement, revocation, token reuse.
 - `auth.test.ts` — registration, login, forged/expired/tampered cookies, and the full invite lifecycle.
+- `accounts.test.ts` — the two-step sign-up and multi-household behaviour: that registering creates an account with no household and no household name is accepted there; that an unconfirmed address cannot create or join one; the confirmation link being single-use, expiring, and retired when a new one is issued; one account owning several households with their data provably apart and their categories seeded separately; a different display name in each; switching, and refusing to switch into one you are not in; where a returning sign-in lands.
 - `itemComments.test.ts` — the comment on a shopping item: set on add, edited, cleared, and the length cap.
 - `expenses.test.ts` — cents arithmetic, month-boundary maths, summary aggregation, and what survives a category or member deletion. Also the statistics endpoint: the per-member and per-category splits, the member/category cross-tab adding up to the same money as the totals, months with no spending, the name ordering that pins each member's colour, and the range validation.
-- `household.test.ts` — owner vs member permissions, list mechanics, and the two irreversible deletions (§3): the cascade including other people's accounts and their share links, the password confirmation, the refusal of a sole owner with company, the last owner taking the household with them, and a member leaving without moving anybody's totals.
+- `household.test.ts` — owner vs member permissions, list mechanics, and the two irreversible deletions (§3): the cascade taking the memberships and share links but **leaving the accounts standing**, the password confirmation, the refusal of a sole owner with company, the last owner taking the household with them, and a member leaving without moving anybody's totals.
 - `recurring.test.ts` — recurrence date maths as a pure function (month-end clamping, leap years, rollovers), then catch-up, idempotency, pause/resume.
 - `migrations.test.ts` — fresh builds, repeat runs being no-ops, and the pre-migration-system adoption path.
 - `password.test.ts` — self-service change, owner-issued recovery, and that both evict other devices.
@@ -435,8 +476,8 @@ Two suites, run together with `npm run test:all`.
 
 ### Browser tests — Playwright, `e2e/`
 
-- 15 tests, run with `npm run test:e2e`. Config is `playwright.config.ts` at the repo root.
-- **Two areas: the guest flow and the statistics page.** The guest flow is the riskiest path — the one surface reachable without an account — and was the only coverage for a long time. (The theme test lives there because the toggle is on the guest header too.)
+- 17 tests, run with `npm run test:e2e`. Config is `playwright.config.ts` at the repo root.
+- **Three areas: the guest flow, the statistics page and multiple households.** The guest flow is the riskiest path — the one surface reachable without an account — and was the only coverage for a long time. (The theme test lives there because the toggle is on the guest header too.)
 - `statistics.spec.ts` exists because **every bug that page has had was invisible to the server suite**: a fold bucket that borrowed a real category's name, a one-month range drawing a lone dot, a stale response overwriting a newer one. Those are questions about what is on the screen. It reaches the page through the header link, never a direct URL — a page nobody can navigate to is a page nobody has.
 - `seedStatsHousehold()` builds a household through the API, giving **each joining member its own request context**: joining sets a session cookie, and a shared jar would sign the owner out halfway through.
 - **The e2e server runs with `RATE_LIMITS=off`.** An eight-person household signs in and out far more often inside one 15-minute window than a real visitor would, and the auth limiter is right to refuse that. `config.ts` ignores the variable when `NODE_ENV=production`, so it cannot un-protect the live site.
@@ -445,6 +486,7 @@ Two suites, run together with `npm run test:all`.
 - Chromium: the config uses the sandbox's prebuilt binary when `/opt/pw-browsers/chromium` exists (override with `CHROMIUM_PATH`) and a normally installed browser otherwise. **Never run `playwright install` in the sandbox.**
 - Every guest gets `browser.newContext()` — a guest is *defined* by having no cookies and no carried-over storage, so sharing a context would defeat the point.
 - Tests create their own household, so they share nothing but the server and can run in parallel.
+- `households.spec.ts` asks the questions only a browser can: that the switcher exists as a real control, that using it actually repaints the page (it did not, at first — see the `<main>` key in §9), that the choice survives a reload, and what a brand new account is shown before it has a household at all.
 
 What it asserts: a member creates and shares a list through the UI; a guest with no account opens the link, names themselves, adds an item and ticks one off; the member sees those changes. A second journey covers the comment: a guest adds an item carrying one, the household reads it and rewrites it, and the guest sees the new wording. A third covers "Copy list" on all three screens it appears on: the clipboard is read back and compared to the exact expected text, and asserted not to contain the share token. The index case also asserts the page did not navigate, since that button lives inside a row that is otherwise a link. Plus view-only enforcement — including that a view-only guest can read a comment but is offered no control to change it — instant revocation, the name prompt appearing only once, a dead token, that a guest is bounced off every private route, that a chosen theme survives a reload without a flash, and that the sign-in page carries the toggle at all — the one signed-out screen everybody sees.
 
@@ -452,7 +494,7 @@ What it asserts: a member creates and shares a list through the UI; a guest with
 
 ### Both suites were verified by breaking the code
 
-Nineteen deliberate regressions were introduced, and each was caught by a failing test:
+Twenty-four deliberate regressions were introduced, and each was caught by a failing test:
 
 1. Removing the `household_id` filter from the expenses list query → `isolation` failed.
 2. Adding `householdId` to the guest share response → `share` failed.
@@ -473,6 +515,11 @@ Nineteen deliberate regressions were introduced, and each was caught by a failin
 17. Neutering the "anyone else still here" half of the sole-owner guard → `household` failed, the last owner walking out of a household full of people.
 18. Making a member's own deletion drop the household rather than the user → `household` failed, one person leaving taking everyone's money with them.
 19. Removing `WHERE id = ?` from the household delete → `isolation` failed, one family's departure emptying every other family's tables.
+20. Making the session trust the cookie's `hh` without checking the membership still exists → `household` and `accounts` failed, someone removed from a household keeping their access to it.
+21. Dropping `requireVerifiedEmail` from household creation → `accounts` failed, an unconfirmed address able to create and invite.
+22. Reducing `PAYER_IF_STILL_HERE` to a plain `e.paid_by` → `expenses` failed on both the removed-payer case and the cross-tab totals, the per-member split quietly ceasing to add up.
+23. Removing the recovery-link retirement from member removal → `password` failed, an owner able to mint a link, remove the person, and take over an account that may belong to other households.
+24. Listing memberships without filtering by account → `isolation` failed, one account seeing another's households.
 
 The statistics suite also earned its place on the way in: the one-month test failed against the unguarded fetch, which is how the stale-response race in §9.2 was found.
 
@@ -490,7 +537,7 @@ It matches on method and path shape, so it proves a suite *reaches* a route and 
 
 ### Looking at the pages the suites do not cover
 
-Everything in `web/` outside the guest flow, the sign-in toggle and the statistics page is unproven by any test, so a change there has to be looked at. `.claude/skills/preview-ui/` is the tool for that: it builds, runs the production build on a spare port against a throwaway database, seeds a three-person household with three months of expenses, signs in, and screenshots the routes you name in both themes at 1100px and 390px.
+Everything in `web/` outside the guest flow, the sign-in toggle and the statistics page is unproven by any test, so a change there has to be looked at. `.claude/skills/preview-ui/` is the tool for that: it builds, runs the production build on a spare port against a throwaway database, seeds a three-person household with three months of expenses **plus a second household on the owner's account** (so the header's switcher has something to switch between — with one it deliberately renders as plain text), signs in, and screenshots the routes you name in both themes at 1100px and 390px.
 
 ```bash
 node .claude/skills/preview-ui/preview.mjs /            # the expenses dashboard
@@ -550,16 +597,20 @@ Alongside each screenshot it reports the body colour — the cheap proof a theme
 
 Honest list — these are real, and none is currently blocking.
 
-- **Frontend coverage is the guest flow plus one sign-in page test.** The expenses dashboard, budgets, statistics, invites and household settings have no browser tests — changes there still need checking by hand, against the built app rather than by reading the CSS.
+- **Frontend coverage is the guest flow, the statistics page and the household switcher.** The expenses dashboard, budgets, recurring, invites and household settings have no browser tests — changes there still need checking by hand, against the built app rather than by reading the CSS.
 - **There is no way to promote an existing member to owner.** A role is fixed
-  at the moment the account is created, from the invite; no route changes one
+  when the membership is created, from the invite; no route changes one
   afterwards. It shows up in the sole-owner rule in §3 — "make someone else an
-  owner first" today means inviting a *new* owner account, not handing the
-  badge to the person already sitting there. An owner who wants out can still
-  remove the others and then delete, or delete the household, so nothing is a
-  dead end; a `PUT /household/members/:id/role` would make the intended path
-  the obvious one.
-- **Links are generated, not delivered.** Invites and password recovery links are copied by the owner and sent by hand; there is no email integration. This is why recovery is owner-issued rather than self-service "forgot password".
+  owner first" today means inviting a *new* owner, not handing the badge to the
+  person already sitting there. Now that one account can hold several
+  memberships this is cheaper to fix than it was (a role lives on a membership,
+  not on a person), and a `PUT /household/members/:id/role` would make the
+  intended path the obvious one.
+- **There is no way to leave a household without deleting your account.** An
+  owner can remove anyone but themselves, so a member who simply wants out has
+  to ask. `DELETE /household/members/me` is the missing route.
+- **Links are generated, not delivered — including email confirmation.** Invites, password recovery and now address confirmation are all shown on screen rather than sent; there is no email provider. This is why recovery is owner-issued rather than self-service "forgot password", and it means **confirmation currently proves nothing about the address** — whoever registered is handed the link immediately, so it is a step in the flow rather than a real check. It becomes a real one the moment `deliver()` in `notifications.ts` learns to send, and nothing else has to change. Until then, do not describe it as verification anywhere user-facing.
+- **An owner-issued recovery link grants the whole account, which may span households.** Removing someone now retires their outstanding links (§3), which closes the obvious abuse, but an owner can still reset the password of an account that belongs to other households while that person is a member. That was contained when an account *was* a household; it is not any more. A self-service "forgot password" would remove the need for the feature altogether.
 - **The guest list page polls every 15 s; the member list page does not poll at all.** So a member can be looking at a stale list while a guest shops. Unifying this — or moving both to SSE/WebSocket — is the natural fix.
 - Rate limiting is in-process and will not survive horizontal scaling (see §13) — moot while the deployment is deliberately one machine.
 - **The container runs as root.** Fly volumes mount root-owned, and dropping privileges needs a startup chown dance that was not worth the risk of an unverifiable failure. Worth hardening later.
@@ -569,12 +620,12 @@ Honest list — these are real, and none is currently blocking.
 
 ## 15. Adding a feature — the checklist
 
-1. Does it belong to a household, or is it guest-reachable? That answer decides which router it goes in.
+1. Does it belong to a household, is it about the **account** across households, or is it guest-reachable? That answer decides which router it goes in — and whether it sits behind `requireHousehold` (§4).
 2. Add a **new** migration to `server/src/migrations.ts`. Never edit one that has shipped.
 3. Add row types to `server/src/types.ts`.
-4. Write the route: `asyncHandler` + Zod via `parseBody` + **`household_id` in the WHERE clause** + `assertOwned` for any client-supplied foreign id.
+4. Write the route: `asyncHandler` + Zod via `parseBody` + **`household_id` in the WHERE clause** + `assertOwned` for any client-supplied foreign id. "Is this person one of ours" is a `memberships` question, not a `users` one.
 5. If guests touch it, put the logic in a shared service (like `shoppingItems.ts`) so both paths cannot drift — and re-check what the guest response exposes.
 6. **Write the tests.** Anything household-scoped gets a case in `isolation.test.ts`; anything guest-reachable gets one in `share.test.ts` and, if it changes what a guest sees, in `e2e/guest-flow.spec.ts`. Then break the code once and watch them fail (§10).
-7. Add the response type to `web/src/api.ts`, then build the page on the `load()` + refetch pattern.
+7. Add the response type to `web/src/api.ts`, then build the page on the `load()` + refetch pattern. It will remount when the household changes (§9), so it needs no household-changed effect of its own.
 8. Money stays in cents end to end.
 9. Update `ARCHITECTURE.md` and `CLAUDE.md` in the same commit.

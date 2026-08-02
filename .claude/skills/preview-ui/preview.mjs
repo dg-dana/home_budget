@@ -211,13 +211,31 @@ async function seed(baseURL) {
   const api = await playwrightRequest.newContext({ baseURL });
   const ownerEmail = email('dana');
 
+  // An account, a confirmed address, then a household: the three steps a real
+  // sign-up goes through now.
   const registered = await post(api, '/api/auth/register', {
-    householdName: 'Preview Household',
-    currency: 'USD',
-    name: OWNER,
     email: ownerEmail,
     password: PASSWORD,
   });
+  await post(api, '/api/auth/verify', {
+    token: String(registered.verification.link).split('/').pop(),
+  });
+  await post(api, '/api/households', {
+    name: 'Preview Household',
+    currency: 'USD',
+    displayName: OWNER,
+  });
+
+  // A second household, so the header's switcher has something to switch
+  // between — with one it deliberately renders as plain text.
+  await post(api, '/api/households', {
+    name: 'Beach Flat',
+    currency: 'USD',
+    displayName: OWNER,
+  });
+  const { households } = await (await api.get('/api/households')).json();
+  const main = households.find((h) => h.name === 'Preview Household');
+  await post(api, `/api/households/${main.id}/switch`, {});
 
   const members = [{ id: registered.user.id, name: OWNER }];
   for (const name of ['Yossi', 'Noa']) {
@@ -225,13 +243,15 @@ async function seed(baseURL) {
     // Joining sets a session cookie, so each member joins in a context of its
     // own — a shared jar would sign the owner out halfway through.
     const joiner = await playwrightRequest.newContext({ baseURL });
-    const joined = await post(joiner, '/api/auth/join', {
-      token: invite.token,
-      name,
+    const account = await post(joiner, '/api/auth/register', {
       email: email(name.toLowerCase()),
       password: PASSWORD,
     });
-    members.push({ id: joined.user.id, name });
+    await post(joiner, '/api/auth/verify', {
+      token: String(account.verification.link).split('/').pop(),
+    });
+    await post(joiner, '/api/households/join', { token: invite.token, displayName: name });
+    members.push({ id: account.user.id, name });
     await joiner.dispose();
   }
 

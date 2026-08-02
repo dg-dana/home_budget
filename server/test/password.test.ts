@@ -139,7 +139,9 @@ describe('owner-issued password recovery', () => {
     const lockedOut = createClient();
     const preview = await lockedOut.get(`/api/auth/reset/${issued.body.token}`);
     expect(preview.status).toBe(200);
-    expect(preview.body.name).toBe('Yossi');
+    // A name belongs to a household; a reset link is about the account, so the
+    // address is what identifies the person here.
+    expect(preview.body.email).toBe(member.email);
 
     const redeemed = await lockedOut.post('/api/auth/reset', {
       token: issued.body.token,
@@ -162,7 +164,7 @@ describe('owner-issued password recovery', () => {
     const issued = await issueReset(member.userId);
     const preview = await createClient().get(`/api/auth/reset/${issued.body.token}`);
 
-    expect(Object.keys(preview.body).sort()).toEqual(['email', 'name']);
+    expect(Object.keys(preview.body).sort()).toEqual(['email']);
     expect(JSON.stringify(preview.body)).not.toContain('The Cohens');
     expect(JSON.stringify(preview.body)).not.toContain(owner.householdId);
   });
@@ -273,14 +275,17 @@ describe('owner-issued password recovery', () => {
       password: NEW_PASSWORD,
     });
     expect(redeemed.status).toBe(201);
-    expect(redeemed.body.user.role).toBe('owner');
+    expect(redeemed.body.household.role).toBe('owner');
   });
 
   it('drops outstanding links when the member is removed', async () => {
     const issued = await issueReset(member.userId);
     await owner.client.delete(`/api/household/members/${member.userId}`);
 
-    // ON DELETE CASCADE, so the link cannot resurrect a deleted account.
+    // The account survives being removed from a household now, so this is an
+    // explicit retirement rather than a cascade: otherwise an owner could mint
+    // a link, remove the person, and redeem it to take over an account that
+    // may belong to other households.
     expect(
       (await createClient().post('/api/auth/reset', {
         token: issued.body.token,

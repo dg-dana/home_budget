@@ -58,6 +58,8 @@ export function resetDatabase(): void {
     'categories',
     'invites',
     'password_resets',
+    'email_verifications',
+    'memberships',
     'users',
     'households',
   ]) {
@@ -109,14 +111,49 @@ export function createClient(): Client {
 let counter = 0;
 export const uniqueEmail = (prefix = 'user') => `${prefix}-${++counter}-${Date.now()}@example.com`;
 
-export interface Household {
+export interface Account {
   client: Client;
   userId: string;
-  householdId: string;
   email: string;
 }
 
-/** Registers a brand new household and returns a signed-in client for its owner. */
+export interface Household extends Account {
+  householdId: string;
+}
+
+const tokenFromLink = (link: string) => link.split('/').pop()!;
+
+/**
+ * Registers an account and confirms its address — the two steps that now come
+ * before anybody can have a household at all. Leaves the client signed in with
+ * no household selected.
+ */
+export async function registerAccount(
+  overrides: Partial<{ email: string; password: string; verify: boolean }> = {},
+): Promise<Account> {
+  const client = createClient();
+  const email = overrides.email ?? uniqueEmail('account');
+  const registered = await client.post('/api/auth/register', {
+    email,
+    password: overrides.password ?? 'password123',
+  });
+  if (registered.status !== 201) {
+    throw new Error(`register failed: ${registered.status} ${JSON.stringify(registered.body)}`);
+  }
+
+  if (overrides.verify !== false) {
+    const verified = await client.post('/api/auth/verify', {
+      token: tokenFromLink(registered.body.verification.link),
+    });
+    if (verified.status !== 200) {
+      throw new Error(`verify failed: ${verified.status} ${JSON.stringify(verified.body)}`);
+    }
+  }
+
+  return { client, userId: registered.body.user.id, email };
+}
+
+/** Registers an account, confirms it, and gives it a household to own. */
 export async function registerHousehold(overrides: Partial<{
   householdName: string;
   currency: string;
@@ -124,27 +161,35 @@ export async function registerHousehold(overrides: Partial<{
   email: string;
   password: string;
 }> = {}): Promise<Household> {
-  const client = createClient();
-  const email = overrides.email ?? uniqueEmail('owner');
-  const response = await client.post('/api/auth/register', {
-    householdName: overrides.householdName ?? 'Test Household',
-    currency: overrides.currency ?? 'USD',
-    name: overrides.name ?? 'Owner',
-    email,
-    password: overrides.password ?? 'password123',
+  const account = await registerAccount({
+    email: overrides.email ?? uniqueEmail('owner'),
+    password: overrides.password,
   });
-  if (response.status !== 201) {
-    throw new Error(`register failed: ${response.status} ${JSON.stringify(response.body)}`);
-  }
-  return {
-    client,
-    userId: response.body.user.id,
-    householdId: response.body.user.householdId,
-    email,
-  };
+  const created = await createHousehold(account, {
+    name: overrides.householdName ?? 'Test Household',
+    currency: overrides.currency ?? 'USD',
+    displayName: overrides.name ?? 'Owner',
+  });
+  return { ...account, householdId: created.id };
 }
 
-/** Invites a member into `owner`'s household and signs them in. */
+/** Adds another household to an existing account, and switches to it. */
+export async function createHousehold(
+  account: Account,
+  { name = 'Another Household', currency = 'USD', displayName = 'Owner' } = {},
+): Promise<{ id: string }> {
+  const response = await account.client.post('/api/households', { name, currency, displayName });
+  if (response.status !== 201) {
+    throw new Error(`create household failed: ${response.status} ${JSON.stringify(response.body)}`);
+  }
+  return { id: response.body.household.id };
+}
+
+/**
+ * Invites someone into `owner`'s household, registers them an account and
+ * redeems the invite. Joining is now something an account does, so this is
+ * three steps where it used to be one.
+ */
 export async function addMember(
   owner: Household,
   name = 'Member',
@@ -153,18 +198,27 @@ export async function addMember(
   if (invite.status !== 201) {
     throw new Error(`invite failed: ${invite.status} ${JSON.stringify(invite.body)}`);
   }
-  const client = createClient();
-  const email = uniqueEmail('member');
-  const joined = await client.post('/api/auth/join', {
-    token: invite.body.token,
-    name,
-    email,
-    password: 'password123',
-  });
+  const account = await registerAccount({ email: uniqueEmail('member') });
+  const joined = await joinHousehold(account, invite.body.token, name);
   if (joined.status !== 201) {
     throw new Error(`join failed: ${joined.status} ${JSON.stringify(joined.body)}`);
   }
-  return { client, userId: joined.body.user.id, email };
+  return { client: account.client, userId: account.userId, email: account.email };
+}
+
+/** Redeems an invite for an already-registered account. */
+export const joinHousehold = (account: Account, token: string, displayName = 'Member') =>
+  account.client.post('/api/households/join', { token, displayName });
+
+/** The confirmation token for an account that has not redeemed one yet. */
+export function pendingVerificationToken(userId: string): string {
+  const row = db
+    .prepare(
+      'SELECT token FROM email_verifications WHERE user_id = ? AND used_at IS NULL ORDER BY created_at DESC',
+    )
+    .get(userId) as { token: string } | undefined;
+  if (!row) throw new Error('no pending verification for that account');
+  return row.token;
 }
 
 /** Creates a list with a share link and returns the token a guest would hold. */
