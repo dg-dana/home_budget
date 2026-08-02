@@ -1,5 +1,6 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useSession } from '../session';
+import HouseholdSwitcher from './HouseholdSwitcher';
 import ThemeToggle from './ThemeToggle';
 
 export default function Layout() {
@@ -15,12 +16,14 @@ export default function Layout() {
     <div className="app-shell">
       <header className="top-bar">
         <div className="top-bar-inner">
-          <NavLink to="/" className="brand">
-            <span className="brand-mark" aria-hidden="true">
-              🏠
-            </span>
-            <span>{household?.name ?? 'Home Budget'}</span>
-          </NavLink>
+          <div className="brand">
+            <NavLink to="/" className="brand-link">
+              <span className="brand-mark" aria-hidden="true">
+                🏠
+              </span>
+            </NavLink>
+            <HouseholdSwitcher />
+          </div>
 
           <nav className="nav">
             <NavLink to="/" end>
@@ -42,7 +45,14 @@ export default function Layout() {
         </div>
       </header>
 
-      <main className="page">
+      {/*
+        Keyed by household, so switching remounts whichever page is on screen.
+        Every page loads its data once on mount; without this, switching while
+        already on a page leaves the previous household's money under the new
+        household's name — the routing does not change, so nothing refetches.
+        One key here beats a household-changed effect in each of six pages.
+      */}
+      <main className="page" key={household?.id ?? 'none'}>
         <Outlet />
       </main>
     </div>

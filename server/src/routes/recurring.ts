@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { currentUser, newId, nowIso, requireAuth } from '../auth.js';
+import { currentUser, newId, nowIso, requireAuth, requireHousehold } from '../auth.js';
 import { db } from '../db.js';
 import { asyncHandler, badRequest, notFound, parseBody } from '../http.js';
 import { materialiseDueExpenses, occurrenceAt, previousDay, today } from '../recurring.js';
@@ -8,7 +8,7 @@ import type { RecurringExpenseRow } from '../types.js';
 
 export const recurringRouter = Router();
 
-recurringRouter.use(requireAuth);
+recurringRouter.use(requireAuth, requireHousehold);
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const date = (message: string) => z.string().regex(DATE_PATTERN, message);
@@ -30,11 +30,15 @@ const ruleSchema = z
     path: ['endsOn'],
   });
 
+/** As in `expenses.ts`: a person belongs to a household through a membership. */
 function assertOwned(table: 'categories' | 'users', id: string | null | undefined, householdId: string) {
   if (id === null || id === undefined) return;
-  const row = db
-    .prepare(`SELECT id FROM ${table} WHERE id = ? AND household_id = ?`)
-    .get(id, householdId);
+  const row =
+    table === 'categories'
+      ? db.prepare('SELECT id FROM categories WHERE id = ? AND household_id = ?').get(id, householdId)
+      : db
+          .prepare('SELECT user_id FROM memberships WHERE user_id = ? AND household_id = ?')
+          .get(id, householdId);
   if (!row) {
     throw badRequest(table === 'categories' ? 'Unknown category' : 'Unknown household member');
   }
@@ -49,10 +53,10 @@ function ownedRule(id: string, householdId: string): RecurringExpenseRow {
 }
 
 const SELECT_RULE = `
-  SELECT r.*, c.name AS category_name, c.color AS category_color, u.name AS paid_by_name
+  SELECT r.*, c.name AS category_name, c.color AS category_color, m.display_name AS paid_by_name
   FROM recurring_expenses r
   LEFT JOIN categories c ON c.id = r.category_id
-  LEFT JOIN users u ON u.id = r.paid_by
+  LEFT JOIN memberships m ON m.user_id = r.paid_by AND m.household_id = r.household_id
 `;
 
 /** Adds the next date each rule will fire, which is what the UI actually shows. */

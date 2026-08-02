@@ -1,52 +1,43 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { config } from '../config.js';
 import {
   assertPassword,
-  currentUser,
   clearSession,
+  currentAccount,
   hashPassword,
   issueSession,
+  membershipsOf,
   newId,
+  newToken,
   nowIso,
   requireAuth,
   setPassword,
-  toSessionUser,
+  toSessionAccount,
   verifyPassword,
 } from '../auth.js';
 import { db } from '../db.js';
 import { asyncHandler, badRequest, conflict, parseBody, unauthorized } from '../http.js';
-import type { HouseholdRow, InviteRow, PasswordResetRow, UserRow } from '../types.js';
+import { verifyEmailNotice } from '../notifications.js';
+import type {
+  EmailVerificationRow,
+  HouseholdRow,
+  InviteRow,
+  PasswordResetRow,
+  UserRow,
+} from '../types.js';
 
 export const authRouter = Router();
 
-const DEFAULT_CATEGORIES: Array<{ name: string; color: string }> = [
-  { name: 'Groceries', color: '#16a34a' },
-  { name: 'Rent & Bills', color: '#2563eb' },
-  { name: 'Transport', color: '#f59e0b' },
-  { name: 'Health', color: '#ef4444' },
-  { name: 'Home', color: '#8b5cf6' },
-  { name: 'Leisure', color: '#ec4899' },
-  { name: 'Other', color: '#64748b' },
-];
-
 const email = z.string().trim().toLowerCase().email('Enter a valid email address');
 const password = z.string().min(8, 'Password must be at least 8 characters');
-const personName = z.string().trim().min(1, 'Name is required').max(80);
 
-const registerSchema = z.object({
-  householdName: z.string().trim().min(1, 'Household name is required').max(80),
-  currency: z.string().trim().length(3).toUpperCase().default('USD'),
-  name: personName,
-  email,
-  password,
-});
-
-const joinSchema = z.object({
-  token: z.string().min(1),
-  name: personName,
-  email,
-  password,
-});
+/**
+ * Registration is an **account**, nothing more — no household name, no display
+ * name. Those belong to a household, and this person does not have one yet;
+ * they may end up with several, called something different in each.
+ */
+const registerSchema = z.object({ email, password });
 
 const loginSchema = z.object({ email, password: z.string().min(1) });
 
@@ -55,17 +46,70 @@ const findUserByEmail = (value: string) =>
 
 const getUser = (id: string) => db.prepare('SELECT * FROM users WHERE id = ?').get(id) as UserRow;
 
-function seedCategories(householdId: string) {
-  const insert = db.prepare(
-    `INSERT INTO categories (id, household_id, name, color, monthly_budget_cents, created_at)
-     VALUES (?, ?, ?, ?, NULL, ?)`,
-  );
-  for (const category of DEFAULT_CATEGORIES) {
-    insert.run(newId(), householdId, category.name, category.color, nowIso());
-  }
+/** better-sqlite3 reports constraint failures by code, not by class. */
+const isUniqueViolation = (err: unknown) =>
+  typeof err === 'object' &&
+  err !== null &&
+  'code' in err &&
+  String((err as { code: unknown }).code).startsWith('SQLITE_CONSTRAINT');
+
+/**
+ * Mints a confirmation link, retiring any outstanding one so only the newest
+ * works — the same rule as password recovery.
+ */
+export function issueEmailVerification(user: UserRow) {
+  const token = newToken();
+  const expiresAt = new Date(Date.now() + config.emailVerificationMaxAgeMs).toISOString();
+
+  db.transaction(() => {
+    db.prepare('UPDATE email_verifications SET used_at = ? WHERE user_id = ? AND used_at IS NULL').run(
+      nowIso(),
+      user.id,
+    );
+    db.prepare(
+      `INSERT INTO email_verifications (token, user_id, expires_at, created_at)
+       VALUES (?, ?, ?, ?)`,
+    ).run(token, user.id, expiresAt, nowIso());
+  })();
+
+  return { token, expiresAt };
 }
 
-/** Creates a brand new household with the registering person as its owner. */
+/**
+ * Where a sign-in with no cookie should land.
+ *
+ * The household last open, if that membership still stands — being asked to
+ * pick every time is a poor trade for someone who mostly uses one. Failing
+ * that, the only household there is. With a real choice to make and nothing
+ * remembered, nothing is opened and the picker asks.
+ */
+function landingHousehold(user: UserRow): string | null {
+  const memberships = membershipsOf(user.id);
+  const remembered = memberships.find((m) => m.household_id === user.last_household_id);
+  if (remembered) return remembered.household_id;
+  return memberships.length === 1 ? memberships[0]!.household_id : null;
+}
+
+/** The account, its households, and which one is being looked at. */
+function sessionPayload(user: UserRow, currentHouseholdId: string | null) {
+  const memberships = membershipsOf(user.id);
+  const households = memberships.map((membership) => {
+    const household = db
+      .prepare('SELECT id, name, currency FROM households WHERE id = ?')
+      .get(membership.household_id) as Pick<HouseholdRow, 'id' | 'name' | 'currency'>;
+    return { ...household, role: membership.role, displayName: membership.display_name };
+  });
+  const current = households.find((h) => h.id === currentHouseholdId) ?? null;
+  const membership = memberships.find((m) => m.household_id === current?.id) ?? null;
+
+  return {
+    user: toSessionAccount(user, membership),
+    household: current,
+    households,
+  };
+}
+
+/** Creates an account. A household comes later, once the address is confirmed. */
 authRouter.post(
   '/register',
   asyncHandler(async (req, res) => {
@@ -75,23 +119,87 @@ authRouter.post(
     }
 
     const passwordHash = await hashPassword(input.password);
-    const householdId = newId();
     const userId = newId();
 
-    db.transaction(() => {
+    // The lookup above is a courtesy, not the guarantee: hashing is async, so
+    // two sign-ups on the same address can both pass it and race to the insert.
+    // The UNIQUE constraint is what actually decides, and losing that race is
+    // still "that address is taken" — not a 500.
+    try {
       db.prepare(
-        'INSERT INTO households (id, name, currency, created_at) VALUES (?, ?, ?, ?)',
-      ).run(householdId, input.householdName, input.currency, nowIso());
-      db.prepare(
-        `INSERT INTO users (id, household_id, email, name, password_hash, role, created_at)
-         VALUES (?, ?, ?, ?, ?, 'owner', ?)`,
-      ).run(userId, householdId, input.email, input.name, passwordHash, nowIso());
-      seedCategories(householdId);
-    })();
+        `INSERT INTO users (id, email, password_hash, created_at)
+         VALUES (?, ?, ?, ?)`,
+      ).run(userId, input.email, passwordHash, nowIso());
+    } catch (err) {
+      if (isUniqueViolation(err)) throw conflict('An account with that email already exists');
+      throw err;
+    }
 
     const user = getUser(userId);
-    issueSession(res, user);
-    res.status(201).json({ user: toSessionUser(user) });
+    const { token } = issueEmailVerification(user);
+
+    // Signed in straight away, but unverified: they can look around and see
+    // exactly what is blocked, rather than being bounced to a dead end.
+    issueSession(res, user, null);
+    res.status(201).json({
+      ...sessionPayload(user, null),
+      verification: verifyEmailNotice(user.email, `/verify/${token}`),
+    });
+  }),
+);
+
+/** Public preview of a confirmation link, so the page can name the account. */
+authRouter.get(
+  '/verify/:token',
+  asyncHandler((req, res) => {
+    const row = db
+      .prepare('SELECT * FROM email_verifications WHERE token = ?')
+      .get(req.params.token) as EmailVerificationRow | undefined;
+
+    if (!row || row.used_at || new Date(row.expires_at) < new Date()) {
+      throw badRequest('This confirmation link is invalid or has expired');
+    }
+    res.json({ email: getUser(row.user_id).email });
+  }),
+);
+
+/** Redeems a confirmation link. Holding it is the proof the address is real. */
+authRouter.post(
+  '/verify',
+  asyncHandler((req, res) => {
+    const input = parseBody(z.object({ token: z.string().min(1) }), req.body);
+    const row = db
+      .prepare('SELECT * FROM email_verifications WHERE token = ?')
+      .get(input.token) as EmailVerificationRow | undefined;
+
+    if (!row || row.used_at || new Date(row.expires_at) < new Date()) {
+      throw badRequest('This confirmation link is invalid or has expired');
+    }
+
+    db.transaction(() => {
+      db.prepare('UPDATE users SET email_verified_at = ? WHERE id = ?').run(nowIso(), row.user_id);
+      db.prepare('UPDATE email_verifications SET used_at = ? WHERE token = ?').run(nowIso(), row.token);
+    })();
+
+    const user = getUser(row.user_id);
+    // Whoever redeems the link is signed in as that account, the same as a
+    // password reset: holding a single-use secret from their inbox is the proof.
+    issueSession(res, user, null);
+    res.json(sessionPayload(user, null));
+  }),
+);
+
+/** Issues a fresh confirmation link for the signed-in account. */
+authRouter.post(
+  '/verify/resend',
+  requireAuth,
+  asyncHandler((req, res) => {
+    const account = currentAccount(req);
+    const user = getUser(account.id);
+    if (user.email_verified_at) throw badRequest('That address is already confirmed');
+
+    const { token } = issueEmailVerification(user);
+    res.status(201).json({ verification: verifyEmailNotice(user.email, `/verify/${token}`) });
   }),
 );
 
@@ -114,46 +222,6 @@ authRouter.get(
   }),
 );
 
-/** Redeems an invite: creates a member account inside an existing household. */
-authRouter.post(
-  '/join',
-  asyncHandler(async (req, res) => {
-    const input = parseBody(joinSchema, req.body);
-    const invite = db
-      .prepare('SELECT * FROM invites WHERE token = ?')
-      .get(input.token) as InviteRow | undefined;
-
-    if (!invite || invite.used_at || new Date(invite.expires_at) < new Date()) {
-      throw badRequest('This invite link is invalid or has expired');
-    }
-    if (invite.email && invite.email !== input.email) {
-      throw badRequest(`This invite was issued for ${invite.email}`);
-    }
-    if (findUserByEmail(input.email)) {
-      throw conflict('An account with that email already exists');
-    }
-
-    const passwordHash = await hashPassword(input.password);
-    const userId = newId();
-
-    db.transaction(() => {
-      db.prepare(
-        `INSERT INTO users (id, household_id, email, name, password_hash, role, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      ).run(userId, invite.household_id, input.email, input.name, passwordHash, invite.role, nowIso());
-      db.prepare('UPDATE invites SET used_at = ?, used_by = ? WHERE token = ?').run(
-        nowIso(),
-        userId,
-        invite.token,
-      );
-    })();
-
-    const user = getUser(userId);
-    issueSession(res, user);
-    res.status(201).json({ user: toSessionUser(user) });
-  }),
-);
-
 authRouter.post(
   '/login',
   asyncHandler(async (req, res) => {
@@ -164,8 +232,10 @@ authRouter.post(
     if (!user || !(await verifyPassword(input.password, user.password_hash))) {
       throw unauthorized('Incorrect email or password');
     }
-    issueSession(res, user);
-    res.json({ user: toSessionUser(user) });
+
+    const current = landingHousehold(user);
+    issueSession(res, user, current);
+    res.json(sessionPayload(user, current));
   }),
 );
 
@@ -189,69 +259,18 @@ authRouter.post(
   '/password',
   requireAuth,
   asyncHandler(async (req, res) => {
-    const session = currentUser(req);
+    const account = currentAccount(req);
     const input = parseBody(changePasswordSchema, req.body);
-    const user = getUser(session.id);
+    const user = getUser(account.id);
 
     if (!(await verifyPassword(input.currentPassword, user.password_hash))) {
       throw badRequest('That is not your current password');
     }
 
     await setPassword(user.id, input.newPassword);
-    // Every other device is signed out; this one gets a fresh cookie.
-    issueSession(res, getUser(user.id));
-    res.status(204).end();
-  }),
-);
-
-const deleteAccountSchema = z.object({
-  password: z.string().min(1, 'Enter your password to confirm'),
-});
-
-/**
- * Deleting your own account. Confirmed with your password, like changing it.
- *
- * The household's history is not yours to destroy: `paid_by` / `created_by` go
- * NULL and the expenses stay, so the totals everyone else reads do not move
- * when someone leaves (§3). Removing a member is the same deletion the owner
- * can already perform from the other side.
- *
- * A household must keep an owner, so the *only* owner cannot walk out on
- * people who are still in it: nobody would be left able to invite, rename or
- * remove, and quietly promoting somebody is not a decision to make on their
- * behalf. The two honest ways out are handing ownership over first (an invite
- * can carry the `owner` role) or deleting the household outright. One owner
- * among several may leave freely. The last person here — necessarily an owner
- * — takes the household with them, since its rows would otherwise sit there
- * forever with no account able to reach them.
- */
-authRouter.delete(
-  '/account',
-  requireAuth,
-  asyncHandler(async (req, res) => {
-    const session = currentUser(req);
-    const input = parseBody(deleteAccountSchema, req.body);
-    await assertPassword(session.id, input.password);
-
-    const remaining = db
-      .prepare(
-        `SELECT COUNT(*) AS total, COUNT(CASE WHEN role = 'owner' THEN 1 END) AS owners
-         FROM users WHERE household_id = ? AND id != ?`,
-      )
-      .get(session.householdId, session.id) as { total: number; owners: number };
-
-    if (session.role === 'owner' && remaining.owners === 0) {
-      if (remaining.total > 0) {
-        throw badRequest(
-          'You are the only owner of this household. Make someone else an owner first, or delete the household itself.',
-        );
-      }
-      db.prepare('DELETE FROM households WHERE id = ?').run(session.householdId);
-    } else {
-      db.prepare('DELETE FROM users WHERE id = ?').run(session.id);
-    }
-
-    clearSession(res);
+    // Every other device is signed out; this one gets a fresh cookie, keeping
+    // whichever household it was looking at.
+    issueSession(res, getUser(user.id), account.householdId);
     res.status(204).end();
   }),
 );
@@ -268,7 +287,9 @@ authRouter.get(
       throw badRequest('This reset link is invalid or has expired');
     }
     const user = getUser(reset.user_id);
-    res.json({ name: user.name, email: user.email });
+    // A name belongs to a household, and a reset link is about the account, so
+    // the address is what identifies the person here.
+    res.json({ email: user.email });
   }),
 );
 
@@ -292,8 +313,81 @@ authRouter.post(
     db.prepare('UPDATE password_resets SET used_at = ? WHERE token = ?').run(nowIso(), reset.token);
 
     const user = getUser(reset.user_id);
-    issueSession(res, user);
-    res.status(201).json({ user: toSessionUser(user) });
+    const current = landingHousehold(user);
+
+    issueSession(res, user, current);
+    res.status(201).json(sessionPayload(user, current));
+  }),
+);
+
+const deleteAccountSchema = z.object({
+  password: z.string().min(1, 'Enter your password to confirm'),
+});
+
+/**
+ * Deleting your own account, and with it every membership it holds.
+ *
+ * Each household is judged separately, because the account may be an owner in
+ * one and an ordinary member in another:
+ *
+ * - **Sole owner with company** — refused, and named. A household must keep an
+ *   owner: nobody would be left able to invite, rename or remove, and
+ *   promoting somebody on their behalf is not a decision to make for them.
+ * - **Last person in it** — the household goes too, since its rows would
+ *   otherwise sit there forever with no account able to reach them.
+ * - **Anything else** — the membership goes and the household carries on.
+ *
+ * The history is never yours to destroy: `paid_by` / `created_by` go NULL and
+ * the expenses stay, so nobody else's totals move when you leave (§3).
+ */
+authRouter.delete(
+  '/account',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const account = currentAccount(req);
+    const input = parseBody(deleteAccountSchema, req.body);
+    await assertPassword(account.id, input.password);
+
+    const memberships = membershipsOf(account.id);
+    const stranded: string[] = [];
+    const householdsToDelete: string[] = [];
+
+    for (const membership of memberships) {
+      const others = db
+        .prepare(
+          `SELECT COUNT(*) AS total, COUNT(CASE WHEN role = 'owner' THEN 1 END) AS owners
+           FROM memberships WHERE household_id = ? AND user_id != ?`,
+        )
+        .get(membership.household_id, account.id) as { total: number; owners: number };
+
+      if (others.total === 0) {
+        householdsToDelete.push(membership.household_id);
+      } else if (membership.role === 'owner' && others.owners === 0) {
+        const household = db
+          .prepare('SELECT name FROM households WHERE id = ?')
+          .get(membership.household_id) as { name: string };
+        stranded.push(household.name);
+      }
+    }
+
+    if (stranded.length > 0) {
+      throw badRequest(
+        `You are the only owner of ${stranded.map((name) => `"${name}"`).join(', ')}. ` +
+          'Make someone else an owner there first, or delete the household itself.',
+      );
+    }
+
+    db.transaction(() => {
+      for (const householdId of householdsToDelete) {
+        db.prepare('DELETE FROM households WHERE id = ?').run(householdId);
+      }
+      // Memberships cascade with the user; the empty households above had to go
+      // first, while there was still a membership naming them.
+      db.prepare('DELETE FROM users WHERE id = ?').run(account.id);
+    })();
+
+    clearSession(res);
+    res.status(204).end();
   }),
 );
 
@@ -302,10 +396,7 @@ authRouter.get(
   '/me',
   requireAuth,
   asyncHandler((req, res) => {
-    const user = currentUser(req);
-    const household = db
-      .prepare('SELECT id, name, currency FROM households WHERE id = ?')
-      .get(user.householdId) as Pick<HouseholdRow, 'id' | 'name' | 'currency'>;
-    res.json({ user, household });
+    const account = currentAccount(req);
+    res.json(sessionPayload(getUser(account.id), account.householdId));
   }),
 );

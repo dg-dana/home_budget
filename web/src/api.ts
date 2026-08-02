@@ -46,18 +46,48 @@ export const api = {
 
 export type Role = 'owner' | 'member';
 
+/**
+ * The signed-in account. The household-shaped fields describe the household
+ * currently open, and are null for an account that has not created or joined
+ * one yet — the state every new sign-up starts in.
+ */
 export interface SessionUser {
   id: string;
-  householdId: string;
   email: string;
-  name: string;
-  role: Role;
+  emailVerified: boolean;
+  householdId: string | null;
+  name: string | null;
+  role: Role | null;
 }
 
+/** One of the households an account belongs to. */
 export interface Household {
   id: string;
   name: string;
   currency: string;
+  role: Role;
+  /** What this account is called in *this* household. */
+  displayName: string;
+}
+
+/** What `/auth/me` and every sign-in route return. */
+export interface SessionPayload {
+  user: SessionUser;
+  household: Household | null;
+  households: Household[];
+}
+
+/**
+ * A message the app would have emailed if it had a provider. It does not
+ * (`ARCHITECTURE.md` §14), so the link comes back here and the page shows it —
+ * the same bargain invites and password resets already make.
+ */
+export interface Notice {
+  kind: string;
+  to: string;
+  subject: string;
+  link?: string;
+  body: string;
 }
 
 export interface Member {

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { api, type Household, type SessionUser } from '../api';
+import { api, type SessionPayload } from '../api';
 import { useSession } from '../session';
 import AuthPage from '../components/AuthPage';
 
@@ -13,7 +13,7 @@ export default function ResetPasswordPage() {
   const { setSession } = useSession();
   const navigate = useNavigate();
 
-  const [account, setAccount] = useState<{ name: string; email: string } | null>(null);
+  const [account, setAccount] = useState<{ email: string } | null>(null);
   const [loadError, setLoadError] = useState('');
   const [password, setPassword] = useState('');
   const [confirmation, setConfirmation] = useState('');
@@ -22,7 +22,7 @@ export default function ResetPasswordPage() {
 
   useEffect(() => {
     api
-      .get<{ name: string; email: string }>(`/auth/reset/${encodeURIComponent(token)}`)
+      .get<{ email: string }>(`/auth/reset/${encodeURIComponent(token)}`)
       .then(setAccount)
       .catch((err: Error) => setLoadError(err.message));
   }, [token]);
@@ -36,10 +36,9 @@ export default function ResetPasswordPage() {
     setBusy(true);
     setError('');
     try {
-      await api.post<{ user: SessionUser }>('/auth/reset', { token, password });
-      const me = await api.get<{ user: SessionUser; household: Household }>('/auth/me');
-      setSession(me);
-      navigate('/', { replace: true });
+      const restored = await api.post<SessionPayload>('/auth/reset', { token, password });
+      setSession(restored);
+      navigate(restored.household ? '/' : '/households', { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not set the new password');
     } finally {
@@ -68,9 +67,7 @@ export default function ResetPasswordPage() {
       <form className="card auth-card stack" onSubmit={handleSubmit}>
         <div>
           <h1>Choose a new password</h1>
-          <p className="muted">
-            For {account.name} ({account.email}).
-          </p>
+          <p className="muted">For {account.email}.</p>
         </div>
 
         {error && <div className="alert">{error}</div>}

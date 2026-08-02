@@ -4,6 +4,8 @@ import { db } from '../src/db.js';
 import {
   createClient,
   getBaseUrl,
+  joinHousehold,
+  registerAccount,
   registerHousehold,
   resetDatabase,
   startServer,
@@ -170,18 +172,16 @@ describe('invites', () => {
     expect(preview.status).toBe(200);
     expect(preview.body.householdName).toBe('The Cohens');
 
-    const joiner = createClient();
-    const joined = await joiner.post('/api/auth/join', {
-      token: invite.body.token,
-      name: 'Yossi',
-      email: uniqueEmail('yossi'),
-      password: 'password123',
-    });
+    // Joining is something an account does, so the invited person registers
+    // first and arrives here signed in.
+    const joiner = await registerAccount({ email: uniqueEmail('yossi') });
+    const joined = await joinHousehold(joiner, invite.body.token, 'Yossi');
     expect(joined.status).toBe(201);
-    expect(joined.body.user.role).toBe('member');
-    expect(joined.body.user.householdId).toBe(owner.householdId);
+    expect(joined.body.household.role).toBe('member');
+    expect(joined.body.household.id).toBe(owner.householdId);
+    expect(joined.body.household.displayName).toBe('Yossi');
 
-    const expenses = await joiner.get('/api/expenses?month=2026-05');
+    const expenses = await joiner.client.get('/api/expenses?month=2026-05');
     expect(expenses.body).toHaveLength(1);
     expect(expenses.body[0].description).toBe('Shared');
   });
@@ -190,20 +190,10 @@ describe('invites', () => {
     const owner = await registerHousehold();
     const invite = await owner.client.post('/api/household/invites', { role: 'member' });
 
-    const first = await createClient().post('/api/auth/join', {
-      token: invite.body.token,
-      name: 'First',
-      email: uniqueEmail(),
-      password: 'password123',
-    });
+    const first = await joinHousehold(await registerAccount(), invite.body.token, 'First');
     expect(first.status).toBe(201);
 
-    const second = await createClient().post('/api/auth/join', {
-      token: invite.body.token,
-      name: 'Second',
-      email: uniqueEmail(),
-      password: 'password123',
-    });
+    const second = await joinHousehold(await registerAccount(), invite.body.token, 'Second');
     expect(second.status).toBe(400);
     expect(second.body.error).toMatch(/invalid or has expired/i);
 
@@ -220,12 +210,7 @@ describe('invites', () => {
     );
 
     expect((await createClient().get(`/api/auth/invite/${invite.body.token}`)).status).toBe(400);
-    const joined = await createClient().post('/api/auth/join', {
-      token: invite.body.token,
-      name: 'Late',
-      email: uniqueEmail(),
-      password: 'password123',
-    });
+    const joined = await joinHousehold(await registerAccount(), invite.body.token, 'Late');
     expect(joined.status).toBe(400);
   });
 
@@ -234,22 +219,15 @@ describe('invites', () => {
     const invited = uniqueEmail('invited');
     const invite = await owner.client.post('/api/household/invites', { email: invited });
 
-    const wrongPerson = await createClient().post('/api/auth/join', {
-      token: invite.body.token,
-      name: 'Impostor',
-      email: uniqueEmail('other'),
-      password: 'password123',
-    });
-    expect(wrongPerson.status).toBe(400);
-    expect(wrongPerson.body.error).toContain(invited);
+    // The pin is now checked against the signed-in account's address, which is
+    // a stronger promise than before: that address has been confirmed.
+    const wrongPerson = await registerAccount({ email: uniqueEmail('other') });
+    const refused = await joinHousehold(wrongPerson, invite.body.token, 'Impostor');
+    expect(refused.status).toBe(400);
+    expect(refused.body.error).toContain(invited);
 
-    const rightPerson = await createClient().post('/api/auth/join', {
-      token: invite.body.token,
-      name: 'Invited',
-      email: invited,
-      password: 'password123',
-    });
-    expect(rightPerson.status).toBe(201);
+    const rightPerson = await registerAccount({ email: invited });
+    expect((await joinHousehold(rightPerson, invite.body.token, 'Invited')).status).toBe(201);
   });
 
   it('kills a revoked invite', async () => {
@@ -257,12 +235,7 @@ describe('invites', () => {
     const invite = await owner.client.post('/api/household/invites', { role: 'member' });
     await owner.client.delete(`/api/household/invites/${invite.body.token}`);
 
-    const joined = await createClient().post('/api/auth/join', {
-      token: invite.body.token,
-      name: 'Revoked',
-      email: uniqueEmail(),
-      password: 'password123',
-    });
+    const joined = await joinHousehold(await registerAccount(), invite.body.token, 'Revoked');
     expect(joined.status).toBe(400);
   });
 

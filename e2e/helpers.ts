@@ -2,11 +2,47 @@ import type { APIRequest, APIRequestContext, Browser, Page } from '@playwright/t
 
 let counter = 0;
 
-/** Unique per test, so tests can share one database and still run in parallel. */
+/**
+ * Unique per test, so tests can share one database and still run in parallel.
+ * The random segment matters: Playwright runs workers as separate processes, so
+ * the counter restarts in each and two workers registering in the same
+ * millisecond would otherwise collide.
+ */
 export const uniqueEmail = (prefix = 'owner') =>
-  `${prefix}-${Date.now()}-${++counter}@example.com`;
+  `${prefix}-${Date.now()}-${++counter}-${Math.random().toString(36).slice(2, 8)}@example.com`;
 
 export const PASSWORD = 'password123';
+
+/**
+ * Registers an account, confirms its address, and creates a household to own —
+ * the three steps that now stand between a stranger and any data at all.
+ * Returns the still-signed-in context.
+ */
+export async function seedAccountWithHousehold(
+  api: APIRequestContext,
+  {
+    email,
+    householdName = 'E2E Household',
+    currency = 'USD',
+    displayName = 'Dana',
+  }: { email: string; householdName?: string; currency?: string; displayName?: string },
+): Promise<{ userId: string; householdId: string }> {
+  const registered = await api.post('/api/auth/register', { data: { email, password: PASSWORD } });
+  if (!registered.ok()) throw new Error(`register failed: ${registered.status()}`);
+  const account = await registered.json();
+
+  // No mail provider, so the confirmation link comes back in the response.
+  const token = String(account.verification.link).split('/').pop();
+  const verified = await api.post('/api/auth/verify', { data: { token } });
+  if (!verified.ok()) throw new Error(`verify failed: ${verified.status()}`);
+
+  const created = await api.post('/api/households', {
+    data: { name: householdName, currency, displayName },
+  });
+  if (!created.ok()) throw new Error(`create household failed: ${created.status()}`);
+
+  return { userId: account.user.id, householdId: (await created.json()).household.id };
+}
 
 export interface Owner {
   email: string;
@@ -27,16 +63,7 @@ export async function seedSharedList(
 ): Promise<Owner> {
   const email = uniqueEmail();
 
-  const registered = await request.post('/api/auth/register', {
-    data: {
-      householdName: 'E2E Household',
-      currency: 'USD',
-      name: 'Dana',
-      email,
-      password: PASSWORD,
-    },
-  });
-  if (!registered.ok()) throw new Error(`register failed: ${registered.status()}`);
+  await seedAccountWithHousehold(request, { email });
 
   const list = await (await request.post('/api/lists', { data: { name: listName } })).json();
   for (const name of items) {
@@ -77,21 +104,28 @@ export async function seedStatsHousehold(
   const email = uniqueEmail('stats');
   const api = await apiRequest.newContext({ baseURL });
 
-  const registered = await api.post('/api/auth/register', {
-    data: { householdName, currency, name: 'Dana', email, password: PASSWORD },
-  });
-  if (!registered.ok()) throw new Error(`register failed: ${registered.status()}`);
-  const owner = await registered.json();
+  const owner = await seedAccountWithHousehold(api, { email, householdName, currency });
 
-  const members = [{ id: owner.user.id as string, name: 'Dana' }];
+  const members = [{ id: owner.userId, name: 'Dana' }];
   for (const name of memberNames) {
     const invite = await (await api.post('/api/household/invites', { data: { role: 'member' } })).json();
     const joiner = await apiRequest.newContext({ baseURL });
-    const joined = await joiner.post('/api/auth/join', {
-      data: { token: invite.token, name, email: uniqueEmail(name.toLowerCase()), password: PASSWORD },
+    // Joining is now something an account does, so each member registers and
+    // confirms first, then redeems the invite.
+    const joinerEmail = uniqueEmail(name.toLowerCase());
+    const registered = await joiner.post('/api/auth/register', {
+      data: { email: joinerEmail, password: PASSWORD },
+    });
+    if (!registered.ok()) throw new Error(`register failed: ${registered.status()}`);
+    const account = await registered.json();
+    await joiner.post('/api/auth/verify', {
+      data: { token: String(account.verification.link).split('/').pop() },
+    });
+    const joined = await joiner.post('/api/households/join', {
+      data: { token: invite.token, displayName: name },
     });
     if (!joined.ok()) throw new Error(`join failed: ${joined.status()}`);
-    members.push({ id: (await joined.json()).user.id as string, name });
+    members.push({ id: account.user.id as string, name });
     await joiner.dispose();
   }
 

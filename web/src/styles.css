@@ -770,3 +770,47 @@ th {
   color: var(--muted);
 }
 .table-wrap { overflow-x: auto; }
+
+/* ------------------------------------------------- households in the header */
+
+/* The brand is now a mark plus the household control, so the link is only the
+   mark: a `<select>` nested in an `<a>` would navigate on every open. */
+.brand-link:hover { text-decoration: none; }
+
+.household-name {
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: var(--text);
+}
+
+/* Sized to its content so a long household name does not stretch the bar, and
+   left to the platform's own picker on a phone. */
+.household-switcher {
+  width: auto;
+  max-width: 12rem;
+  font-weight: 700;
+  padding: 0.3rem 0.5rem;
+  background: var(--surface-alt);
+}
+
+/* A button that has to read as part of a sentence — "Sign out" inside a
+   paragraph — without a button's box, padding or weight. */
+.link-button {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: var(--accent-text);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+/* A message the app would have emailed. Marked out as a quotation of something
+   that arrived from elsewhere, rather than dressed up as an alert. */
+.notice-card {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 9px;
+  background: var(--surface-alt);
+  padding: 0.75rem 0.9rem;
+}

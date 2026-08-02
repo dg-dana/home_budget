@@ -1,13 +1,13 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { currentUser, newId, nowIso, requireAuth } from '../auth.js';
+import { currentUser, newId, nowIso, requireAuth, requireHousehold } from '../auth.js';
 import { db } from '../db.js';
 import { asyncHandler, badRequest, notFound, parseBody } from '../http.js';
 import { materialiseDueExpenses } from '../recurring.js';
 
 export const expensesRouter = Router();
 
-expensesRouter.use(requireAuth);
+expensesRouter.use(requireAuth, requireHousehold);
 
 const MONTH_PATTERN = /^\d{4}-\d{2}$/;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -59,6 +59,8 @@ function monthsInRange(from: string, to: string): string[] {
 /**
  * Verifies a category / member id belongs to this household before it is
  * stored, so ids cannot be used to point at another household's rows.
+ * Categories hang off the household directly; a person no longer does, so
+ * "is this one of ours" is a membership question now.
  */
 function assertOwned(
   table: 'categories' | 'users',
@@ -66,22 +68,42 @@ function assertOwned(
   householdId: string,
 ) {
   if (id === null || id === undefined) return;
-  const row = db
-    .prepare(`SELECT id FROM ${table} WHERE id = ? AND household_id = ?`)
-    .get(id, householdId);
+  const row =
+    table === 'categories'
+      ? db.prepare('SELECT id FROM categories WHERE id = ? AND household_id = ?').get(id, householdId)
+      : db
+          .prepare('SELECT user_id FROM memberships WHERE user_id = ? AND household_id = ?')
+          .get(id, householdId);
   if (!row) {
     throw badRequest(table === 'categories' ? 'Unknown category' : 'Unknown household member');
   }
 }
 
+/**
+ * A payer who has left the household reads as no payer at all.
+ *
+ * Removing someone now deletes their membership, not their account — they may
+ * be in other households — so `expenses.paid_by` keeps pointing at a real user
+ * row. Every per-member breakdown therefore has to ask whether that person is
+ * still *here*: otherwise their spending would disappear from the split while
+ * still counting towards the total, and the cross-tab would stop adding up.
+ * Folding them into the existing null-payer row is exactly what §8 already
+ * promises — "a removed member's expenses still exist".
+ */
+const PAYER_IF_STILL_HERE = `
+  CASE WHEN EXISTS (
+    SELECT 1 FROM memberships m WHERE m.user_id = e.paid_by AND m.household_id = e.household_id
+  ) THEN e.paid_by END`;
+
 const SELECT_EXPENSE = `
-  SELECT e.id, e.amount_cents, e.description, e.spent_on, e.category_id, e.paid_by,
+  SELECT e.id, e.amount_cents, e.description, e.spent_on, e.category_id,
+         ${PAYER_IF_STILL_HERE} AS paid_by,
          e.recurring_id, e.created_at,
          c.name AS category_name, c.color AS category_color,
-         u.name AS paid_by_name
+         m.display_name AS paid_by_name
   FROM expenses e
   LEFT JOIN categories c ON c.id = e.category_id
-  LEFT JOIN users u ON u.id = e.paid_by
+  LEFT JOIN memberships m ON m.user_id = e.paid_by AND m.household_id = e.household_id
 `;
 
 expensesRouter.get(
@@ -157,12 +179,14 @@ expensesRouter.get(
 
     const byMember = db
       .prepare(
-        `SELECT u.id AS user_id, u.name, COALESCE(SUM(e.amount_cents), 0) AS spent_cents
-         FROM users u
+        `SELECT u.user_id AS user_id, u.display_name AS name,
+                COALESCE(SUM(e.amount_cents), 0) AS spent_cents
+         FROM memberships u
          LEFT JOIN expenses e
-           ON e.paid_by = u.id AND e.spent_on >= ? AND e.spent_on < ?
+           ON e.paid_by = u.user_id AND e.household_id = u.household_id
+              AND e.spent_on >= ? AND e.spent_on < ?
          WHERE u.household_id = ?
-         GROUP BY u.id
+         GROUP BY u.user_id
          ORDER BY spent_cents DESC`,
       )
       .all(start, end, user.householdId);
@@ -231,15 +255,15 @@ expensesRouter.get(
     // the UI, and changing the range must not repaint everyone.
     const members = db
       .prepare(
-        `SELECT u.id AS user_id, u.name,
+        `SELECT u.user_id AS user_id, u.display_name AS name,
                 COALESCE(SUM(e.amount_cents), 0) AS spent_cents, COUNT(e.id) AS count
-         FROM users u
+         FROM memberships u
          LEFT JOIN expenses e
-           ON e.paid_by = u.id AND e.household_id = u.household_id
+           ON e.paid_by = u.user_id AND e.household_id = u.household_id
               AND e.spent_on >= ? AND e.spent_on < ?
          WHERE u.household_id = ?
-         GROUP BY u.id
-         ORDER BY u.name COLLATE NOCASE`,
+         GROUP BY u.user_id
+         ORDER BY u.display_name COLLATE NOCASE`,
       )
       .all(start, end, user.householdId) as Array<{
       user_id: string | null;
@@ -250,9 +274,10 @@ expensesRouter.get(
 
     const unattributed = db
       .prepare(
-        `SELECT COALESCE(SUM(amount_cents), 0) AS spent_cents, COUNT(*) AS count
-         FROM expenses
-         WHERE household_id = ? AND paid_by IS NULL AND spent_on >= ? AND spent_on < ?`,
+        `SELECT COALESCE(SUM(e.amount_cents), 0) AS spent_cents, COUNT(*) AS count
+         FROM expenses e
+         WHERE e.household_id = ? AND ${PAYER_IF_STILL_HERE} IS NULL
+           AND e.spent_on >= ? AND e.spent_on < ?`,
       )
       .get(...scope) as { spent_cents: number; count: number };
     if (unattributed.count > 0) {
@@ -294,21 +319,21 @@ expensesRouter.get(
     // rest of the grid with zeroes rather than the server sending them.
     const matrix = db
       .prepare(
-        `SELECT paid_by AS user_id, category_id,
-                SUM(amount_cents) AS spent_cents, COUNT(*) AS count
-         FROM expenses
-         WHERE household_id = ? AND spent_on >= ? AND spent_on < ?
-         GROUP BY paid_by, category_id`,
+        `SELECT ${PAYER_IF_STILL_HERE} AS user_id, e.category_id,
+                SUM(e.amount_cents) AS spent_cents, COUNT(*) AS count
+         FROM expenses e
+         WHERE e.household_id = ? AND e.spent_on >= ? AND e.spent_on < ?
+         GROUP BY ${PAYER_IF_STILL_HERE}, e.category_id`,
       )
       .all(...scope);
 
     const monthlyRows = db
       .prepare(
-        `SELECT substr(spent_on, 1, 7) AS month, paid_by AS user_id,
-                SUM(amount_cents) AS spent_cents
-         FROM expenses
-         WHERE household_id = ? AND spent_on >= ? AND spent_on < ?
-         GROUP BY month, paid_by`,
+        `SELECT substr(e.spent_on, 1, 7) AS month, ${PAYER_IF_STILL_HERE} AS user_id,
+                SUM(e.amount_cents) AS spent_cents
+         FROM expenses e
+         WHERE e.household_id = ? AND e.spent_on >= ? AND e.spent_on < ?
+         GROUP BY month, ${PAYER_IF_STILL_HERE}`,
       )
       .all(...scope) as Array<{ month: string; user_id: string | null; spent_cents: number }>;
 

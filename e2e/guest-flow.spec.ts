@@ -9,17 +9,29 @@ import { PASSWORD, identifyAs, openAsGuest, seedSharedList, uniqueEmail } from '
  */
 test.describe('guest shopping list', () => {
   test('a household shares a list and a guest shops it end to end', async ({ page, browser }) => {
-    // --- Member: create the household through the UI -----------------------
+    // --- Member: account first, then a household, through the UI -----------
     await page.goto('/register');
-    await page.getByLabel('Household name').fill('The Test Family');
-    await page.getByLabel('Currency').selectOption('EUR');
-    await page.getByLabel('Your name').fill('Dana');
     await page.getByLabel('Email').fill(uniqueEmail());
     await page.getByLabel('Password').fill(PASSWORD);
+    await page.getByRole('button', { name: 'Create account' }).click();
+
+    // No mail provider, so the confirmation link is put on screen. Following it
+    // is the whole point of the step, so the test follows it too.
+    await expect(page.getByRole('heading', { name: 'Confirm your address' })).toBeVisible();
+    const verifyUrl = await page.locator('.notice-card code').innerText();
+    await page.goto(new URL(verifyUrl).pathname);
+    await page.getByRole('button', { name: 'Confirm this address' }).click();
+
+    await expect(page).toHaveURL('/households');
+    await page.getByRole('button', { name: 'Create a household' }).click();
+    await page.getByLabel('Household name').fill('The Test Family');
+    await page.getByLabel('Your name in it').fill('Dana');
+    await page.getByLabel('Currency').selectOption('EUR');
     await page.getByRole('button', { name: 'Create household' }).click();
 
+    await page.getByRole('button', { name: 'Open' }).click();
     await expect(page).toHaveURL('/');
-    await expect(page.getByRole('link', { name: /The Test Family/ })).toBeVisible();
+    await expect(page.getByText('The Test Family')).toBeVisible();
 
     // --- Member: create a list and put something on it ---------------------
     await page.getByRole('link', { name: 'Shopping' }).click();

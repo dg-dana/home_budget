@@ -3,20 +3,25 @@ import { z } from 'zod';
 import { config } from '../config.js';
 import {
   assertPassword,
-  clearSession,
   currentUser,
+  issueSession,
   newToken,
   nowIso,
   requireAuth,
+  requireHousehold,
   requireOwner,
 } from '../auth.js';
 import { db } from '../db.js';
 import { asyncHandler, badRequest, notFound, parseBody } from '../http.js';
-import type { HouseholdRow, InviteRow, UserRow } from '../types.js';
+import type { HouseholdRow, InviteRow, MembershipRow, UserRow } from '../types.js';
 
 export const householdRouter = Router();
 
-householdRouter.use(requireAuth);
+// Everything here is about the household currently open, so a request that is
+// not about one has no meaning. `requireHousehold` is what lets every handler
+// below keep using `currentUser().householdId` exactly as it did when an
+// account could only ever belong to one.
+householdRouter.use(requireAuth, requireHousehold);
 
 const settingsSchema = z.object({
   name: z.string().trim().min(1, 'Household name is required').max(80),
@@ -60,8 +65,10 @@ householdRouter.put(
 );
 
 /**
- * Closes the household down: every member's account, and all of the money,
- * categories, rules, lists and share links underneath it.
+ * Closes the household down: all of the money, categories, rules, lists and
+ * share links underneath it, and everyone's place in it. **Not** their
+ * accounts — those are no longer owned by a household, and the people in this
+ * one may belong to others.
  *
  * One statement does the whole thing, because the schema already says so —
  * every table hangs off `households` with `ON DELETE CASCADE` (§3), so there
@@ -82,30 +89,46 @@ householdRouter.delete(
 
     db.prepare('DELETE FROM households WHERE id = ?').run(user.householdId);
 
-    // Every other member's cookie stops working on its next request anyway —
-    // the user row is re-read every time (§4) — but the caller's own browser
-    // should not be left holding one either.
-    clearSession(res);
+    // Everyone stays signed in — deleting a household is not deleting anybody's
+    // account, and the others may well belong to more households than this one.
+    // Their memberships are gone, so the next request resolves to no household
+    // and they land on the picker. The caller's own cookie still names the
+    // household that no longer exists, so re-issue it pointing at nothing.
+    issueSession(res, db.prepare('SELECT * FROM users WHERE id = ?').get(user.id) as UserRow, null);
     res.status(204).end();
   }),
 );
 
-/** Everyone in the household can see who else is in it. */
+/**
+ * Everyone in the household can see who else is in it.
+ *
+ * `id` is still the **user** id, because that is what expenses point at. The
+ * name is the one they go by here, which may not be what they are called in
+ * another household they belong to.
+ */
 householdRouter.get(
   '/members',
   asyncHandler((req, res) => {
     const user = currentUser(req);
     const members = db
       .prepare(
-        `SELECT id, name, email, role, created_at
-         FROM users WHERE household_id = ?
-         ORDER BY CASE role WHEN 'owner' THEN 0 ELSE 1 END, name COLLATE NOCASE`,
+        `SELECT u.id, m.display_name AS name, u.email, m.role, m.created_at
+         FROM memberships m
+         JOIN users u ON u.id = m.user_id
+         WHERE m.household_id = ?
+         ORDER BY CASE m.role WHEN 'owner' THEN 0 ELSE 1 END, m.display_name COLLATE NOCASE`,
       )
       .all(user.householdId);
     res.json(members);
   }),
 );
 
+/**
+ * Removes someone from this household. Their account survives — they may be in
+ * other households, and it was never this household's to delete. Their
+ * expenses stay too: `paid_by` / `created_by` are ON DELETE SET NULL, and
+ * nothing here deletes the user row that would trigger them.
+ */
 householdRouter.delete(
   '/members/:id',
   requireOwner,
@@ -114,14 +137,44 @@ householdRouter.delete(
     if (req.params.id === user.id) {
       throw badRequest('You cannot remove yourself from the household');
     }
-    const member = db
-      .prepare('SELECT * FROM users WHERE id = ? AND household_id = ?')
-      .get(req.params.id, user.householdId) as UserRow | undefined;
-    if (!member) throw notFound('That member does not exist');
+    const membership = db
+      .prepare('SELECT * FROM memberships WHERE user_id = ? AND household_id = ?')
+      .get(req.params.id, user.householdId) as MembershipRow | undefined;
+    if (!membership) throw notFound('That member does not exist');
 
-    // Expenses keep their history: `paid_by` / `created_by` are ON DELETE SET NULL.
-    db.prepare('DELETE FROM users WHERE id = ?').run(member.id);
+    db.transaction(() => {
+      db.prepare('DELETE FROM memberships WHERE id = ?').run(membership.id);
+      // Retire any recovery link outstanding for them.
+      //
+      // This used to happen for free: removing a member deleted their account,
+      // and `password_resets` cascaded with it. Now the account survives, so
+      // without this an owner could issue a link, remove the person, and then
+      // redeem it themselves — taking over an account that may belong to other
+      // households entirely. An owner's reach has to stop at their own door.
+      db.prepare('UPDATE password_resets SET used_at = ? WHERE user_id = ? AND used_at IS NULL').run(
+        nowIso(),
+        membership.user_id,
+      );
+    })();
     res.status(204).end();
+  }),
+);
+
+/** Renames yourself in this household, without touching any other. */
+householdRouter.put(
+  '/me',
+  asyncHandler((req, res) => {
+    const user = currentUser(req);
+    const input = parseBody(
+      z.object({ displayName: z.string().trim().min(1, 'Name is required').max(80) }),
+      req.body,
+    );
+    db.prepare('UPDATE memberships SET display_name = ? WHERE user_id = ? AND household_id = ?').run(
+      input.displayName,
+      user.id,
+      user.householdId,
+    );
+    res.json({ displayName: input.displayName });
   }),
 );
 
@@ -137,7 +190,7 @@ householdRouter.post(
   asyncHandler((req, res) => {
     const user = currentUser(req);
     const member = db
-      .prepare('SELECT id FROM users WHERE id = ? AND household_id = ?')
+      .prepare('SELECT user_id AS id FROM memberships WHERE user_id = ? AND household_id = ?')
       .get(req.params.id, user.householdId) as { id: string } | undefined;
     if (!member) throw notFound('That member does not exist');
 

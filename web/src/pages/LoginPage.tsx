@@ -1,12 +1,15 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { api, type Household, type SessionUser } from '../api';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { api, type SessionPayload } from '../api';
 import { useSession } from '../session';
 import AuthPage from '../components/AuthPage';
 
 export default function LoginPage() {
   const { setSession } = useSession();
   const navigate = useNavigate();
+  const location = useLocation();
+  // Someone sent here from an invite link should land back on it once in.
+  const from = (location.state as { from?: string } | null)?.from;
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -17,10 +20,11 @@ export default function LoginPage() {
     setBusy(true);
     setError('');
     try {
-      await api.post<{ user: SessionUser }>('/auth/login', { email, password });
-      const me = await api.get<{ user: SessionUser; household: Household }>('/auth/me');
-      setSession(me);
-      navigate('/', { replace: true });
+      const signedIn = await api.post<SessionPayload>('/auth/login', { email, password });
+      setSession(signedIn);
+      // With no household open — none yet, or several and no choice made — the
+      // picker is the only page that can render.
+      navigate(from ?? (signedIn.household ? '/' : '/households'), { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not sign in');
     } finally {
@@ -33,7 +37,7 @@ export default function LoginPage() {
       <form className="card auth-card stack" onSubmit={handleSubmit}>
         <div>
           <h1>Welcome back</h1>
-          <p className="muted">Sign in to your household.</p>
+          <p className="muted">Sign in to your households.</p>
         </div>
 
         {error && <div className="alert">{error}</div>}
@@ -67,7 +71,7 @@ export default function LoginPage() {
         </button>
 
         <p className="small muted">
-          Starting fresh? <Link to="/register">Create a household</Link>
+          Starting fresh? <Link to="/register" state={{ from }}>Create an account</Link>
         </p>
         <p className="small muted" style={{ marginTop: '-0.5rem' }}>
           Forgotten your password? Ask the household owner to send you a reset link.

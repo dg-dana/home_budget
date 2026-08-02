@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { currentUser, newId, newToken, nowIso, requireAuth } from '../auth.js';
+import { currentUser, newId, newToken, nowIso, requireAuth, requireHousehold } from '../auth.js';
 import { db } from '../db.js';
 import { asyncHandler, notFound, parseBody } from '../http.js';
 import {
@@ -17,7 +17,7 @@ import type { ShoppingListRow } from '../types.js';
 
 export const listsRouter = Router();
 
-listsRouter.use(requireAuth);
+listsRouter.use(requireAuth, requireHousehold);
 
 const listSchema = z.object({
   name: z.string().trim().min(1, 'List name is required').max(80),

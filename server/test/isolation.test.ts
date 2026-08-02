@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   addMember,
+  joinHousehold,
   registerHousehold,
   resetDatabase,
   startServer,
@@ -141,6 +142,31 @@ describe('cross-household isolation', () => {
     const removed = await bob.client.delete(`/api/household/members/${alice.userId}`);
     expect(removed.status).toBe(404);
     expect((await alice.client.get('/api/auth/me')).status).toBe(200);
+  });
+
+  it('never lists or opens another account’s households', async () => {
+    const listed = await bob.client.get('/api/households');
+    expect(listed.body.households).toHaveLength(1);
+    expect(listed.body.households[0].id).toBe(bob.householdId);
+
+    // An id from another account behaves as "not found", never as forbidden.
+    const switched = await bob.client.post(`/api/households/${alice.householdId}/switch`);
+    expect(switched.status).toBe(404);
+    expect((await bob.client.get('/api/household')).body.id).toBe(bob.householdId);
+  });
+
+  it('will not let an invite be redeemed by the wrong address', async () => {
+    // An unpinned invite is a bearer credential by design; a pinned one is the
+    // case that must not be transferable between accounts.
+    const invite = await alice.client.post('/api/household/invites', {
+      email: 'someone-else@example.com',
+    });
+    const joined = await joinHousehold(bob, invite.body.token, 'Bob');
+    expect(joined.status).toBe(400);
+
+    // Bob is still only in his own household, and Alice's is unchanged.
+    expect((await bob.client.get('/api/households')).body.households).toHaveLength(1);
+    expect((await alice.client.get('/api/household/members')).body).toHaveLength(1);
   });
 
   it('deletes only the calling household, never the other one', async () => {

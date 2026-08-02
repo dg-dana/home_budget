@@ -3,6 +3,8 @@ import {
   addMember,
   createClient,
   createSharedList,
+  joinHousehold,
+  registerAccount,
   registerHousehold,
   resetDatabase,
   startServer,
@@ -60,12 +62,20 @@ describe('owner-only permissions', () => {
     expect(response.body.error).toMatch(/cannot remove yourself/i);
   });
 
-  it('ends a removed member session immediately', async () => {
-    expect((await member.client.get('/api/auth/me')).status).toBe(200);
+  it('cuts a removed member off from the household immediately', async () => {
+    expect((await member.client.get('/api/expenses')).status).toBe(200);
     expect((await owner.client.delete(`/api/household/members/${member.userId}`)).status).toBe(204);
-    // The cookie is still in the jar and unexpired, but the user is gone.
-    expect((await member.client.get('/api/auth/me')).status).toBe(401);
-    expect((await member.client.get('/api/expenses')).status).toBe(401);
+
+    // Their cookie is still in the jar and unexpired, and their *account* is
+    // untouched — it was never this household's to delete, and they may belong
+    // to others. What is gone is the membership, so the household's data is
+    // out of reach on the very next request.
+    const me = await member.client.get('/api/auth/me');
+    expect(me.status).toBe(200);
+    expect(me.body.household).toBeNull();
+    expect(me.body.households).toEqual([]);
+    expect((await member.client.get('/api/expenses')).status).toBe(403);
+    expect((await member.client.get('/api/household/members')).status).toBe(403);
   });
 
   it('lists members with the owner first', async () => {
@@ -131,7 +141,7 @@ describe('deleting a household', () => {
     member = await addMember(owner, 'Yossi');
   });
 
-  it('cascades everything away, including the other accounts', async () => {
+  it('cascades everything away, but leaves the accounts standing', async () => {
     const list = await owner.client.post('/api/lists', { name: 'Doomed' });
     await owner.client.post(`/api/lists/${list.body.id}/items`, { name: 'Milk' });
     await owner.client.post(`/api/lists/${list.body.id}/share`, { canEdit: true });
@@ -148,7 +158,7 @@ describe('deleting a household', () => {
     const { db } = await import('../src/db.js');
     for (const table of [
       'households',
-      'users',
+      'memberships',
       'expenses',
       'recurring_expenses',
       'categories',
@@ -160,9 +170,17 @@ describe('deleting a household', () => {
       expect(row.count, `${table} should be empty after the household is deleted`).toBe(0);
     }
 
-    // Everybody's session dies with the rows, the owner's included.
-    expect((await owner.client.get('/api/auth/me')).status).toBe(401);
-    expect((await member.client.get('/api/auth/me')).status).toBe(401);
+    // The accounts survive: an account is no longer owned by a household, and
+    // these two may well belong to others. What they lose is this household.
+    const users = db.prepare('SELECT COUNT(*) AS count FROM users').get() as { count: number };
+    expect(users.count).toBe(2);
+
+    for (const client of [owner.client, member.client]) {
+      const me = await client.get('/api/auth/me');
+      expect(me.status).toBe(200);
+      expect(me.body.household).toBeNull();
+    }
+    expect((await owner.client.get('/api/expenses')).status).toBe(403);
   });
 
   it('kills the share links along with the lists', async () => {
@@ -251,26 +269,24 @@ describe('deleting your own account', () => {
     expect((await owner.client.get('/api/auth/me')).status).toBe(401);
 
     const { db } = await import('../src/db.js');
-    for (const table of ['households', 'users', 'expenses', 'categories']) {
+    for (const table of ['households', 'memberships', 'expenses', 'categories']) {
       const row = db.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get() as { count: number };
       expect(row.count, `${table} should be empty once the last owner leaves`).toBe(0);
     }
+    // The member removed along the way still has their account.
+    const users = db.prepare('SELECT COUNT(*) AS count FROM users').get() as { count: number };
+    expect(users.count).toBe(1);
   });
 
   it('lets an owner leave once someone else owns the place', async () => {
     // Ownership is handed over with an invite carrying the owner role.
     const invite = await owner.client.post('/api/household/invites', { role: 'owner' });
-    const heir = createClient();
-    await heir.post('/api/auth/join', {
-      token: invite.body.token,
-      name: 'Heir',
-      email: uniqueEmail('heir'),
-      password: 'password123',
-    });
+    const heir = await registerAccount({ email: uniqueEmail('heir') });
+    expect((await joinHousehold(heir, invite.body.token, 'Heir')).status).toBe(201);
 
     expect((await owner.client.delete('/api/auth/account', { password: 'password123' })).status).toBe(204);
-    expect((await heir.get('/api/household')).body.name).toBe('The Cohens');
-    expect((await heir.get('/api/household/members')).body).toHaveLength(2);
+    expect((await heir.client.get('/api/household')).body.name).toBe('The Cohens');
+    expect((await heir.client.get('/api/household/members')).body).toHaveLength(2);
   });
 });
 
