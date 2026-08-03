@@ -4,6 +4,26 @@ Household expenses tracker + shared shopping lists. npm workspace: `server/` (Ex
 
 **Read `ARCHITECTURE.md` before making changes.** It covers the data model, the two-tier access model, and the invariants that are easy to break. The checklist in §15 is the short version.
 
+## Working agreement — how to talk to this user
+
+**This applies to every session on this project, not just the one it was set in.**
+
+1. **Answer in TLDR.** A few lines. Say what changed, what it means, and what is
+   needed from them — nothing else. No progress narration, no restating the
+   plan, no summarising work they just watched happen. Long prose loses them,
+   which makes it worse than useless.
+2. **`TODO.md` is the long form.** Everything that would have gone into a long
+   reply goes there instead: open work, known gaps, what is live, what needs
+   their hands. **Update it as part of the step it describes**, in the same
+   commit — not afterwards, and not only when asked.
+3. **Only give the full manifesto when they ask for the todo list.** Then read
+   `TODO.md` out properly. Otherwise, keep it to the topic they raised.
+4. **Stay on their topic.** If they ask about the switcher, answer about the
+   switcher. Other outstanding work belongs in `TODO.md`, not in the reply.
+
+Kept here rather than in a skill deliberately: a skill only loads when someone
+invokes it, and this has to hold from the first message of every session.
+
 ## Commands
 
 ```bash
@@ -92,4 +112,4 @@ Recurring expenses materialise **on read** (`GET /expenses` and friends write). 
 
 ## Housekeeping
 
-Keep `ARCHITECTURE.md` and this file current in the same commit as the change they describe — not afterwards.
+Keep `ARCHITECTURE.md`, `TODO.md` and this file current in the same commit as the change they describe — not afterwards. `TODO.md` is the running state of the project and the long-form counterpart to the TLDR replies above.
