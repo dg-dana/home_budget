@@ -57,6 +57,41 @@ test.describe('several households', () => {
     await expect(page.getByText('Home groceries')).toBeVisible();
   });
 
+  test('offers a way back to the households list with only one household', async ({
+    page,
+    request,
+  }) => {
+    // The case that shipped broken: with a single household the switcher
+    // collapsed to plain text, so there was no route to /households at all —
+    // and therefore no way to create a second one.
+    const email = uniqueEmail('only');
+    await seedAccountWithHousehold(request, {
+      email,
+      householdName: 'Test2',
+      displayName: 'Dana',
+    });
+
+    await page.goto('/login');
+    await page.getByLabel('Email').fill(email);
+    await page.getByLabel('Password').fill(PASSWORD);
+    await page.getByRole('button', { name: 'Sign in' }).click();
+    await page.waitForURL('/');
+
+    const switcher = page.getByLabel('Household');
+    await expect(switcher).toBeVisible();
+    await switcher.selectOption({ label: 'Households…' });
+
+    await expect(page).toHaveURL('/households');
+    await expect(page.getByRole('heading', { name: 'Your households' })).toBeVisible();
+    // And from there a second one can actually be made — the reason the way
+    // out has to exist even when there is nothing to switch between.
+    await expect(page.getByRole('button', { name: 'Create a household' })).toBeEnabled();
+
+    // Back in, without having to sign out and in again.
+    await page.getByRole('button', { name: 'Open' }).click();
+    await expect(page).toHaveURL('/');
+  });
+
   test('a brand new account is sent to the picker, and told to confirm first', async ({ page }) => {
     await page.goto('/register');
     await page.getByLabel('Email').fill(uniqueEmail('new'));
