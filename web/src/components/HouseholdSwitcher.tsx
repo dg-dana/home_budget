@@ -2,23 +2,23 @@ import { useNavigate } from 'react-router-dom';
 import { useSession } from '../session';
 
 /**
- * Which household is on screen, and a way to change it.
+ * Which household is on screen, a way to change it, and the way back out.
  *
- * A `<select>` rather than a menu: it is a one-of-n choice, it gets the
- * platform's own picker on a phone for free, and it collapses to the household
- * name when there is only one to choose from — which is most people, most of
- * the time. With a single household it renders as plain text, so nothing
- * suggests a choice that does not exist.
+ * A `<select>` rather than a menu: it is a one-of-n choice, and it gets the
+ * platform's own picker on a phone for free.
+ *
+ * **It renders even with a single household**, which looks redundant and is
+ * not. `/households` is not only a chooser — it is where another household is
+ * created or joined — so collapsing this to plain text (as it first did) left
+ * anyone with exactly one household, which is most people on their first day,
+ * with no route to it at all. The chevron is the only affordance saying there
+ * is anything beyond the household you are in.
  */
 export default function HouseholdSwitcher() {
   const { household, households, switchHousehold } = useSession();
   const navigate = useNavigate();
 
   if (!household) return null;
-
-  if (households.length < 2) {
-    return <span className="household-name">{household.name}</span>;
-  }
 
   return (
     <select
@@ -27,7 +27,7 @@ export default function HouseholdSwitcher() {
       value={household.id}
       onChange={async (event) => {
         const id = event.target.value;
-        if (id === '__manage__') {
+        if (id === MANAGE) {
           navigate('/households');
           return;
         }
@@ -42,7 +42,12 @@ export default function HouseholdSwitcher() {
           {option.name}
         </option>
       ))}
-      <option value="__manage__">Manage households…</option>
+      <option value={MANAGE}>
+        {households.length > 1 ? 'All households…' : 'Households…'}
+      </option>
     </select>
   );
 }
+
+/** Not a household id, and not a valid UUID, so it cannot collide with one. */
+const MANAGE = '__manage__';

@@ -31,7 +31,12 @@ test.describe('guest shopping list', () => {
 
     await page.getByRole('button', { name: 'Open' }).click();
     await expect(page).toHaveURL('/');
-    await expect(page.getByText('The Test Family')).toBeVisible();
+    // The header names the household through the switcher, so assert on what
+    // is *selected* rather than on loose text — an unselected option would
+    // match a plain text search while proving nothing about which is open.
+    await expect(page.getByLabel('Household').locator('option:checked')).toHaveText(
+      'The Test Family',
+    );
 
     // --- Member: create a list and put something on it ---------------------
     await page.getByRole('link', { name: 'Shopping' }).click();
