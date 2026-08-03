@@ -144,6 +144,14 @@ describe('cross-household isolation', () => {
     expect((await alice.client.get('/api/auth/me')).status).toBe(200);
   });
 
+  it('refuses to change the role of someone in another household', async () => {
+    const changed = await bob.client.put(`/api/household/members/${alice.userId}/role`, {
+      role: 'member',
+    });
+    expect(changed.status).toBe(404);
+    expect((await alice.client.get('/api/auth/me')).body.user.role).toBe('owner');
+  });
+
   it('never lists or opens another account’s households', async () => {
     const listed = await bob.client.get('/api/households');
     expect(listed.body.households).toHaveLength(1);

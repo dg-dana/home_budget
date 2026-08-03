@@ -246,6 +246,32 @@ export default function HouseholdPage() {
                 {isOwner && member.id !== user?.id && (
                   <button
                     type="button"
+                    className="button secondary small"
+                    title={
+                      member.role === 'owner'
+                        ? `Make ${member.name} an ordinary member`
+                        : `Let ${member.name} invite, rename and remove`
+                    }
+                    onClick={() => {
+                      const next = member.role === 'owner' ? 'member' : 'owner';
+                      const question =
+                        next === 'owner'
+                          ? `Make ${member.name} an owner? They will be able to invite and remove people, rename the household and delete it.`
+                          : `Make ${member.name} an ordinary member? They will lose those powers.`;
+                      if (window.confirm(question)) {
+                        void run(async () => {
+                          await api.put(`/household/members/${member.id}/role`, { role: next });
+                          await refresh();
+                        });
+                      }
+                    }}
+                  >
+                    {member.role === 'owner' ? 'Make member' : 'Make owner'}
+                  </button>
+                )}
+                {isOwner && member.id !== user?.id && (
+                  <button
+                    type="button"
                     className="icon-button danger"
                     title={`Remove ${member.name}`}
                     onClick={() => {
@@ -604,7 +630,7 @@ export default function HouseholdPage() {
               <h3 style={{ margin: 0 }}>Delete your account</h3>
               <p className="small muted" style={{ margin: '0.25rem 0 0' }}>
                 {strandedOwner
-                  ? 'You are this household’s only owner. Invite someone as an owner first, or delete the household instead.'
+                  ? 'You are this household’s only owner. Make someone else an owner first, or delete the household instead.'
                   : lastPerson
                     ? 'You are the only person here, so this deletes the household with you.'
                     : 'Your expenses stay in the household history, listed without a payer.'}
