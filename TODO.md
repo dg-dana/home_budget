@@ -3,9 +3,7 @@
 The running state of this project. **Updated after every step** — see the
 "Working agreement" in `CLAUDE.md`.
 
-Last updated: 2026-08-03 · live: deploy run #18 (`e6d5304`)
-
-> Role promotion is merged but **not deployed** — needs a Deploy run.
+Last updated: 2026-08-04 · live: deploy run #19 (`97d2610`)
 
 ---
 
@@ -13,10 +11,10 @@ Last updated: 2026-08-03 · live: deploy run #18 (`e6d5304`)
 
 Things no agent can do — an agent sandbox cannot load the live site.
 
-- [ ] **Check the live site on a phone.** Runs #17 and #18 have never been
-      looked at by a human. A green deploy proves the URL responds, nothing
-      more. Worth checking: the new sign-up flow, the household switcher, and
-      that your existing household looks untouched.
+- [ ] **Check the live site on a phone.** Runs #17–#19 have never been looked
+      at by a human. A green deploy proves the URL responds, nothing more.
+      Worth checking: the new sign-up flow, the household switcher, "Make
+      owner", and that your existing household looks untouched.
 - [ ] **Open a Resend account** (or say which provider) if you want real
       emails. Needs one DNS record. Until then confirmation links are shown on
       screen and prove nothing.
@@ -45,4 +43,4 @@ Things no agent can do — an agent sandbox cannot load the live site.
 - [x] Switcher reachable with only one household — was a dead end (live, run #18)
 - [x] Promote a member to owner / demote back — "Make owner" on the Household
       page. Never your own role, which is what keeps an owner in every
-      household. **Merged, not yet deployed.**
+      household. (live, run #19)
