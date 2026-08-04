@@ -160,6 +160,39 @@ householdRouter.delete(
   }),
 );
 
+/**
+ * Changes what someone may do here. Owner-only, and never your own role.
+ *
+ * The self-exclusion is what guarantees a household always keeps an owner:
+ * the caller is an owner by `requireOwner` and cannot demote themselves, so
+ * one is always left standing — no counting, and no way to reason about it
+ * wrongly. Stepping down means asking another owner to do it, which is the
+ * same shape as `DELETE /members/:id` refusing to remove yourself.
+ *
+ * Demoting a co-owner is allowed because removing them outright already is,
+ * and this is strictly the gentler of the two.
+ */
+householdRouter.put(
+  '/members/:id/role',
+  requireOwner,
+  asyncHandler((req, res) => {
+    const user = currentUser(req);
+    if (req.params.id === user.id) {
+      throw badRequest('You cannot change your own role — ask another owner');
+    }
+    const input = parseBody(z.object({ role: z.enum(['owner', 'member']) }), req.body);
+    const membership = db
+      .prepare('SELECT * FROM memberships WHERE user_id = ? AND household_id = ?')
+      .get(req.params.id, user.householdId) as MembershipRow | undefined;
+    if (!membership) throw notFound('That member does not exist');
+
+    db.prepare('UPDATE memberships SET role = ? WHERE id = ?').run(input.role, membership.id);
+    // Their next request picks this up: the membership is re-read every time
+    // (§4), so a promotion or demotion lands without them signing in again.
+    res.json({ id: membership.user_id, role: input.role });
+  }),
+);
+
 /** Renames yourself in this household, without touching any other. */
 householdRouter.put(
   '/me',

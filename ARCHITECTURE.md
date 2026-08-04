@@ -84,6 +84,14 @@ currently open). Both take the caller's password in the body.
   from the other side**, so the household's history is untouched: `paid_by`
   goes `NULL` and the money stays counted (above). Leaving must not silently
   rewrite what everybody else's totals say.
+- **Handing ownership over.** `PUT /household/members/:id/role` is how a member
+  becomes an owner, and it **refuses to change your own role**. That
+  single rule is what guarantees an owner always remains: the caller is an
+  owner by `requireOwner` and cannot demote themselves, so no counting is
+  involved and there is nothing to reason about wrongly. Stepping down means
+  asking another owner, the same shape as refusing to remove yourself.
+  Demoting a co-owner is allowed because removing them outright already is,
+  and this is strictly the gentler of the two.
 - **A household must keep an owner.** Deleting an account judges each of its
   households separately, because it may be an owner in one and an ordinary
   member in another. Being the *only* owner of a household with other people in
@@ -156,7 +164,7 @@ currently open). Both take the caller's password in the body.
 
 ## 5. Authorization model
 
-- **Owner only**: household settings, create/revoke invites, remove members, delete the household.
+- **Owner only**: household settings, create/revoke invites, remove members, **change another member's role**, delete the household.
 - **Any member**: categories, expenses, shopping lists, sharing controls, deleting their own account (§3).
 - **Guest (share token only)**: read one list; add/edit/tick/delete its items, and only while `share_can_edit` is on.
 
@@ -598,14 +606,6 @@ Alongside each screenshot it reports the body colour — the cheap proof a theme
 Honest list — these are real, and none is currently blocking.
 
 - **Frontend coverage is the guest flow, the statistics page and the household switcher.** The expenses dashboard, budgets, recurring, invites and household settings have no browser tests — changes there still need checking by hand, against the built app rather than by reading the CSS.
-- **There is no way to promote an existing member to owner.** A role is fixed
-  when the membership is created, from the invite; no route changes one
-  afterwards. It shows up in the sole-owner rule in §3 — "make someone else an
-  owner first" today means inviting a *new* owner, not handing the badge to the
-  person already sitting there. Now that one account can hold several
-  memberships this is cheaper to fix than it was (a role lives on a membership,
-  not on a person), and a `PUT /household/members/:id/role` would make the
-  intended path the obvious one.
 - **There is no way to leave a household without deleting your account.** An
   owner can remove anyone but themselves, so a member who simply wants out has
   to ask. `DELETE /household/members/me` is the missing route.

@@ -78,6 +78,62 @@ describe('owner-only permissions', () => {
     expect((await member.client.get('/api/household/members')).status).toBe(403);
   });
 
+  it('promotes a member to owner, and demotes them again', async () => {
+    expect((await member.client.put('/api/household', { name: 'Mine', currency: 'EUR' })).status).toBe(403);
+
+    const promoted = await owner.client.put(`/api/household/members/${member.userId}/role`, {
+      role: 'owner',
+    });
+    expect(promoted.status).toBe(200);
+    expect(promoted.body.role).toBe('owner');
+
+    // It lands without them signing in again: the membership is re-read on
+    // every request.
+    expect((await member.client.get('/api/auth/me')).body.user.role).toBe('owner');
+    expect((await member.client.put('/api/household', { name: 'Ours', currency: 'EUR' })).status).toBe(200);
+
+    // ...and back down again, by the other owner.
+    expect(
+      (await owner.client.put(`/api/household/members/${member.userId}/role`, { role: 'member' }))
+        .status,
+    ).toBe(200);
+    expect((await member.client.put('/api/household', { name: 'Mine', currency: 'EUR' })).status).toBe(403);
+  });
+
+  it('refuses to change your own role, so a household always keeps an owner', async () => {
+    const response = await owner.client.put(`/api/household/members/${owner.userId}/role`, {
+      role: 'member',
+    });
+    expect(response.status).toBe(400);
+    expect(response.body.error).toMatch(/your own role/i);
+    expect((await owner.client.get('/api/auth/me')).body.user.role).toBe('owner');
+  });
+
+  it('lets a promoted owner take over, so the first one can leave', async () => {
+    // The reason this route exists: handing over used to mean inviting a whole
+    // new person, because a role was fixed when the membership was created.
+    await owner.client.put(`/api/household/members/${member.userId}/role`, { role: 'owner' });
+
+    expect((await owner.client.delete('/api/auth/account', { password: 'password123' })).status).toBe(204);
+    expect((await member.client.get('/api/household')).body.name).toBe('The Cohens');
+    expect((await member.client.get('/api/household/members')).body).toHaveLength(1);
+  });
+
+  it('stops a member changing anybody\'s role', async () => {
+    const response = await member.client.put(`/api/household/members/${owner.userId}/role`, {
+      role: 'member',
+    });
+    expect(response.status).toBe(403);
+    expect((await owner.client.get('/api/auth/me')).body.user.role).toBe('owner');
+  });
+
+  it('rejects a role that is not owner or member', async () => {
+    expect(
+      (await owner.client.put(`/api/household/members/${member.userId}/role`, { role: 'admin' }))
+        .status,
+    ).toBe(400);
+  });
+
   it('lists members with the owner first', async () => {
     const members = await owner.client.get('/api/household/members');
     expect(members.body).toHaveLength(2);
