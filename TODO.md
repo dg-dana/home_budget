@@ -51,6 +51,13 @@ Email **sends** — the code is written, tested and on
   except for closing a household or their own account; routine edits —
   expenses, lists, categories — send nothing on purpose.
 
+### Fixed alongside it
+
+- **An account with no household can now delete itself**, from `/households`.
+  The "Danger zone" lives on the Household page, which needs a household open,
+  so an account that had left its only household — or never joined one — was
+  stuck with an account it could not close. Covered by a browser test.
+
 ### Still open on email
 
 - **Self-service "forgot password"** is now possible and does not exist yet.

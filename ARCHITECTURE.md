@@ -71,6 +71,11 @@ Two routes end things for good: `DELETE /auth/account` (your own account, and
 every membership it holds) and `DELETE /household` (owner only, the household
 currently open). Both take the caller's password in the body.
 
+- **Closing an account is reachable from two screens, deliberately.** The
+  Household page's "Danger zone" needs a household open, so `/households` — the
+  picker — carries the same action. Without it an account that had left its
+  only household, or never joined one, could not delete itself at all: every
+  other screen is behind a household.
 - **The password is the confirmation, not a dialog.** A session cookie proves a
   browser signed in once, not who is holding it now — the same reasoning that
   makes `POST /auth/password` ask for the current one. `assertPassword()` in
@@ -524,7 +529,7 @@ Two suites, run together with `npm run test:all`.
 
 ### Browser tests — Playwright, `e2e/`
 
-- 18 tests, run with `npm run test:e2e`. Config is `playwright.config.ts` at the repo root.
+- 19 tests, run with `npm run test:e2e`. Config is `playwright.config.ts` at the repo root.
 - **Three areas: the guest flow, the statistics page and multiple households.** The guest flow is the riskiest path — the one surface reachable without an account — and was the only coverage for a long time. (The theme test lives there because the toggle is on the guest header too.)
 - `statistics.spec.ts` exists because **every bug that page has had was invisible to the server suite**: a fold bucket that borrowed a real category's name, a one-month range drawing a lone dot, a stale response overwriting a newer one. Those are questions about what is on the screen. It reaches the page through the header link, never a direct URL — a page nobody can navigate to is a page nobody has.
 - `seedStatsHousehold()` builds a household through the API, giving **each joining member its own request context**: joining sets a session cookie, and a shared jar would sign the owner out halfway through.
@@ -534,7 +539,7 @@ Two suites, run together with `npm run test:all`.
 - Chromium: the config uses the sandbox's prebuilt binary when `/opt/pw-browsers/chromium` exists (override with `CHROMIUM_PATH`) and a normally installed browser otherwise. **Never run `playwright install` in the sandbox.**
 - Every guest gets `browser.newContext()` — a guest is *defined* by having no cookies and no carried-over storage, so sharing a context would defeat the point.
 - Tests create their own household, so they share nothing but the server and can run in parallel.
-- `households.spec.ts` asks the questions only a browser can: that the switcher exists as a real control, that using it actually repaints the page (it did not, at first — see the `<main>` key in §9), that the choice survives a reload, that a single-household account can still reach `/households` (it could not, at first), and what a brand new account is shown before it has a household at all.
+- `households.spec.ts` asks the questions only a browser can: that the switcher exists as a real control, that using it actually repaints the page (it did not, at first — see the `<main>` key in §9), that the choice survives a reload, that a single-household account can still reach `/households` (it could not, at first), what a brand new account is shown before it has a household at all, and that such an account can still delete itself — the Household page carrying the same action needs a household open, so without a control here there was no way out (§3).
 
 What it asserts: a member creates and shares a list through the UI; a guest with no account opens the link, names themselves, adds an item and ticks one off; the member sees those changes. A second journey covers the comment: a guest adds an item carrying one, the household reads it and rewrites it, and the guest sees the new wording. A third covers "Copy list" on all three screens it appears on: the clipboard is read back and compared to the exact expected text, and asserted not to contain the share token. The index case also asserts the page did not navigate, since that button lives inside a row that is otherwise a link. Plus view-only enforcement — including that a view-only guest can read a comment but is offered no control to change it — instant revocation, the name prompt appearing only once, a dead token, that a guest is bounced off every private route, that a chosen theme survives a reload without a flash, and that the sign-in page carries the toggle at all — the one signed-out screen everybody sees.
 
