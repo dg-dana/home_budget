@@ -3,7 +3,7 @@
 The running state of this project. **Updated after every step** — see the
 "Working agreement" in `CLAUDE.md`.
 
-Last updated: 2026-08-06 · live: deploy run #22 (`ac60542`)
+Last updated: 2026-08-06 · live: deploy run #24 (`51ae836`)
 
 ---
 
@@ -65,7 +65,8 @@ agent sandbox cannot reach the site, so that check is yours.
   you", and a message that never arrives is answered by **"send the
   confirmation link again"** rather than by showing the link.
 
-- **An invitation now shows on `/households`** and can be joined there. Found
+- **An invitation now shows on `/households`** and can be joined there (live,
+  run #24). Found
   on the live site: the invited person registered from the invite email,
   landed on the picker, and had no way to reach the invite except finding the
   message again. Open invites (no address on them) stay link-only.
@@ -80,7 +81,16 @@ agent sandbox cannot reach the site, so that check is yours.
 
 ## Also needs your hands
 
-- [ ] **Check the live site on a phone.** Runs #17–#22 have never been looked
+- [ ] **GitHub stopped creating Actions runs mid-session** — pushes after
+      15:27 UTC on 2026-08-06 produced no CI run at all (the workflow is
+      active, and `workflow_dispatch` still works). PR #35 was therefore
+      merged on a local run of typecheck, the server suite and the browser
+      suite rather than on CI, and the deploy — which runs typecheck and the
+      server tests itself before building — went green. Worth a look at the
+      repository's Actions and billing settings; if CI stays silent, every
+      future merge loses its safety net.
+
+- [ ] **Check the live site on a phone.** Runs #17–#24 have never been looked
       at by a human. A green deploy proves the URL responds, nothing more.
       Worth checking: the new sign-up flow, the household switcher, "Make
       owner", and that your existing household looks untouched.
@@ -101,8 +111,8 @@ agent sandbox cannot reach the site, so that check is yours.
 
 - [x] Email sends through Resend, and the app also emails what has happened —
       joins, removals, role changes, renames, both deletions, password
-      changes. Plus "Delete account" on `/households`. (live, runs #20–#22,
-      not yet confirmed by hand)
+      changes. Plus "Delete account" on `/households`, and invitations listed
+      on the picker. (live, runs #20–#24, not yet confirmed by hand)
 - [x] Delete an account / delete a household — "Danger zone" (live, run #16,
       confirmed on a phone)
 - [x] Accounts separate from households; several per account; per-household
