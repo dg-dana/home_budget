@@ -281,7 +281,8 @@ so the UI can badge them.
 - `backup.ts` — consistent snapshots via SQLite's online backup API.
 - `shoppingItems.ts` — **item operations shared by both the member and guest routes.** Both paths call the same functions with a different `actorName`, so guest and member edits can never diverge in behaviour.
 - `routes/` — `auth`, `households`, `household`, `categories`, `expenses`, `recurring`, `lists`, `share`.
-  - **`households` (plural) vs `household` (singular)** is a real distinction, not a naming accident. The plural router is the *only* place allowed to talk about a household the caller is not currently in — listing them, creating one, joining by invite, switching. The singular router administers the one that is open and therefore sits behind `requireHousehold`. Mounting order matters: `/api/households` must be registered before `/api/household`, and must not inherit that guard.
+  - **`GET /households/invitations`** lists invites pinned to the signed-in account's address, so the picker can show them. Invites travel by email and an email is easy to lose: registering *from* an invite and never opening the link again used to leave no trace of it anywhere in the app. **Open invites — those with no address on them — are never listed**, since they are links to hand over rather than something to advertise to whoever is signed in.
+- **`households` (plural) vs `household` (singular)** is a real distinction, not a naming accident. The plural router is the *only* place allowed to talk about a household the caller is not currently in — listing them, creating one, joining by invite, switching. The singular router administers the one that is open and therefore sits behind `requireHousehold`. Mounting order matters: `/api/households` must be registered before `/api/household`, and must not inherit that guard.
 
 ### Item comments
 
@@ -518,7 +519,7 @@ Two suites, run together with `npm run test:all`.
 - `isolation.test.ts` — **the most important file.** Two households, and every route checked to confirm one cannot see or touch the other's rows.
 - `share.test.ts` — guest access: what a guest can do, what the link must never expose, view-only enforcement, revocation, token reuse.
 - `auth.test.ts` — registration, login, forged/expired/tampered cookies, and the full invite lifecycle.
-- `accounts.test.ts` — the two-step sign-up and multi-household behaviour: that registering creates an account with no household and no household name is accepted there; that an unconfirmed address cannot create or join one; the confirmation link being single-use, expiring, and retired when a new one is issued; one account owning several households with their data provably apart and their categories seeded separately; a different display name in each; switching, and refusing to switch into one you are not in; where a returning sign-in lands.
+- `accounts.test.ts` — the two-step sign-up and multi-household behaviour: invitations waiting for an address (listed, hidden once redeemed, never another account's and never an open one, dropped when expired or revoked); that registering creates an account with no household and no household name is accepted there; that an unconfirmed address cannot create or join one; the confirmation link being single-use, expiring, and retired when a new one is issued; one account owning several households with their data provably apart and their categories seeded separately; a different display name in each; switching, and refusing to switch into one you are not in; where a returning sign-in lands.
 - `itemComments.test.ts` — the comment on a shopping item: set on add, edited, cleared, and the length cap.
 - `expenses.test.ts` — cents arithmetic, month-boundary maths, summary aggregation, and what survives a category or member deletion. Also the statistics endpoint: the per-member and per-category splits, the member/category cross-tab adding up to the same money as the totals, months with no spending, the name ordering that pins each member's colour, and the range validation.
 - `household.test.ts` — owner vs member permissions, list mechanics, and the two irreversible deletions (§3): the cascade taking the memberships and share links but **leaving the accounts standing**, the password confirmation, the refusal of a sole owner with company, the last owner taking the household with them, and a member leaving without moving anybody's totals.
@@ -531,7 +532,7 @@ Two suites, run together with `npm run test:all`.
 
 ### Browser tests — Playwright, `e2e/`
 
-- 19 tests, run with `npm run test:e2e`. Config is `playwright.config.ts` at the repo root.
+- 20 tests, run with `npm run test:e2e`. Config is `playwright.config.ts` at the repo root.
 - **Three areas: the guest flow, the statistics page and multiple households.** The guest flow is the riskiest path — the one surface reachable without an account — and was the only coverage for a long time. (The theme test lives there because the toggle is on the guest header too.)
 - `statistics.spec.ts` exists because **every bug that page has had was invisible to the server suite**: a fold bucket that borrowed a real category's name, a one-month range drawing a lone dot, a stale response overwriting a newer one. Those are questions about what is on the screen. It reaches the page through the header link, never a direct URL — a page nobody can navigate to is a page nobody has.
 - `seedStatsHousehold()` builds a household through the API, giving **each joining member its own request context**: joining sets a session cookie, and a shared jar would sign the owner out halfway through.
@@ -541,7 +542,7 @@ Two suites, run together with `npm run test:all`.
 - Chromium: the config uses the sandbox's prebuilt binary when `/opt/pw-browsers/chromium` exists (override with `CHROMIUM_PATH`) and a normally installed browser otherwise. **Never run `playwright install` in the sandbox.**
 - Every guest gets `browser.newContext()` — a guest is *defined* by having no cookies and no carried-over storage, so sharing a context would defeat the point.
 - Tests create their own household, so they share nothing but the server and can run in parallel.
-- `households.spec.ts` asks the questions only a browser can: that the switcher exists as a real control, that using it actually repaints the page (it did not, at first — see the `<main>` key in §9), that the choice survives a reload, that a single-household account can still reach `/households` (it could not, at first), what a brand new account is shown before it has a household at all, and that such an account can still delete itself — the Household page carrying the same action needs a household open, so without a control here there was no way out (§3).
+- `households.spec.ts` asks the questions only a browser can: that the switcher exists as a real control, that using it actually repaints the page (it did not, at first — see the `<main>` key in §9), that the choice survives a reload, that a single-household account can still reach `/households` (it could not, at first), what a brand new account is shown before it has a household at all, that an invitation waiting for that address can be joined without the email, and that such an account can still delete itself — the Household page carrying the same action needs a household open, so without a control here there was no way out (§3).
 
 What it asserts: a member creates and shares a list through the UI; a guest with no account opens the link, names themselves, adds an item and ticks one off; the member sees those changes. A second journey covers the comment: a guest adds an item carrying one, the household reads it and rewrites it, and the guest sees the new wording. A third covers "Copy list" on all three screens it appears on: the clipboard is read back and compared to the exact expected text, and asserted not to contain the share token. The index case also asserts the page did not navigate, since that button lives inside a row that is otherwise a link. Plus view-only enforcement — including that a view-only guest can read a comment but is offered no control to change it — instant revocation, the name prompt appearing only once, a dead token, that a guest is bounced off every private route, that a chosen theme survives a reload without a flash, and that the sign-in page carries the toggle at all — the one signed-out screen everybody sees.
 
@@ -549,7 +550,7 @@ What it asserts: a member creates and shares a list through the UI; a guest with
 
 ### Both suites were verified by breaking the code
 
-Twenty-eight deliberate regressions were introduced, and each was caught by a failing test:
+Thirty deliberate regressions were introduced, and each was caught by a failing test:
 
 1. Removing the `household_id` filter from the expenses list query → `isolation` failed.
 2. Adding `householdId` to the guest share response → `share` failed.
@@ -579,6 +580,8 @@ Twenty-eight deliberate regressions were introduced, and each was caught by a fa
 26. Dropping the `APP_URL` guard from the email body → `notifications` failed, a message going out carrying a link an inbox cannot follow.
 27. Ignoring `ownersOnly` in `householdAddresses()` → `notificationsSending` failed, everybody in the household hearing what only its owners should.
 28. Gathering a household's recipients *after* deleting it rather than before → `notificationsSending` failed, nobody told it was gone.
+29. Dropping the address filter from `GET /households/invitations` → `accounts` failed, every account seeing every pending invite.
+30. Returning no invitations to the picker → the Playwright invitation test failed, the invited person left with nothing to join.
 
 The statistics suite also earned its place on the way in: the one-month test failed against the unguarded fetch, which is how the stale-response race in §9.2 was found.
 

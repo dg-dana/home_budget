@@ -111,6 +111,14 @@ export interface Invite {
   expires_at: string;
 }
 
+/** An invite waiting for the signed-in account's address (`GET /households/invitations`). */
+export interface Invitation {
+  token: string;
+  role: Role;
+  expiresAt: string;
+  householdName: string;
+}
+
 export interface Category {
   id: string;
   name: string;

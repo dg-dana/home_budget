@@ -121,6 +121,51 @@ householdsRouter.post(
 );
 
 /**
+ * Invites waiting for this account's address.
+ *
+ * An invite link travels by email, and an email is easy to lose: before this,
+ * somebody who registered from the invite — rather than opening the link again
+ * afterwards — landed on the picker with no sign the invite existed, and no
+ * way to reach it except finding that message again.
+ *
+ * Only invites **pinned to this address** appear. An open invite (no email on
+ * it) is a link to be handed over, not something to advertise to anybody who
+ * happens to be signed in.
+ */
+householdsRouter.get(
+  '/invitations',
+  asyncHandler((req, res) => {
+    const account = currentAccount(req);
+    const invites = db
+      .prepare(
+        `SELECT i.token, i.role, i.expires_at, h.name AS household_name
+         FROM invites i
+         JOIN households h ON h.id = i.household_id
+         WHERE i.email = ?
+           AND i.used_at IS NULL
+           AND i.expires_at > ?
+           AND NOT EXISTS (
+             SELECT 1 FROM memberships m
+             WHERE m.household_id = i.household_id AND m.user_id = ?
+           )
+         ORDER BY i.created_at DESC`,
+      )
+      .all(account.email, nowIso(), account.id) as Array<
+      Pick<InviteRow, 'token' | 'role' | 'expires_at'> & { household_name: string }
+    >;
+
+    res.json(
+      invites.map((invite) => ({
+        token: invite.token,
+        role: invite.role,
+        expiresAt: invite.expires_at,
+        householdName: invite.household_name,
+      })),
+    );
+  }),
+);
+
+/**
  * Redeems an invite, adding this account to an existing household.
  *
  * Joining is now something an **account** does, not a way to create one: the

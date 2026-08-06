@@ -249,6 +249,57 @@ describe('accounts and households', () => {
       expect(twice.status).toBe(409);
     });
 
+    it('shows an invitation waiting for this address, and hides it once redeemed', async () => {
+      // The case a real household hit: registering from the invite email and
+      // never opening the link again left no sign the invite existed.
+      const owner = await registerHousehold({ householdName: 'The Flat' });
+      const email = uniqueEmail('invited');
+      await owner.client.post('/api/household/invites', { email, role: 'member' });
+
+      const invited = await registerAccount({ email });
+      const waiting = await invited.client.get('/api/households/invitations');
+      expect(waiting.status).toBe(200);
+      expect(waiting.body).toHaveLength(1);
+      expect(waiting.body[0]).toMatchObject({ householdName: 'The Flat', role: 'member' });
+
+      const joined = await joinHousehold(invited, waiting.body[0].token, 'Invited');
+      expect(joined.status).toBe(201);
+      expect((await invited.client.get('/api/households/invitations')).body).toEqual([]);
+    });
+
+    it('never shows an invitation meant for somebody else, or an open one', async () => {
+      const owner = await registerHousehold({ householdName: 'The Flat' });
+      await owner.client.post('/api/household/invites', {
+        email: uniqueEmail('somebody'),
+        role: 'member',
+      });
+      // No address on it: a link to hand over, not something to advertise to
+      // whoever happens to be signed in.
+      await owner.client.post('/api/household/invites', { role: 'member' });
+
+      const stranger = await registerAccount({ email: uniqueEmail('stranger') });
+      expect((await stranger.client.get('/api/households/invitations')).body).toEqual([]);
+    });
+
+    it('drops an invitation that expired or was revoked', async () => {
+      const owner = await registerHousehold({ householdName: 'The Flat' });
+      const email = uniqueEmail('stale');
+      const invite = await owner.client.post('/api/household/invites', { email, role: 'member' });
+      const invited = await registerAccount({ email });
+      expect((await invited.client.get('/api/households/invitations')).body).toHaveLength(1);
+
+      db.prepare('UPDATE invites SET expires_at = ? WHERE token = ?').run(
+        new Date(Date.now() - 1000).toISOString(),
+        invite.body.token,
+      );
+      expect((await invited.client.get('/api/households/invitations')).body).toEqual([]);
+
+      const fresh = await owner.client.post('/api/household/invites', { email, role: 'owner' });
+      expect((await invited.client.get('/api/households/invitations')).body).toHaveLength(1);
+      await owner.client.delete(`/api/household/invites/${fresh.body.token}`);
+      expect((await invited.client.get('/api/households/invitations')).body).toEqual([]);
+    });
+
     it('lands a returning sign-in back where it left off', async () => {
       const email = uniqueEmail('returning');
       const owner = await registerHousehold({ email, householdName: 'Home' });
