@@ -22,7 +22,24 @@
 
 import { config } from './config.js';
 
-export type NoticeKind = 'verify-email' | 'household-created' | 'invite' | 'password-reset';
+export type NoticeKind =
+  | 'verify-email'
+  | 'household-created'
+  | 'invite'
+  | 'password-reset'
+  /**
+   * Everything below is a **told, not asked** notice: something has already
+   * happened and the people it affects are being informed. They carry no link,
+   * so with no provider configured they are simply dropped — which is the same
+   * silence the app had before any of this existed.
+   */
+  | 'password-changed'
+  | 'account-deleted'
+  | 'household-deleted'
+  | 'household-changed'
+  | 'member-joined'
+  | 'member-removed'
+  | 'role-changed';
 
 export interface Notice {
   kind: NoticeKind;
@@ -150,5 +167,122 @@ export function passwordResetNotice(to: string, link: string): Promise<Notice> {
     subject: 'Reset your Home Budget password',
     link,
     body: 'Open the link to choose a new password. It works once, expires in 24 hours, and signs out every other device.',
+  });
+}
+
+/**
+ * Sends the same notice to several people at once — everyone in a household,
+ * or its owners. Addresses are gathered by `householdAddresses()` in
+ * `auth.ts`, and for anything that deletes rows they must be gathered
+ * **before** the deletion.
+ *
+ * Sent in parallel and bounded by the per-message timeout, so telling nine
+ * people costs about what telling one does. Like every send, a failure is a
+ * warning rather than an exception: nobody's account deletion fails because a
+ * mail server was slow.
+ */
+export function notifyAll(
+  recipients: readonly string[],
+  build: (to: string) => Promise<Notice>,
+): Promise<Notice[]> {
+  const addresses = [...new Set(recipients.filter(Boolean))];
+  return Promise.all(addresses.map(build));
+}
+
+/** Somebody's password changed — the one message worth sending unprompted. */
+export function passwordChangedNotice(to: string, how: 'changed' | 'reset'): Promise<Notice> {
+  return deliver({
+    kind: 'password-changed',
+    to,
+    subject: 'Your Home Budget password was changed',
+    body:
+      how === 'reset'
+        ? 'Your password was just set using a recovery link, and every other device was signed out. If this was not you, change your password now — whoever holds that link can use it once.'
+        : 'Your password was just changed, and every other device was signed out. If this was not you, reset it now.',
+  });
+}
+
+export function accountDeletedNotice(to: string): Promise<Notice> {
+  return deliver({
+    kind: 'account-deleted',
+    to,
+    subject: 'Your Home Budget account was deleted',
+    body: 'Your account, and your place in every household it belonged to, has been deleted. Expenses you had already recorded stay with those households, so nobody else\'s totals moved. There is no undo — signing up again starts from nothing.',
+  });
+}
+
+export function householdDeletedNotice(to: string, householdName: string): Promise<Notice> {
+  return deliver({
+    kind: 'household-deleted',
+    to,
+    subject: `"${householdName}" was deleted`,
+    body: `An owner deleted "${householdName}". Its expenses, budgets, recurring rules, shopping lists and share links are gone, and so is everyone's place in it. Accounts are untouched — anyone in another household still has it.`,
+  });
+}
+
+export function householdChangedNotice(
+  to: string,
+  householdName: string,
+  what: string,
+): Promise<Notice> {
+  return deliver({
+    kind: 'household-changed',
+    to,
+    subject: `"${householdName}" was changed`,
+    body: `An owner changed ${what}.`,
+  });
+}
+
+/** To the household's owners: somebody redeemed an invite. */
+export function memberJoinedNotice(
+  to: string,
+  householdName: string,
+  who: string,
+): Promise<Notice> {
+  return deliver({
+    kind: 'member-joined',
+    to,
+    subject: `${who} joined "${householdName}"`,
+    body: `${who} redeemed an invite and is now in "${householdName}". They can see and add expenses, budgets, recurring rules and shopping lists. If you did not expect this, remove them from the Household page.`,
+  });
+}
+
+/**
+ * Somebody is no longer in a household. `reason` is what makes one message do
+ * for both ways out — being removed by an owner, and leaving by deleting the
+ * account — since the household hears the same fact either way.
+ */
+export function memberRemovedNotice(
+  to: string,
+  householdName: string,
+  who: 'you' | string,
+): Promise<Notice> {
+  const isSubject = who === 'you';
+  return deliver({
+    kind: 'member-removed',
+    to,
+    subject: isSubject ? `You were removed from "${householdName}"` : `${who} left "${householdName}"`,
+    body: isSubject
+      ? `An owner removed you from "${householdName}". You can no longer see it, and any recovery link outstanding for you has been retired. The expenses you recorded stay with the household. Your account and any other household you belong to are untouched.`
+      : `${who} is no longer in "${householdName}". The expenses they recorded stay, so nobody's totals moved.`,
+  });
+}
+
+export function roleChangedNotice(
+  to: string,
+  householdName: string,
+  role: 'owner' | 'member',
+): Promise<Notice> {
+  return deliver({
+    kind: 'role-changed',
+    to,
+    subject:
+      role === 'owner'
+        ? `You are now an owner of "${householdName}"`
+        : `You are no longer an owner of "${householdName}"`,
+    body:
+      role === 'owner'
+        ? `An owner made you an owner of "${householdName}". You can now invite and remove people, rename it, issue recovery links, and delete it.`
+        : `An owner changed your role in "${householdName}" back to member. You keep full access to the money and the lists; what goes is inviting, removing, renaming and deleting.`,
   });
 }

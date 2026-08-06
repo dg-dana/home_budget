@@ -153,6 +153,33 @@ currently open). Both take the caller's password in the body.
 - **Notices carry relative links** (`/verify/<token>`), because the browser resolves them against wherever it already is. An inbox cannot, so `APP_URL` is what makes them absolute; a notice with a link and no base is not sendable and is not sent.
 - **Warnings never contain the link or the address.** A working confirmation link in the deploy logs would be a credential sitting in plain sight.
 
+#### What gets sent, and to whom
+
+Two families of message. **Asked** ones carry a link and are the point of the
+request — they are also returned in the response, so an unconfigured
+deployment still works. **Told** ones carry no link: something has already
+happened and the people it affects are being informed, so with no provider
+they are simply dropped.
+
+| Action | Who hears |
+| --- | --- |
+| Registration, `POST /auth/verify/resend` | the address being confirmed (link) |
+| `POST /household/invites` with an address | the invitee (link) |
+| `POST /household/members/:id/reset-password` | the member (link) — **and the link is still returned to the owner** |
+| `POST /households` | the new owner |
+| `POST /households/join` | the household's **other owners** — not the joiner, who is looking at it |
+| `DELETE /household/members/:id` | the person removed, and the **other** owners |
+| `PUT /household/members/:id/role` | the member whose role changed, and only if it actually changed |
+| `PUT /household` | the **other** members, and only naming what actually changed |
+| `DELETE /household` | **everyone in it**, the owner who did it included |
+| `DELETE /auth/account` | the account itself, and the remaining owners of each household it leaves |
+| `POST /auth/password`, `POST /auth/reset` | the account whose password changed |
+
+- **Recipients are gathered by `householdAddresses()` in `auth.ts`**, so "everyone here" and "the owners" mean one thing across all call sites — and for anything destructive they are read **before** the rows are deleted and sent **after** the delete succeeds. Neither order is optional: gathering afterwards finds nobody, sending beforehand announces something that may still fail.
+- **The person who performed an action is not told about it**, except when closing a whole household or their own account — that is the one case where a record in your own inbox is worth having.
+- **Routine edits send nothing**: expenses, categories, budgets, recurring rules, shopping lists, share links, and renaming yourself. A household that emails on every grocery item trains everyone to ignore it.
+- `notifyAll()` fans one notice out to several addresses in parallel, deduplicated, each bounded by the same timeout — so telling nine people costs about what telling one does, and a failure is still only a warning.
+
 ### Passwords and session invalidation
 
 - Two ways to change a password: **self-service** (`POST /auth/password`, requires the current one) and an **owner-issued recovery link** for someone locked out (`POST /household/members/:id/reset-password` → `/reset/:token`).
@@ -240,7 +267,7 @@ so the UI can badge them.
 - `db.ts` — connection + the migration runner.
 - `migrations.ts` — the ordered, append-only migration list.
 - `recurring.ts` — recurrence date maths (pure) and materialisation.
-- `auth.ts` — hashing, cookies, id/token generation, auth middleware, `setPassword`, `assertPassword`, and the **membership resolution** that turns a cookie's `hh` claim into the household a request is about.
+- `auth.ts` — hashing, cookies, id/token generation, auth middleware, `setPassword`, `assertPassword`, `householdAddresses()` (who to notify, §4.1), and the **membership resolution** that turns a cookie's `hh` claim into the household a request is about.
 - `notifications.ts` — the one place that decides how a message travels: Resend when configured, the on-screen link when not (§4.1). Every caller is ignorant of both.
 - `http.ts` — `HttpError` + status helpers, `asyncHandler`, `parseBody`, error middleware.
 - `rateLimit.ts` — in-process fixed-window limiter.
@@ -492,6 +519,7 @@ Two suites, run together with `npm run test:all`.
 - `migrations.test.ts` — fresh builds, repeat runs being no-ops, and the pre-migration-system adoption path.
 - `password.test.ts` — self-service change, owner-issued recovery, and that both evict other devices.
 - `compression.test.ts` — measures **raw wire bytes** with `node:http`, because `fetch` transparently decompresses and would compare a number with itself.
+- `notificationsSending.test.ts` — the other half: a provider **is** configured, and every route that changes a household has to reach the right people and nobody else — joins, removals, role changes, renames, both deletions, password changes and invites. Only calls to the provider are intercepted; requests to the app are real HTTP. The environment is set before `config.ts` loads, which is what the file's top-level `await import` is for.
 - `notifications.test.ts` — email (§4.1) with `fetch` stubbed, so the suite never touches a provider: nothing sent and nothing claimed when no key is configured, the exact request made when one is, the address and link base derived from `DOMAIN`, a relative link refusing to go out without `APP_URL`, and a refusal, a network failure and an addressless invite all degrading to the link rather than throwing. `config.ts` reads the environment once at import, so each case sets its variables behind `vi.resetModules()`.
 
 ### Browser tests — Playwright, `e2e/`
@@ -514,7 +542,7 @@ What it asserts: a member creates and shares a list through the UI; a guest with
 
 ### Both suites were verified by breaking the code
 
-Twenty-six deliberate regressions were introduced, and each was caught by a failing test:
+Twenty-eight deliberate regressions were introduced, and each was caught by a failing test:
 
 1. Removing the `household_id` filter from the expenses list query → `isolation` failed.
 2. Adding `householdId` to the guest share response → `share` failed.
@@ -542,6 +570,8 @@ Twenty-six deliberate regressions were introduced, and each was caught by a fail
 24. Listing memberships without filtering by account → `isolation` failed, one account seeing another's households.
 25. Sending regardless of whether a key is configured → `notifications` failed, the suite trying to reach a provider it must never depend on.
 26. Dropping the `APP_URL` guard from the email body → `notifications` failed, a message going out carrying a link an inbox cannot follow.
+27. Ignoring `ownersOnly` in `householdAddresses()` → `notificationsSending` failed, everybody in the household hearing what only its owners should.
+28. Gathering a household's recipients *after* deleting it rather than before → `notificationsSending` failed, nobody told it was gone.
 
 The statistics suite also earned its place on the way in: the one-month test failed against the unguarded fetch, which is how the stale-response race in §9.2 was found.
 

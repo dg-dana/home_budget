@@ -21,7 +21,10 @@ Email **sends** — the code is written, tested and on
 2. **Send yourself an invite to a real address and confirm it arrives.**
    Household page → Email → Create invite. **Check the spam folder** — a brand
    new sending domain often lands there for the first few messages.
-3. If nothing arrives, look at **Resend → Emails**: a message listed as
+3. **Say if any of the notices are too much or too little.** Wording and who
+   hears what are both easy to change; what is hard is noticing later that
+   nobody reads them.
+4. If nothing arrives, look at **Resend → Emails**: a message listed as
    delivered is a mail problem, no message listed at all is a key problem
    (the app logs `[notifications] not sent (...)` and falls back to showing
    the link, so nothing breaks either way).
@@ -35,11 +38,18 @@ Email **sends** — the code is written, tested and on
   locking anyone out. A send never throws.
 - `MAIL_FROM` and `APP_URL` default off `DOMAIN`, so production needed one
   secret and nothing else. Both can be pinned in `.env` to override.
-- Nine new tests (`server/test/notifications.test.ts`), `fetch` stubbed —
-  the suite never makes a real request. Both halves were broken once and
-  watched to fail.
+- Twenty-one new tests across `notifications.test.ts` (no provider) and
+  `notificationsSending.test.ts` (provider configured, only the provider
+  intercepted) — the suite never makes a real request. Four deliberate breaks
+  were watched to fail.
 - Invites and recovery now travel through `notifications.ts` as well, so
   there is finally *one* place deciding how a message is sent.
+- **The app now emails what has happened, not only what needs a link**:
+  somebody joining, being removed, a role change, a household renamed, a
+  household or an account deleted, a password changed. `ARCHITECTURE.md` §4.1
+  has the full table of who hears what. The person who did it is not told,
+  except for closing a household or their own account; routine edits —
+  expenses, lists, categories — send nothing on purpose.
 
 ### Still open on email
 

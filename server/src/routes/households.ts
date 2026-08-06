@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import {
   currentAccount,
+  householdAddresses,
   issueSession,
   membershipIn,
   membershipsOf,
@@ -12,7 +13,7 @@ import {
 } from '../auth.js';
 import { db } from '../db.js';
 import { asyncHandler, badRequest, conflict, notFound, parseBody } from '../http.js';
-import { householdCreatedNotice } from '../notifications.js';
+import { householdCreatedNotice, memberJoinedNotice, notifyAll } from '../notifications.js';
 import type { HouseholdRow, InviteRow, UserRow } from '../types.js';
 
 /**
@@ -130,7 +131,7 @@ householdsRouter.post(
 householdsRouter.post(
   '/join',
   requireVerifiedEmail,
-  asyncHandler((req, res) => {
+  asyncHandler(async (req, res) => {
     const account = currentAccount(req);
     const input = parseBody(joinSchema, req.body);
     const invite = db
@@ -158,6 +159,18 @@ householdsRouter.post(
         invite.token,
       );
     })();
+
+    // The owners are told somebody is now in their household — an invite link
+    // travels through WhatsApp and could have been forwarded, so this is the
+    // moment anyone would want to notice. The joiner is not told; they are
+    // looking at the household they just joined.
+    const household = db
+      .prepare('SELECT name FROM households WHERE id = ?')
+      .get(invite.household_id) as Pick<HouseholdRow, 'name'>;
+    await notifyAll(
+      householdAddresses(invite.household_id, { ownersOnly: true, except: account.id }),
+      (to) => memberJoinedNotice(to, household.name, input.displayName),
+    );
 
     issueSession(res, getUser(account.id), invite.household_id);
     res.status(201).json({
