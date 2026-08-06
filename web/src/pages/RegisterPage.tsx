@@ -26,6 +26,16 @@ export default function RegisterPage() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
+  /**
+   * Mints a fresh confirmation link and shows the new notice. Works from here
+   * because registration already set the session cookie — the app has simply
+   * not adopted it yet (see below).
+   */
+  const resendVerification = async () => {
+    const { verification } = await api.post<{ verification: Notice }>('/auth/verify/resend');
+    setNotice(verification);
+  };
+
   const update = (key: keyof typeof form) => (event: React.ChangeEvent<HTMLInputElement>) =>
     setForm((previous) => ({ ...previous, [key]: event.target.value }));
 
@@ -59,7 +69,7 @@ export default function RegisterPage() {
             <p className="muted">One step left before you can create or join a household.</p>
           </div>
 
-          <NoticeCard notice={notice} />
+          <NoticeCard notice={notice} onResend={resendVerification} />
 
           <button
             type="button"
