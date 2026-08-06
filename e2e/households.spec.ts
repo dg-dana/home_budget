@@ -99,6 +99,11 @@ test.describe('several households', () => {
     await page.getByRole('button', { name: 'Create account' }).click();
 
     await expect(page.getByRole('heading', { name: 'Confirm your address' })).toBeVisible();
+    // Nothing is emailed in this suite — no provider is configured — so the
+    // confirmation link has to be on screen, and said to be the only copy.
+    await expect(page.getByText(/this link is the only copy/)).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Copy' })).toBeVisible();
+
     await page.getByRole('button', { name: 'Continue' }).click();
 
     // No household, so the app has nowhere else it can put them.

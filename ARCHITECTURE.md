@@ -156,6 +156,7 @@ currently open). Both take the caller's password in the body.
 - **A send never throws.** A refusal, a timeout or a network failure logs a warning and returns `delivered: false`, which degrades to the on-screen link. Registration must not fail because a provider is having a bad day.
 - **`delivered` is the truth about one message, not a guess about the configuration.** The POST is awaited rather than fired and forgotten, so the response can say whether it actually went — which is what the UI wording follows.
 - **Notices carry relative links** (`/verify/<token>`), because the browser resolves them against wherever it already is. An inbox cannot, so `APP_URL` is what makes them absolute; a notice with a link and no base is not sendable and is not sent.
+- **A delivered notice does not put its link on screen.** `NoticeCard` follows `delivered`: emailed means "we have emailed you, open it there", and the link sits behind "or use the link directly" for the message a spam filter ate. Showing both at once reads as though the send failed, and leaves a working credential in any screenshot of the page. Not delivered is the opposite case — the link is the only copy there is, so it leads.
 - **Warnings never contain the link or the address.** A working confirmation link in the deploy logs would be a credential sitting in plain sight.
 
 #### What gets sent, and to whom

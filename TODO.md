@@ -3,28 +3,25 @@
 The running state of this project. **Updated after every step** — see the
 "Working agreement" in `CLAUDE.md`.
 
-Last updated: 2026-08-06 · live: deploy run #19 (`97d2610`)
+Last updated: 2026-08-06 · live: deploy run #20 (`b506752`)
 
 ---
 
-## Now: deploy the email change and check a message arrives
+## Now: check a real message arrives
 
-Email **sends** — the code is written, tested and on
-`claude/resend-instructions-oyye37`; it is not live yet.
+Email is **live** — PR #32 merged and deploy run #20 shipped it (every step
+green, "Verify the public URL works" included). Nothing has been confirmed by
+hand yet, and an agent sandbox cannot reach the site, so this is yours.
 
 ### Your part
 
-1. **Deploy to Lightsail** from the Actions tab, once the branch is merged.
-   Nothing else has to be set on the server: the deploy writes
-   `RESEND_API_KEY` into `/opt/home-budget/.env` from the repository secret,
-   and the sending address and link base derive from `DOMAIN`.
-2. **Send yourself an invite to a real address and confirm it arrives.**
+1. **Send yourself an invite to a real address and confirm it arrives.**
    Household page → Email → Create invite. **Check the spam folder** — a brand
    new sending domain often lands there for the first few messages.
-3. **Say if any of the notices are too much or too little.** Wording and who
+2. **Say if any of the notices are too much or too little.** Wording and who
    hears what are both easy to change; what is hard is noticing later that
    nobody reads them.
-4. If nothing arrives, look at **Resend → Emails**: a message listed as
+3. If nothing arrives, look at **Resend → Emails**: a message listed as
    delivered is a mail problem, no message listed at all is a key problem
    (the app logs `[notifications] not sent (...)` and falls back to showing
    the link, so nothing breaks either way).
@@ -58,6 +55,14 @@ Email **sends** — the code is written, tested and on
   so an account that had left its only household — or never joined one — was
   stuck with an account it could not close. Covered by a browser test.
 
+### Follow-ups since it went live
+
+- **The confirmation screen no longer shows the link when the email went out.**
+  It said "Sent to you" *and* printed the link, which reads as a failure and
+  leaves a working credential on screen. Now it is a plain "we have emailed
+  you", with the link behind "or use the link directly" for a message that
+  never arrives.
+
 ### Still open on email
 
 - **Self-service "forgot password"** is now possible and does not exist yet.
@@ -68,7 +73,7 @@ Email **sends** — the code is written, tested and on
 
 ## Also needs your hands
 
-- [ ] **Check the live site on a phone.** Runs #17–#19 have never been looked
+- [ ] **Check the live site on a phone.** Runs #17–#20 have never been looked
       at by a human. A green deploy proves the URL responds, nothing more.
       Worth checking: the new sign-up flow, the household switcher, "Make
       owner", and that your existing household looks untouched.
@@ -87,6 +92,10 @@ Email **sends** — the code is written, tested and on
 
 ## Done
 
+- [x] Email sends through Resend, and the app also emails what has happened —
+      joins, removals, role changes, renames, both deletions, password
+      changes. Plus "Delete account" on `/households`. (live, run #20, not yet
+      confirmed by hand)
 - [x] Delete an account / delete a household — "Danger zone" (live, run #16,
       confirmed on a phone)
 - [x] Accounts separate from households; several per account; per-household
