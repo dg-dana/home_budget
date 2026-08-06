@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api, type Household, type Notice } from '../api';
+import { api, type Household, type Invitation, type Notice } from '../api';
 import { useSession } from '../session';
 import AuthPage from '../components/AuthPage';
 import NoticeCard from '../components/NoticeCard';
@@ -26,8 +26,39 @@ export default function HouseholdsPage() {
   const [busy, setBusy] = useState(false);
   const [closing, setClosing] = useState(false);
   const [password, setPassword] = useState('');
+  const [invitations, setInvitations] = useState<Invitation[]>([]);
+  const [joining, setJoining] = useState<{ token: string; displayName: string } | null>(null);
 
   const verified = user?.emailVerified ?? false;
+
+  // Invites pinned to this address. Somebody who registered *from* an invite
+  // and never opened the link again would otherwise see no sign it existed.
+  const loadInvitations = useCallback(async () => {
+    setInvitations(await api.get<Invitation[]>('/households/invitations'));
+  }, []);
+
+  useEffect(() => {
+    loadInvitations().catch(() => {
+      /* Nothing to show is the same as none waiting; the page still works. */
+    });
+  }, [loadInvitations]);
+
+  const handleJoin = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!joining) return;
+    setBusy(true);
+    setError('');
+    try {
+      await api.post<{ household: Household }>('/households/join', joining);
+      await refresh();
+      navigate('/', { replace: true });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not join the household');
+      await loadInvitations().catch(() => {});
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const open = async (id: string) => {
     setError('');
@@ -136,6 +167,65 @@ export default function HouseholdsPage() {
         )}
 
         {notice && <NoticeCard notice={notice} />}
+
+        {invitations.length > 0 && (
+          <div className="stack" style={{ gap: '0.5rem' }}>
+            <h2 className="small muted" style={{ margin: 0 }}>
+              {invitations.length === 1 ? 'You have an invitation' : 'You have invitations'}
+            </h2>
+            <ul className="item-list">
+              {invitations.map((invitation) => (
+                <li className="item" key={invitation.token}>
+                  <div className="item-main">
+                    <div className="item-name">{invitation.householdName}</div>
+                    <div className="item-meta">
+                      <span>invited as</span>
+                      <span className="tag">{invitation.role}</span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="button small"
+                    disabled={!verified || joining?.token === invitation.token}
+                    onClick={() => setJoining({ token: invitation.token, displayName: '' })}
+                  >
+                    Join
+                  </button>
+                </li>
+              ))}
+            </ul>
+
+            {joining && (
+              <form className="stack" style={{ gap: '0.5rem' }} onSubmit={handleJoin}>
+                <div>
+                  <label htmlFor="joinDisplayName">Your name in that household</label>
+                  <input
+                    id="joinDisplayName"
+                    required
+                    autoFocus
+                    placeholder="Dana"
+                    value={joining.displayName}
+                    onChange={(event) =>
+                      setJoining({ ...joining, displayName: event.target.value })
+                    }
+                  />
+                </div>
+                <div className="row">
+                  <button type="submit" className="button" disabled={busy}>
+                    {busy ? 'Joining…' : 'Join household'}
+                  </button>
+                  <button
+                    type="button"
+                    className="button secondary"
+                    onClick={() => setJoining(null)}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        )}
 
         {households.length > 0 && (
           <ul className="item-list">

@@ -116,6 +116,53 @@ test.describe('several households', () => {
     await expect(page.getByText(/before creating or joining a household/)).toBeVisible();
   });
 
+  test('an invitation waiting for your address can be joined from the picker', async ({
+    page,
+    request,
+  }) => {
+    // The case a real household hit: the invited person registered from the
+    // invite email and never opened the link again, so the picker showed them
+    // nothing and there was no way back to the invite.
+    const invitedEmail = uniqueEmail('invitee');
+    await seedAccountWithHousehold(request, {
+      email: uniqueEmail('inviter'),
+      householdName: 'The Flat',
+      displayName: 'Dana',
+    });
+    const invite = await request.post('/api/household/invites', {
+      data: { email: invitedEmail, role: 'member' },
+    });
+    expect(invite.ok()).toBeTruthy();
+
+    await page.goto('/register');
+    await page.getByLabel('Email').fill(invitedEmail);
+    await page.getByLabel('Password').fill(PASSWORD);
+    await page.getByRole('button', { name: 'Create account' }).click();
+    // No provider in this suite, so the confirmation link is on screen.
+    const confirmUrl = (await page.locator('code').first().textContent())!.trim();
+    await page.getByRole('button', { name: 'Continue' }).click();
+
+    await expect(page).toHaveURL('/households');
+    await expect(page.getByText('You have an invitation')).toBeVisible();
+    await expect(page.getByText('The Flat')).toBeVisible();
+    // Joining is still gated on the address being confirmed.
+    await expect(page.getByRole('button', { name: 'Join', exact: true })).toBeDisabled();
+
+    await page.goto(confirmUrl);
+    await page.getByRole('button', { name: /confirm/i }).click();
+    await expect(page).toHaveURL('/households');
+
+    await page.getByRole('button', { name: 'Join', exact: true }).click();
+    await page.getByLabel('Your name in that household').fill('Noa');
+    await page.getByRole('button', { name: 'Join household' }).click();
+
+    await expect(page).toHaveURL('/');
+    await expect(page.getByLabel('Household')).toBeVisible();
+    // And it is gone from the picker once redeemed.
+    await page.goto('/households');
+    await expect(page.getByText('You have an invitation')).toHaveCount(0);
+  });
+
   test('an account with no household can still delete itself', async ({ page }) => {
     // The Household page carries the same action, but it needs a household
     // open — so without this control, an account in this state had no way out

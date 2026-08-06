@@ -3,15 +3,15 @@
 The running state of this project. **Updated after every step** — see the
 "Working agreement" in `CLAUDE.md`.
 
-Last updated: 2026-08-06 · live: deploy run #21 (`8b91a3a`)
+Last updated: 2026-08-06 · live: deploy run #22 (`ac60542`)
 
 ---
 
 ## Now: check a real message arrives
 
-Email is **live** — PR #32 shipped it (run #20) and PR #33 fixed the
-confirmation screen (run #21), both green through "Verify the public URL
-works". A real invite arriving in a real inbox is still unconfirmed, and an
+Email is **live** — PR #32 shipped it (run #20), and PRs #33 and #34 sorted
+out the confirmation screen (runs #21 and #22), all green through "Verify the
+public URL works". A real invite arriving in a real inbox is still unconfirmed, and an
 agent sandbox cannot reach the site, so that check is yours.
 
 ### Your part
@@ -65,6 +65,11 @@ agent sandbox cannot reach the site, so that check is yours.
   you", and a message that never arrives is answered by **"send the
   confirmation link again"** rather than by showing the link.
 
+- **An invitation now shows on `/households`** and can be joined there. Found
+  on the live site: the invited person registered from the invite email,
+  landed on the picker, and had no way to reach the invite except finding the
+  message again. Open invites (no address on them) stay link-only.
+
 ### Still open on email
 
 - **Self-service "forgot password"** is now possible and does not exist yet.
@@ -75,7 +80,7 @@ agent sandbox cannot reach the site, so that check is yours.
 
 ## Also needs your hands
 
-- [ ] **Check the live site on a phone.** Runs #17–#21 have never been looked
+- [ ] **Check the live site on a phone.** Runs #17–#22 have never been looked
       at by a human. A green deploy proves the URL responds, nothing more.
       Worth checking: the new sign-up flow, the household switcher, "Make
       owner", and that your existing household looks untouched.
@@ -96,7 +101,7 @@ agent sandbox cannot reach the site, so that check is yours.
 
 - [x] Email sends through Resend, and the app also emails what has happened —
       joins, removals, role changes, renames, both deletions, password
-      changes. Plus "Delete account" on `/households`. (live, runs #20–#21,
+      changes. Plus "Delete account" on `/households`. (live, runs #20–#22,
       not yet confirmed by hand)
 - [x] Delete an account / delete a household — "Danger zone" (live, run #16,
       confirmed on a phone)
