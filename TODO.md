@@ -55,6 +55,14 @@ hand yet, and an agent sandbox cannot reach the site, so this is yours.
   so an account that had left its only household — or never joined one — was
   stuck with an account it could not close. Covered by a browser test.
 
+### Follow-ups since it went live
+
+- **The confirmation screen no longer shows the link when the email went out.**
+  It said "Sent to you" *and* printed the link, which reads as a failure and
+  leaves a working credential on screen. Now it is a plain "we have emailed
+  you", with the link behind "or use the link directly" for a message that
+  never arrives.
+
 ### Still open on email
 
 - **Self-service "forgot password"** is now possible and does not exist yet.
