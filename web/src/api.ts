@@ -88,6 +88,12 @@ export interface Notice {
   subject: string;
   link?: string;
   body: string;
+  /**
+   * Whether it was emailed. False means the link on screen is the only copy —
+   * either no provider is configured or the send failed, and the difference
+   * does not matter to whoever is looking at it.
+   */
+  delivered: boolean;
 }
 
 export interface Member {

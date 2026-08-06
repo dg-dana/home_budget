@@ -16,6 +16,15 @@ services:
       PORT: 8080
       DATABASE_PATH: /data/home-budget.sqlite
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET missing from .env}
+      # Email. Absent is a supported state — the app falls back to showing the
+      # link on screen. Only the key has to be set: the app derives the sending
+      # address and the link base from DOMAIN, and MAIL_FROM / APP_URL override
+      # that if ever needed. Deriving is done in config.ts rather than here
+      # because nested defaults are not portable across Compose versions.
+      DOMAIN: ${DOMAIN:?DOMAIN missing from .env}
+      APP_URL: ${APP_URL:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
     volumes:
       # The database and its backups. Everything that matters lives here.
       - ./data:/data

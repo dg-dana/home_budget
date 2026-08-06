@@ -13,6 +13,7 @@ import {
 } from '../auth.js';
 import { db } from '../db.js';
 import { asyncHandler, badRequest, notFound, parseBody } from '../http.js';
+import { inviteNotice, passwordResetNotice } from '../notifications.js';
 import type { HouseholdRow, InviteRow, MembershipRow, UserRow } from '../types.js';
 
 export const householdRouter = Router();
@@ -212,19 +213,24 @@ householdRouter.put(
 );
 
 /**
- * Issues a recovery link for a member who is locked out. There is no email
- * provider wired up, so the owner passes the link on themselves — the same
- * shape as invites. The owner can do this for anyone in the household,
- * including themselves.
+ * Issues a recovery link for a member who is locked out. It is emailed when a
+ * provider is configured, and the link comes back either way — an owner may
+ * still want to hand it over themselves, and with no provider that is the only
+ * way it travels. They can do this for anyone in the household, themselves
+ * included.
  */
 householdRouter.post(
   '/members/:id/reset-password',
   requireOwner,
-  asyncHandler((req, res) => {
+  asyncHandler(async (req, res) => {
     const user = currentUser(req);
     const member = db
-      .prepare('SELECT user_id AS id FROM memberships WHERE user_id = ? AND household_id = ?')
-      .get(req.params.id, user.householdId) as { id: string } | undefined;
+      .prepare(
+        `SELECT users.id AS id, users.email AS email
+         FROM memberships JOIN users ON users.id = memberships.user_id
+         WHERE memberships.user_id = ? AND memberships.household_id = ?`,
+      )
+      .get(req.params.id, user.householdId) as { id: string; email: string } | undefined;
     if (!member) throw notFound('That member does not exist');
 
     const token = newToken();
@@ -242,7 +248,11 @@ householdRouter.post(
       ).run(token, member.id, user.id, expiresAt, nowIso());
     })();
 
-    res.status(201).json({ token, expires_at: expiresAt });
+    res.status(201).json({
+      token,
+      expires_at: expiresAt,
+      notice: await passwordResetNotice(member.email, `/reset/${token}`),
+    });
   }),
 );
 
@@ -264,11 +274,17 @@ householdRouter.get(
   }),
 );
 
-/** Creates a single-use link that lets a family member create their account. */
+/**
+ * Creates a single-use link that lets a family member join the household.
+ *
+ * An address is optional, and that is what decides whether anything can be
+ * sent: with one, the invite is emailed; without, there is nobody to email and
+ * the owner passes the link on. The link is in the response regardless.
+ */
 householdRouter.post(
   '/invites',
   requireOwner,
-  asyncHandler((req, res) => {
+  asyncHandler(async (req, res) => {
     const user = currentUser(req);
     const input = parseBody(inviteSchema, req.body);
     const token = newToken();
@@ -279,7 +295,17 @@ householdRouter.post(
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
     ).run(token, user.householdId, input.email || null, input.role, user.id, expiresAt, nowIso());
 
-    res.status(201).json({ token, email: input.email || null, role: input.role, expires_at: expiresAt });
+    const household = db
+      .prepare('SELECT name FROM households WHERE id = ?')
+      .get(user.householdId) as Pick<HouseholdRow, 'name'>;
+
+    res.status(201).json({
+      token,
+      email: input.email || null,
+      role: input.role,
+      expires_at: expiresAt,
+      notice: await inviteNotice(input.email || '', household.name, `/join/${token}`),
+    });
   }),
 );
 

@@ -143,7 +143,7 @@ authRouter.post(
     issueSession(res, user, null);
     res.status(201).json({
       ...sessionPayload(user, null),
-      verification: verifyEmailNotice(user.email, `/verify/${token}`),
+      verification: await verifyEmailNotice(user.email, `/verify/${token}`),
     });
   }),
 );
@@ -193,13 +193,13 @@ authRouter.post(
 authRouter.post(
   '/verify/resend',
   requireAuth,
-  asyncHandler((req, res) => {
+  asyncHandler(async (req, res) => {
     const account = currentAccount(req);
     const user = getUser(account.id);
     if (user.email_verified_at) throw badRequest('That address is already confirmed');
 
     const { token } = issueEmailVerification(user);
-    res.status(201).json({ verification: verifyEmailNotice(user.email, `/verify/${token}`) });
+    res.status(201).json({ verification: await verifyEmailNotice(user.email, `/verify/${token}`) });
   }),
 );
 

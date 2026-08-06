@@ -121,6 +121,7 @@ jobs:
           IMAGE: ${{ steps.image.outputs.tag }}
           REGISTRY_USER: ${{ github.actor }}
           REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
         run: |
           set -euo pipefail
           # The registry token is short-lived and scoped to this run, so no
@@ -135,6 +136,14 @@ jobs:
             # to an older tag and re-running 'docker compose up -d'.
             sed -i '/^APP_IMAGE=/d' .env
             echo 'APP_IMAGE=$IMAGE' >> .env
+
+            # The mail key, from the repository secret of the same name. An
+            # empty secret writes an empty line, which the app reads as "no
+            # provider" and falls back to showing links on screen. Never
+            # echoed: Actions masks the value, but .env is the only place it
+            # should exist on the server.
+            sed -i '/^RESEND_API_KEY=/d' .env
+            echo 'RESEND_API_KEY=$RESEND_API_KEY' >> .env
 
             sudo docker compose pull
             sudo docker compose up -d --remove-orphans

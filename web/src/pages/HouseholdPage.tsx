@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api, type Category, type Invite, type Member } from '../api';
+import { api, type Category, type Invite, type Member, type Notice } from '../api';
 import { formatMoney } from '../format';
 import { useSession } from '../session';
 
@@ -22,7 +22,10 @@ export default function HouseholdPage() {
   const [copiedToken, setCopiedToken] = useState('');
   const [passwords, setPasswords] = useState({ current: '', next: '' });
   const [passwordNotice, setPasswordNotice] = useState('');
-  const [resetLinks, setResetLinks] = useState<Record<string, string>>({});
+  const [resetLinks, setResetLinks] = useState<Record<string, { url: string; delivered: boolean }>>(
+    {},
+  );
+  const [inviteNotice, setInviteNotice] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [displayNameNotice, setDisplayNameNotice] = useState('');
   const [dangerPasswords, setDangerPasswords] = useState({ account: '', household: '' });
@@ -100,12 +103,15 @@ export default function HouseholdPage() {
   const handleIssueReset = async (member: Member) => {
     setError('');
     try {
-      const issued = await api.post<{ token: string }>(
+      const issued = await api.post<{ token: string; notice: Notice }>(
         `/household/members/${member.id}/reset-password`,
       );
       setResetLinks((previous) => ({
         ...previous,
-        [member.id]: `${window.location.origin}/reset/${issued.token}`,
+        [member.id]: {
+          url: `${window.location.origin}/reset/${issued.token}`,
+          delivered: issued.notice.delivered,
+        },
       }));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not create a reset link');
@@ -290,20 +296,23 @@ export default function HouseholdPage() {
           {Object.entries(resetLinks).length > 0 && (
             <div className="stack" style={{ gap: '0.5rem' }}>
               <h3 className="muted small">Reset links</h3>
-              {Object.entries(resetLinks).map(([memberId, url]) => (
+              {Object.entries(resetLinks).map(([memberId, link]) => (
                 <div key={memberId}>
                   <p className="small muted" style={{ margin: '0 0 0.25rem' }}>
-                    For {members.find((m) => m.id === memberId)?.name ?? 'member'} — send it to them
-                    directly. It works once, expires in 24 hours, and signs out their other devices.
+                    For {members.find((m) => m.id === memberId)?.name ?? 'member'} —{' '}
+                    {link.delivered
+                      ? 'emailed to them, and here as well.'
+                      : 'send it to them directly.'}{' '}
+                    It works once, expires in 24 hours, and signs out their other devices.
                   </p>
                   <div className="share-box">
-                    <code>{url}</code>
+                    <code>{link.url}</code>
                     <button
                       type="button"
                       className="button small"
                       onClick={async () => {
                         try {
-                          await navigator.clipboard.writeText(url);
+                          await navigator.clipboard.writeText(link.url);
                           setCopiedToken(memberId);
                           window.setTimeout(() => setCopiedToken(''), 2000);
                         } catch {
@@ -326,7 +335,15 @@ export default function HouseholdPage() {
                 onSubmit={(event) => {
                   event.preventDefault();
                   void run(async () => {
-                    await api.post('/household/invites', { email: inviteEmail, role: 'member' });
+                    const created = await api.post<{ notice: Notice }>('/household/invites', {
+                      email: inviteEmail,
+                      role: 'member',
+                    });
+                    setInviteNotice(
+                      created.notice.delivered
+                        ? `Invite emailed to ${created.notice.to}. The link is below too.`
+                        : '',
+                    );
                     setInviteEmail('');
                   });
                 }}
@@ -343,6 +360,12 @@ export default function HouseholdPage() {
                   Create invite
                 </button>
               </form>
+
+              {inviteNotice && (
+                <p className="small muted" style={{ margin: 0 }}>
+                  {inviteNotice}
+                </p>
+              )}
 
               {invites.length > 0 && (
                 <div className="stack" style={{ gap: '0.5rem' }}>

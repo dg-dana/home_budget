@@ -91,7 +91,7 @@ householdsRouter.get(
 householdsRouter.post(
   '/',
   requireVerifiedEmail,
-  asyncHandler((req, res) => {
+  asyncHandler(async (req, res) => {
     const account = currentAccount(req);
     const input = parseBody(createSchema, req.body);
     const householdId = newId();
@@ -114,7 +114,7 @@ householdsRouter.post(
     issueSession(res, getUser(account.id), householdId);
     res.status(201).json({
       household: describe(householdId, 'owner', input.displayName),
-      notice: householdCreatedNotice(account.email, input.name),
+      notice: await householdCreatedNotice(account.email, input.name),
     });
   }),
 );
