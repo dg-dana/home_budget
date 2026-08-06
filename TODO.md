@@ -62,8 +62,8 @@ agent sandbox cannot reach the site, so that check is yours.
   (live, run #21).
   It said "Sent to you" *and* printed the link, which reads as a failure and
   leaves a working credential on screen. Now it is a plain "we have emailed
-  you", with the link behind "or use the link directly" for a message that
-  never arrives.
+  you", and a message that never arrives is answered by **"send the
+  confirmation link again"** rather than by showing the link.
 
 ### Still open on email
 

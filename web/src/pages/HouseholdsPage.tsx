@@ -87,14 +87,15 @@ export default function HouseholdsPage() {
     }
   };
 
+  /**
+   * Throws rather than swallowing, because `NoticeCard` uses the same function
+   * for its own "send it again" and has to know whether it worked — reporting
+   * "sent again" for a request that failed would be worse than saying nothing.
+   */
   const handleResend = async () => {
     setError('');
-    try {
-      const { verification } = await api.post<{ verification: Notice }>('/auth/verify/resend');
-      setResent(verification);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not send a new link');
-    }
+    const { verification } = await api.post<{ verification: Notice }>('/auth/verify/resend');
+    setResent(verification);
   };
 
   return (
@@ -117,9 +118,17 @@ export default function HouseholdsPage() {
               Confirm <strong>{user?.email}</strong> before creating or joining a household.
             </div>
             {resent ? (
-              <NoticeCard notice={resent} />
+              <NoticeCard notice={resent} onResend={handleResend} />
             ) : (
-              <button type="button" className="button secondary" onClick={handleResend}>
+              <button
+                type="button"
+                className="button secondary"
+                onClick={() => {
+                  handleResend().catch((err: unknown) =>
+                    setError(err instanceof Error ? err.message : 'Could not send a new link'),
+                  );
+                }}
+              >
                 Send a new confirmation link
               </button>
             )}
