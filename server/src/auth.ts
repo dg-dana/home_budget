@@ -64,6 +64,31 @@ export const membershipsOf = (userId: string) =>
     )
     .all(userId) as MembershipRow[];
 
+/**
+ * Who to tell about something that happened in a household.
+ *
+ * Gathered by query rather than by the caller so that "everyone here" and
+ * "the owners" mean the same thing at every call site — and so a notice can
+ * be collected **before** the rows it describes are deleted, which is the only
+ * order that works for closing a household or an account.
+ */
+export function householdAddresses(
+  householdId: string,
+  { ownersOnly = false, except }: { ownersOnly?: boolean; except?: string } = {},
+): string[] {
+  const rows = db
+    .prepare(
+      `SELECT u.email FROM memberships m
+       JOIN users u ON u.id = m.user_id
+       WHERE m.household_id = ?
+         AND (? = 0 OR m.role = 'owner')
+         AND (? IS NULL OR m.user_id != ?)
+       ORDER BY u.email`,
+    )
+    .all(householdId, ownersOnly ? 1 : 0, except ?? null, except ?? null) as Array<{ email: string }>;
+  return rows.map((row) => row.email);
+}
+
 export const membershipIn = (userId: string, householdId: string) =>
   db
     .prepare('SELECT * FROM memberships WHERE user_id = ? AND household_id = ?')

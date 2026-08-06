@@ -25,11 +25,35 @@ if (isProduction && (!jwtSecret || jwtSecret === 'change-me-in-production')) {
  */
 const rateLimitsDisabled = process.env.RATE_LIMITS === 'off' && !isProduction;
 
+/**
+ * Email. All three are optional and absent is a supported state: with no
+ * provider configured the app behaves exactly as it always has, putting the
+ * link on screen for whoever is signed in to pass on (`notifications.ts`).
+ *
+ * `APP_URL` exists because notices carry **relative** links — the browser
+ * turns them into absolute ones against wherever it already is, which an
+ * inbox cannot do. Compose derives it from `DOMAIN`, so production has it
+ * without a second thing to set.
+ */
+const domain = process.env.DOMAIN?.trim() ?? '';
+const resendApiKey = process.env.RESEND_API_KEY?.trim() ?? '';
+// Both derive from the domain the app is already served on, so turning email
+// on is one secret and nothing else. Set either explicitly to override.
+const mailFrom =
+  process.env.MAIL_FROM?.trim() || (domain ? `Home Budget <noreply@${domain}>` : '');
+const appUrl = (process.env.APP_URL?.trim() || (domain ? `https://${domain}` : '')).replace(
+  /\/+$/,
+  '',
+);
+
 export const config = {
   isProduction,
   rateLimitsDisabled,
   port: Number(process.env.PORT ?? 4000),
   jwtSecret: jwtSecret || 'dev-only-insecure-secret',
+  appUrl,
+  mailFrom,
+  resendApiKey,
   databasePath: path.resolve(repoRoot, process.env.DATABASE_PATH ?? 'data/home-budget.sqlite'),
   webDistPath: path.join(repoRoot, 'web', 'dist'),
   /** How long a login session stays valid. */

@@ -312,6 +312,22 @@ describe('accounts and households', () => {
       expect((await member.client.get('/api/expenses')).status).toBe(403);
     });
 
+    it('closes an account that is in no household at all', async () => {
+      // The state a brand new sign-up is in, and the state anybody removed
+      // from their only household falls back to. There is no household to
+      // administer, so `DELETE /auth/account` is the only way out — the
+      // Household page carrying the same button is unreachable from here.
+      const account = await registerAccount({ email: uniqueEmail('nowhere') });
+      expect((await account.client.get('/api/auth/me')).body.households).toEqual([]);
+
+      const deleted = await account.client.delete('/api/auth/account', { password: 'password123' });
+      expect(deleted.status).toBe(204);
+      expect((await account.client.get('/api/auth/me')).status).toBe(401);
+
+      const users = db.prepare('SELECT COUNT(*) AS count FROM users').get() as { count: number };
+      expect(users.count).toBe(0);
+    });
+
     it('renames you in one household without touching the other', async () => {
       const home = await registerHousehold({ householdName: 'Home', name: 'Dad' });
       await createHousehold(home, { name: 'Flat share', displayName: 'Dana' });

@@ -3,75 +3,68 @@
 The running state of this project. **Updated after every step** — see the
 "Working agreement" in `CLAUDE.md`.
 
-Last updated: 2026-08-04 · live: deploy run #19 (`97d2610`)
+Last updated: 2026-08-06 · live: deploy run #19 (`97d2610`)
 
 ---
 
-## Now: make email actually send
+## Now: deploy the email change and check a message arrives
 
-**This is the blocker, and Resend is the chosen provider.** Nothing in this app
-has ever sent an email — invites, password recovery and the address confirmation
-added in run #17 all put a link **on screen** for whoever is signed in to pass on
-by hand. That is how it has always worked (`ARCHITECTURE.md` §14), not a
-regression, but it is now what stands in the way.
+Email **sends** — the code is written, tested and on
+`claude/resend-instructions-oyye37`; it is not live yet.
 
-**Workaround meanwhile:** adding someone already works. Create the invite on the
-Household page, press **Copy**, send the link over WhatsApp. They open it,
-register, and they are in.
+### Your part
 
-### Step 1 — the human part (an agent cannot do any of this)
+1. **Deploy to Lightsail** from the Actions tab, once the branch is merged.
+   Nothing else has to be set on the server: the deploy writes
+   `RESEND_API_KEY` into `/opt/home-budget/.env` from the repository secret,
+   and the sending address and link base derive from `DOMAIN`.
+2. **Send yourself an invite to a real address and confirm it arrives.**
+   Household page → Email → Create invite. **Check the spam folder** — a brand
+   new sending domain often lands there for the first few messages.
+3. **Say if any of the notices are too much or too little.** Wording and who
+   hears what are both easy to change; what is hard is noticing later that
+   nobody reads them.
+4. If nothing arrives, look at **Resend → Emails**: a message listed as
+   delivered is a mail problem, no message listed at all is a key problem
+   (the app logs `[notifications] not sent (...)` and falls back to showing
+   the link, so nothing breaks either way).
 
-1. Sign up at **resend.com** (free tier is ~3,000 messages a month; a household
-   will use a handful).
-2. **Domains → Add Domain →** `home-budget-dg.app`.
-3. Resend shows a set of **DNS records** (SPF and DKIM, both TXT; possibly a
-   DMARC one). Add each in **Cloudflare** for that domain, then press Verify in
-   Resend. Without these, mail either lands in spam or is rejected.
-4. **API Keys → Create**, sending permission is enough.
-5. Put it in **GitHub → Settings → Secrets and variables → Actions → New
-   repository secret**, named `RESEND_API_KEY`.
-6. Say in chat that it is done, and which **from** address you want. Suggestion:
-   `Home Budget <noreply@home-budget-dg.app>` — it must be on the verified
-   domain or Resend refuses to send.
+### What was built
 
-### Step 2 — the agent part
+- `notifications.ts` posts to Resend over one `fetch` — no SDK. Every message
+  in the app goes through it: confirmation, invites, recovery.
+- **No key configured behaves exactly as before**, link on screen. That is
+  what lets the suite and local development run, and stops an expired key
+  locking anyone out. A send never throws.
+- `MAIL_FROM` and `APP_URL` default off `DOMAIN`, so production needed one
+  secret and nothing else. Both can be pinned in `.env` to override.
+- Twenty-one new tests across `notifications.test.ts` (no provider) and
+  `notificationsSending.test.ts` (provider configured, only the provider
+  intercepted) — the suite never makes a real request. Four deliberate breaks
+  were watched to fail.
+- Invites and recovery now travel through `notifications.ts` as well, so
+  there is finally *one* place deciding how a message is sent.
+- **The app now emails what has happened, not only what needs a link**:
+  somebody joining, being removed, a role change, a household renamed, a
+  household or an account deleted, a password changed. `ARCHITECTURE.md` §4.1
+  has the full table of who hears what. The person who did it is not told,
+  except for closing a household or their own account; routine edits —
+  expenses, lists, categories — send nothing on purpose.
 
-Ordered, and each piece is small:
+### Fixed alongside it
 
-1. **`server/src/config.ts`** — read `RESEND_API_KEY` and `MAIL_FROM`. Both
-   optional; absent means "no provider", which must stay a supported state.
-2. **`server/src/notifications.ts`** — teach `deliver()` to POST to
-   `https://api.resend.com/emails`. **It is the only function that changes**;
-   every caller is already ignorant of how a message travels, which is why that
-   module exists. No SDK needed — one `fetch` with a Bearer token.
-3. **Keep the on-screen link as the fallback.** With no key configured the app
-   must behave exactly as it does today. That is what lets the test suite and
-   local development run without a provider, and what stops an expired key
-   locking everybody out of inviting anyone. Log a warning, never throw.
-4. **Route invites and password recovery through `notifications.ts` too.** Today
-   they return their link straight to the owner and never touch that module, so
-   there is not yet *one* place deciding how a message travels. Both keep
-   returning the link as well — an owner may still want to hand it over.
-5. **Plumbing for the secret**, three files:
-   - `deploy/docker-compose.yml` — add `RESEND_API_KEY` and `MAIL_FROM` to the
-     app service's `environment:` block, like `JWT_SECRET`.
-   - `deploy/bootstrap.sh` — add both to the generated `.env` template.
-   - `.github/workflows/deploy.yml` — write the secret into the server's `.env`
-     on each deploy, the same `sed -i '/^KEY=/d'` + `echo` shape already used
-     for `APP_IMAGE` (around line 136). Do **not** echo the value into logs.
-6. **Tests.** Sending must not become a thing the suite depends on: assert that
-   with no key the notice still comes back with its link (today's behaviour),
-   and that with a key configured `deliver()` calls the provider — with `fetch`
-   stubbed, never a real request. Then break it once and watch it fail.
-7. **Only once this is live** may confirmation be called **verification**
-   anywhere user-facing. Until an address has actually received something, it
-   proves nothing.
+- **An account with no household can now delete itself**, from `/households`.
+  The "Danger zone" lives on the Household page, which needs a household open,
+  so an account that had left its only household — or never joined one — was
+  stuck with an account it could not close. Covered by a browser test.
 
-### After it is deployed
+### Still open on email
 
-Send yourself an invite to a real address and confirm it arrives — and check the
-spam folder, since a brand new sending domain often lands there for the first
-few messages.
+- **Self-service "forgot password"** is now possible and does not exist yet.
+  Recovery is still owner-issued (§14).
+- The word **"verification"** is fair on the live deployment now, but not on
+  an unconfigured one — anywhere without a key, the link is handed straight
+  to whoever registered.
 
 ## Also needs your hands
 
@@ -88,7 +81,7 @@ few messages.
 - [ ] **Owner-issued recovery still grants a whole account**, which may span
       households. Removing someone retires their links, which closes the
       obvious abuse, but a self-service "forgot password" would remove the need
-      for the feature — and becomes possible the moment email sends. (§14)
+      for the feature — and email sending has now unblocked it. (§14)
 - [ ] **Member list page does not poll**, the guest one does every 15 s — so a
       member can read a stale list while a guest shops. (§14)
 

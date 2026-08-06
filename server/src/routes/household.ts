@@ -4,6 +4,7 @@ import { config } from '../config.js';
 import {
   assertPassword,
   currentUser,
+  householdAddresses,
   issueSession,
   newToken,
   nowIso,
@@ -13,6 +14,15 @@ import {
 } from '../auth.js';
 import { db } from '../db.js';
 import { asyncHandler, badRequest, notFound, parseBody } from '../http.js';
+import {
+  householdChangedNotice,
+  householdDeletedNotice,
+  inviteNotice,
+  memberRemovedNotice,
+  notifyAll,
+  passwordResetNotice,
+  roleChangedNotice,
+} from '../notifications.js';
 import type { HouseholdRow, InviteRow, MembershipRow, UserRow } from '../types.js';
 
 export const householdRouter = Router();
@@ -52,14 +62,33 @@ householdRouter.get(
 householdRouter.put(
   '/',
   requireOwner,
-  asyncHandler((req, res) => {
+  asyncHandler(async (req, res) => {
     const user = currentUser(req);
     const input = parseBody(settingsSchema, req.body);
+    const before = db
+      .prepare('SELECT name, currency FROM households WHERE id = ?')
+      .get(user.householdId) as Pick<HouseholdRow, 'name' | 'currency'>;
+
     db.prepare('UPDATE households SET name = ?, currency = ? WHERE id = ?').run(
       input.name,
       input.currency,
       user.householdId,
     );
+
+    // Only when something actually moved, and only to the people who did not
+    // do it. Saving a form unchanged is not news, and the currency changes
+    // what every figure on screen means.
+    const changes: string[] = [];
+    if (before.name !== input.name) changes.push(`the name from "${before.name}" to "${input.name}"`);
+    if (before.currency !== input.currency) {
+      changes.push(`the currency from ${before.currency} to ${input.currency}`);
+    }
+    if (changes.length > 0) {
+      await notifyAll(householdAddresses(user.householdId, { except: user.id }), (to) =>
+        householdChangedNotice(to, before.name, changes.join(' and ')),
+      );
+    }
+
     res.json({ id: user.householdId, name: input.name, currency: input.currency });
   }),
 );
@@ -87,7 +116,19 @@ householdRouter.delete(
     const input = parseBody(confirmSchema, req.body);
     await assertPassword(user.id, input.password);
 
+    // Gathered before the delete, or there would be nobody left to look up.
+    // The name too: the row is about to stop existing.
+    const household = db
+      .prepare('SELECT name FROM households WHERE id = ?')
+      .get(user.householdId) as Pick<HouseholdRow, 'name'>;
+    const affected = householdAddresses(user.householdId);
+
     db.prepare('DELETE FROM households WHERE id = ?').run(user.householdId);
+
+    // After the delete, not before: nobody should be told about something that
+    // then failed to happen. Everyone is told, the owner who did it included —
+    // it is the kind of thing you want a record of in your own inbox.
+    await notifyAll(affected, (to) => householdDeletedNotice(to, household.name));
 
     // Everyone stays signed in — deleting a household is not deleting anybody's
     // account, and the others may well belong to more households than this one.
@@ -132,7 +173,7 @@ householdRouter.get(
 householdRouter.delete(
   '/members/:id',
   requireOwner,
-  asyncHandler((req, res) => {
+  asyncHandler(async (req, res) => {
     const user = currentUser(req);
     if (req.params.id === user.id) {
       throw badRequest('You cannot remove yourself from the household');
@@ -141,6 +182,15 @@ householdRouter.delete(
       .prepare('SELECT * FROM memberships WHERE user_id = ? AND household_id = ?')
       .get(req.params.id, user.householdId) as MembershipRow | undefined;
     if (!membership) throw notFound('That member does not exist');
+
+    const removed = db
+      .prepare('SELECT email FROM users WHERE id = ?')
+      .get(membership.user_id) as Pick<UserRow, 'email'>;
+    const household = db
+      .prepare('SELECT name FROM households WHERE id = ?')
+      .get(user.householdId) as Pick<HouseholdRow, 'name'>;
+    // The other owners, gathered while the membership still exists.
+    const owners = householdAddresses(user.householdId, { ownersOnly: true, except: user.id });
 
     db.transaction(() => {
       db.prepare('DELETE FROM memberships WHERE id = ?').run(membership.id);
@@ -156,6 +206,17 @@ householdRouter.delete(
         membership.user_id,
       );
     })();
+
+    // The person who lost their access hears it first-hand, and the other
+    // owners hear that the household changed shape. The owner who did it does
+    // not need telling.
+    await Promise.all([
+      memberRemovedNotice(removed.email, household.name, 'you'),
+      notifyAll(owners, (to) =>
+        memberRemovedNotice(to, household.name, membership.display_name),
+      ),
+    ]);
+
     res.status(204).end();
   }),
 );
@@ -175,7 +236,7 @@ householdRouter.delete(
 householdRouter.put(
   '/members/:id/role',
   requireOwner,
-  asyncHandler((req, res) => {
+  asyncHandler(async (req, res) => {
     const user = currentUser(req);
     if (req.params.id === user.id) {
       throw badRequest('You cannot change your own role — ask another owner');
@@ -187,6 +248,17 @@ householdRouter.put(
     if (!membership) throw notFound('That member does not exist');
 
     db.prepare('UPDATE memberships SET role = ? WHERE id = ?').run(input.role, membership.id);
+
+    if (membership.role !== input.role) {
+      const member = db
+        .prepare('SELECT email FROM users WHERE id = ?')
+        .get(membership.user_id) as Pick<UserRow, 'email'>;
+      const household = db
+        .prepare('SELECT name FROM households WHERE id = ?')
+        .get(user.householdId) as Pick<HouseholdRow, 'name'>;
+      await roleChangedNotice(member.email, household.name, input.role);
+    }
+
     // Their next request picks this up: the membership is re-read every time
     // (§4), so a promotion or demotion lands without them signing in again.
     res.json({ id: membership.user_id, role: input.role });
@@ -212,19 +284,24 @@ householdRouter.put(
 );
 
 /**
- * Issues a recovery link for a member who is locked out. There is no email
- * provider wired up, so the owner passes the link on themselves — the same
- * shape as invites. The owner can do this for anyone in the household,
- * including themselves.
+ * Issues a recovery link for a member who is locked out. It is emailed when a
+ * provider is configured, and the link comes back either way — an owner may
+ * still want to hand it over themselves, and with no provider that is the only
+ * way it travels. They can do this for anyone in the household, themselves
+ * included.
  */
 householdRouter.post(
   '/members/:id/reset-password',
   requireOwner,
-  asyncHandler((req, res) => {
+  asyncHandler(async (req, res) => {
     const user = currentUser(req);
     const member = db
-      .prepare('SELECT user_id AS id FROM memberships WHERE user_id = ? AND household_id = ?')
-      .get(req.params.id, user.householdId) as { id: string } | undefined;
+      .prepare(
+        `SELECT users.id AS id, users.email AS email
+         FROM memberships JOIN users ON users.id = memberships.user_id
+         WHERE memberships.user_id = ? AND memberships.household_id = ?`,
+      )
+      .get(req.params.id, user.householdId) as { id: string; email: string } | undefined;
     if (!member) throw notFound('That member does not exist');
 
     const token = newToken();
@@ -242,7 +319,11 @@ householdRouter.post(
       ).run(token, member.id, user.id, expiresAt, nowIso());
     })();
 
-    res.status(201).json({ token, expires_at: expiresAt });
+    res.status(201).json({
+      token,
+      expires_at: expiresAt,
+      notice: await passwordResetNotice(member.email, `/reset/${token}`),
+    });
   }),
 );
 
@@ -264,11 +345,17 @@ householdRouter.get(
   }),
 );
 
-/** Creates a single-use link that lets a family member create their account. */
+/**
+ * Creates a single-use link that lets a family member join the household.
+ *
+ * An address is optional, and that is what decides whether anything can be
+ * sent: with one, the invite is emailed; without, there is nobody to email and
+ * the owner passes the link on. The link is in the response regardless.
+ */
 householdRouter.post(
   '/invites',
   requireOwner,
-  asyncHandler((req, res) => {
+  asyncHandler(async (req, res) => {
     const user = currentUser(req);
     const input = parseBody(inviteSchema, req.body);
     const token = newToken();
@@ -279,7 +366,17 @@ householdRouter.post(
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
     ).run(token, user.householdId, input.email || null, input.role, user.id, expiresAt, nowIso());
 
-    res.status(201).json({ token, email: input.email || null, role: input.role, expires_at: expiresAt });
+    const household = db
+      .prepare('SELECT name FROM households WHERE id = ?')
+      .get(user.householdId) as Pick<HouseholdRow, 'name'>;
+
+    res.status(201).json({
+      token,
+      email: input.email || null,
+      role: input.role,
+      expires_at: expiresAt,
+      notice: await inviteNotice(input.email || '', household.name, `/join/${token}`),
+    });
   }),
 );
 

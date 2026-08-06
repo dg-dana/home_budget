@@ -2,13 +2,12 @@ import { useState } from 'react';
 import type { Notice } from '../api';
 
 /**
- * Shows a message the app would have emailed.
+ * Shows a message the app has emailed — or would have.
  *
- * There is no email provider (`ARCHITECTURE.md` §14), so rather than pretend
- * one exists — "check your inbox" for a message that will never arrive — the
- * link is put on screen where the person already is. Invites and password
- * recovery have always worked this way; this is the same bargain, said out
- * loud.
+ * `notice.delivered` is the server's answer about this one message, not a
+ * guess about the configuration, so the wording follows it. The link stays on
+ * screen either way: when nothing was sent it is the only copy in existence,
+ * and when something was sent it saves waiting on an inbox.
  */
 export default function NoticeCard({ notice }: { notice: Notice }) {
   const [copied, setCopied] = useState(false);
@@ -44,8 +43,17 @@ export default function NoticeCard({ notice }: { notice: Notice }) {
             </button>
           </div>
           <p className="small muted" style={{ margin: 0 }}>
-            This app cannot send email yet, so the link is here rather than in your inbox. Open it to
-            confirm <strong>{notice.to}</strong>.
+            {notice.delivered ? (
+              <>
+                Sent to <strong>{notice.to}</strong> — check the spam folder if it is not there. The
+                link is here too, so you need not wait for it.
+              </>
+            ) : (
+              <>
+                Nothing was emailed, so this link is the only copy. Open it, or pass it on, to
+                confirm <strong>{notice.to}</strong>.
+              </>
+            )}
           </p>
         </>
       )}

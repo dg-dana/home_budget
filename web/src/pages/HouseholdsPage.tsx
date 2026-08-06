@@ -24,6 +24,8 @@ export default function HouseholdsPage() {
   const [resent, setResent] = useState<Notice | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [closing, setClosing] = useState(false);
+  const [password, setPassword] = useState('');
 
   const verified = user?.emailVerified ?? false;
 
@@ -49,6 +51,37 @@ export default function HouseholdsPage() {
       setCreating(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not create the household');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /**
+   * Closing the account from here, where an account with no household has to
+   * be able to do it.
+   *
+   * The Household page carries the same action, but that page needs a
+   * household open — so before this, an account that had left or never joined
+   * one had no way to delete itself at all.
+   */
+  const handleDeleteAccount = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setError('');
+    const warning =
+      households.length === 0
+        ? 'Delete your account? This cannot be undone.'
+        : 'Delete your account? You lose your place in every household listed here, and any household where you are the only person goes with you. What you spent stays in each history, listed without a payer. This cannot be undone.';
+    if (!window.confirm(warning)) return;
+
+    setBusy(true);
+    try {
+      await api.delete('/auth/account', { password });
+      await signOut();
+      navigate('/login', { replace: true });
+    } catch (err) {
+      // The server refuses while you are the only owner of a household with
+      // other people in it, and names which — that message is the useful one.
+      setError(err instanceof Error ? err.message : 'Could not delete your account');
     } finally {
       setBusy(false);
     }
@@ -192,7 +225,54 @@ export default function HouseholdsPage() {
           >
             Sign out
           </button>
+          {!closing && (
+            <>
+              {' · '}
+              <button type="button" className="link-button" onClick={() => setClosing(true)}>
+                Delete account
+              </button>
+            </>
+          )}
         </p>
+
+        {closing && (
+          <form className="card danger-zone stack" style={{ gap: '0.6rem' }} onSubmit={handleDeleteAccount}>
+            <div>
+              <h3 style={{ margin: 0 }}>Delete your account</h3>
+              <p className="small muted" style={{ margin: '0.25rem 0 0' }}>
+                {households.length === 0
+                  ? 'You are not in any household, so this removes the account and nothing else.'
+                  : 'You lose your place in every household above, and any where you are the only person goes with you. What you spent stays in each history, listed without a payer.'}
+              </p>
+            </div>
+            <div>
+              <label htmlFor="closeAccountPassword">Confirm with your password</label>
+              <input
+                id="closeAccountPassword"
+                type="password"
+                required
+                autoComplete="current-password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+              />
+            </div>
+            <div className="row">
+              <button type="submit" className="button danger-solid" disabled={busy}>
+                {busy ? 'Deleting…' : 'Delete my account'}
+              </button>
+              <button
+                type="button"
+                className="button secondary"
+                onClick={() => {
+                  setClosing(false);
+                  setPassword('');
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        )}
       </div>
     </AuthPage>
   );

@@ -6,6 +6,7 @@ import {
   clearSession,
   currentAccount,
   hashPassword,
+  householdAddresses,
   issueSession,
   membershipsOf,
   newId,
@@ -18,7 +19,13 @@ import {
 } from '../auth.js';
 import { db } from '../db.js';
 import { asyncHandler, badRequest, conflict, parseBody, unauthorized } from '../http.js';
-import { verifyEmailNotice } from '../notifications.js';
+import {
+  accountDeletedNotice,
+  memberRemovedNotice,
+  notifyAll,
+  passwordChangedNotice,
+  verifyEmailNotice,
+} from '../notifications.js';
 import type {
   EmailVerificationRow,
   HouseholdRow,
@@ -143,7 +150,7 @@ authRouter.post(
     issueSession(res, user, null);
     res.status(201).json({
       ...sessionPayload(user, null),
-      verification: verifyEmailNotice(user.email, `/verify/${token}`),
+      verification: await verifyEmailNotice(user.email, `/verify/${token}`),
     });
   }),
 );
@@ -193,13 +200,13 @@ authRouter.post(
 authRouter.post(
   '/verify/resend',
   requireAuth,
-  asyncHandler((req, res) => {
+  asyncHandler(async (req, res) => {
     const account = currentAccount(req);
     const user = getUser(account.id);
     if (user.email_verified_at) throw badRequest('That address is already confirmed');
 
     const { token } = issueEmailVerification(user);
-    res.status(201).json({ verification: verifyEmailNotice(user.email, `/verify/${token}`) });
+    res.status(201).json({ verification: await verifyEmailNotice(user.email, `/verify/${token}`) });
   }),
 );
 
@@ -268,6 +275,9 @@ authRouter.post(
     }
 
     await setPassword(user.id, input.newPassword);
+    // Told, not asked: a password changing without the owner's knowledge is
+    // the one thing worth an unprompted message.
+    await passwordChangedNotice(user.email, 'changed');
     // Every other device is signed out; this one gets a fresh cookie, keeping
     // whichever household it was looking at.
     issueSession(res, getUser(user.id), account.householdId);
@@ -315,6 +325,10 @@ authRouter.post(
     const user = getUser(reset.user_id);
     const current = landingHousehold(user);
 
+    // The account's own address hears about it even though the link may have
+    // come from an owner: a recovery link is a way in, so the person it
+    // belongs to should see it being used.
+    await passwordChangedNotice(user.email, 'reset');
     issueSession(res, user, current);
     res.status(201).json(sessionPayload(user, current));
   }),
@@ -377,6 +391,25 @@ authRouter.delete(
       );
     }
 
+    // Everything the notices need, read while the rows still exist: the
+    // address about to be deleted, and — for each household carrying on —
+    // who is left to tell and what this person was called there.
+    const deletedAddress = getUser(account.id).email;
+    const departures = memberships
+      .filter((membership) => !householdsToDelete.includes(membership.household_id))
+      .map((membership) => ({
+        name: (
+          db.prepare('SELECT name FROM households WHERE id = ?').get(membership.household_id) as {
+            name: string;
+          }
+        ).name,
+        displayName: membership.display_name,
+        owners: householdAddresses(membership.household_id, {
+          ownersOnly: true,
+          except: account.id,
+        }),
+      }));
+
     db.transaction(() => {
       for (const householdId of householdsToDelete) {
         db.prepare('DELETE FROM households WHERE id = ?').run(householdId);
@@ -385,6 +418,17 @@ authRouter.delete(
       // first, while there was still a membership naming them.
       db.prepare('DELETE FROM users WHERE id = ?').run(account.id);
     })();
+
+    // Leaving looks the same from the household's side whether an owner did the
+    // removing or the person deleted their account, so it is the same notice.
+    await Promise.all([
+      accountDeletedNotice(deletedAddress),
+      ...departures.map((departure) =>
+        notifyAll(departure.owners, (to) =>
+          memberRemovedNotice(to, departure.name, departure.displayName),
+        ),
+      ),
+    ]);
 
     clearSession(res);
     res.status(204).end();

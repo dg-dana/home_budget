@@ -71,6 +71,11 @@ Two routes end things for good: `DELETE /auth/account` (your own account, and
 every membership it holds) and `DELETE /household` (owner only, the household
 currently open). Both take the caller's password in the body.
 
+- **Closing an account is reachable from two screens, deliberately.** The
+  Household page's "Danger zone" needs a household open, so `/households` — the
+  picker — carries the same action. Without it an account that had left its
+  only household, or never joined one, could not delete itself at all: every
+  other screen is behind a household.
 - **The password is the confirmation, not a dialog.** A session cookie proves a
   browser signed in once, not who is holding it now — the same reasoning that
   makes `POST /auth/password` ask for the current one. `assertPassword()` in
@@ -140,12 +145,50 @@ currently open). Both take the caller's password in the body.
 - Registration mints a single-use link (`email_verifications`, 24 hours, newest-only — the same shape as invites and recovery links). Redeeming it signs the person in, because holding a secret sent to that inbox is the proof.
 - **An unconfirmed account can sign in and look around, but cannot create or join a household** (`requireVerifiedEmail`). Blocking sign-in entirely would leave people at a dead end with nothing explaining why; blocking at the household is where an unreachable address stops being only its owner's problem, since a household is what invites and share links hang off.
 - Accounts that predate the requirement were backfilled as confirmed. A deploy must not lock out the people already using the app.
-- **There is still no email provider** (§14), so the link is returned to the caller and shown on screen by `NoticeCard`, exactly as invites and recovery links already are. `server/src/notifications.ts` is the single seam: when a provider is added, `deliver()` grows a body and no caller changes.
+- **Email sends through Resend when it is configured, and falls back to the on-screen link when it is not** (§4.1). Confirmation is therefore a real check of the address on the live deployment, and still a step in the flow anywhere without a key — the test suite and local development included.
+
+### 4.1 Sending email (`server/src/notifications.ts`)
+
+- **One module decides how any message travels.** Confirmation, invites and recovery all build a `Notice` and hand it to `deliver()`; no route knows a provider exists. Adding a second kind of message is a function beside the other four.
+- **Resend, over one `fetch`** — no SDK. `POST https://api.resend.com/emails` with a Bearer key, plain-text body, five-second timeout.
+- **Configured means `RESEND_API_KEY` plus a from address.** `MAIL_FROM` and `APP_URL` both default off `DOMAIN` (`Home Budget <noreply@$DOMAIN>`, `https://$DOMAIN`), so turning email on in production is one secret and nothing else. The derivation lives in `config.ts` rather than `docker-compose.yml` because nested Compose defaults are not portable across versions.
+- **Unconfigured is a supported state, permanently.** With no key the app behaves exactly as it always has: the link comes back in the response and `NoticeCard` shows it. That is what lets the suite and local development run with no provider — and what stops an expired key locking everybody out of inviting anyone.
+- **A send never throws.** A refusal, a timeout or a network failure logs a warning and returns `delivered: false`, which degrades to the on-screen link. Registration must not fail because a provider is having a bad day.
+- **`delivered` is the truth about one message, not a guess about the configuration.** The POST is awaited rather than fired and forgotten, so the response can say whether it actually went — which is what the UI wording follows.
+- **Notices carry relative links** (`/verify/<token>`), because the browser resolves them against wherever it already is. An inbox cannot, so `APP_URL` is what makes them absolute; a notice with a link and no base is not sendable and is not sent.
+- **Warnings never contain the link or the address.** A working confirmation link in the deploy logs would be a credential sitting in plain sight.
+
+#### What gets sent, and to whom
+
+Two families of message. **Asked** ones carry a link and are the point of the
+request — they are also returned in the response, so an unconfigured
+deployment still works. **Told** ones carry no link: something has already
+happened and the people it affects are being informed, so with no provider
+they are simply dropped.
+
+| Action | Who hears |
+| --- | --- |
+| Registration, `POST /auth/verify/resend` | the address being confirmed (link) |
+| `POST /household/invites` with an address | the invitee (link) |
+| `POST /household/members/:id/reset-password` | the member (link) — **and the link is still returned to the owner** |
+| `POST /households` | the new owner |
+| `POST /households/join` | the household's **other owners** — not the joiner, who is looking at it |
+| `DELETE /household/members/:id` | the person removed, and the **other** owners |
+| `PUT /household/members/:id/role` | the member whose role changed, and only if it actually changed |
+| `PUT /household` | the **other** members, and only naming what actually changed |
+| `DELETE /household` | **everyone in it**, the owner who did it included |
+| `DELETE /auth/account` | the account itself, and the remaining owners of each household it leaves |
+| `POST /auth/password`, `POST /auth/reset` | the account whose password changed |
+
+- **Recipients are gathered by `householdAddresses()` in `auth.ts`**, so "everyone here" and "the owners" mean one thing across all call sites — and for anything destructive they are read **before** the rows are deleted and sent **after** the delete succeeds. Neither order is optional: gathering afterwards finds nobody, sending beforehand announces something that may still fail.
+- **The person who performed an action is not told about it**, except when closing a whole household or their own account — that is the one case where a record in your own inbox is worth having.
+- **Routine edits send nothing**: expenses, categories, budgets, recurring rules, shopping lists, share links, and renaming yourself. A household that emails on every grocery item trains everyone to ignore it.
+- `notifyAll()` fans one notice out to several addresses in parallel, deduplicated, each bounded by the same timeout — so telling nine people costs about what telling one does, and a failure is still only a warning.
 
 ### Passwords and session invalidation
 
 - Two ways to change a password: **self-service** (`POST /auth/password`, requires the current one) and an **owner-issued recovery link** for someone locked out (`POST /household/members/:id/reset-password` → `/reset/:token`).
-- There is no email provider, so the owner passes the recovery link on themselves — the same shape as invites. Links are single-use, expire in 24 hours, and issuing a new one retires any outstanding link for that person.
+- A recovery link is emailed to the member when a provider is configured, **and returned to the owner either way** — they may still want to hand it over, and with no provider that is the only way it travels. Links are single-use, expire in 24 hours, and issuing a new one retires any outstanding link for that person.
 - **Changing a password invalidates every existing session for that user.** `users.session_generation` is bumped, and a token whose `gen` no longer matches is refused. Without this, resetting a compromised password would leave the attacker's stolen cookie working until it expired on its own.
 - **It is a counter, not a timestamp.** A JWT's `iat` has one-second resolution, so a timestamp cutoff cannot tell the session being issued *by* the password change from one stolen a moment earlier — the first implementation did use a timestamp, and it produced a genuinely flaky test. A counter removes the clock from the question entirely.
 - The device doing the change is handed a fresh cookie in the same response, so it stays signed in while every other device is evicted.
@@ -229,8 +272,8 @@ so the UI can badge them.
 - `db.ts` — connection + the migration runner.
 - `migrations.ts` — the ordered, append-only migration list.
 - `recurring.ts` — recurrence date maths (pure) and materialisation.
-- `auth.ts` — hashing, cookies, id/token generation, auth middleware, `setPassword`, `assertPassword`, and the **membership resolution** that turns a cookie's `hh` claim into the household a request is about.
-- `notifications.ts` — the one place that decides how a "we would have emailed you" message travels. `deliver()` is the seam a real provider slots into; every caller is ignorant of how a message is sent.
+- `auth.ts` — hashing, cookies, id/token generation, auth middleware, `setPassword`, `assertPassword`, `householdAddresses()` (who to notify, §4.1), and the **membership resolution** that turns a cookie's `hh` claim into the household a request is about.
+- `notifications.ts` — the one place that decides how a message travels: Resend when configured, the on-screen link when not (§4.1). Every caller is ignorant of both.
 - `http.ts` — `HttpError` + status helpers, `asyncHandler`, `parseBody`, error middleware.
 - `rateLimit.ts` — in-process fixed-window limiter.
 - `backup.ts` — consistent snapshots via SQLite's online backup API.
@@ -481,10 +524,12 @@ Two suites, run together with `npm run test:all`.
 - `migrations.test.ts` — fresh builds, repeat runs being no-ops, and the pre-migration-system adoption path.
 - `password.test.ts` — self-service change, owner-issued recovery, and that both evict other devices.
 - `compression.test.ts` — measures **raw wire bytes** with `node:http`, because `fetch` transparently decompresses and would compare a number with itself.
+- `notificationsSending.test.ts` — the other half: a provider **is** configured, and every route that changes a household has to reach the right people and nobody else — joins, removals, role changes, renames, both deletions, password changes and invites. Only calls to the provider are intercepted; requests to the app are real HTTP. The environment is set before `config.ts` loads, which is what the file's top-level `await import` is for.
+- `notifications.test.ts` — email (§4.1) with `fetch` stubbed, so the suite never touches a provider: nothing sent and nothing claimed when no key is configured, the exact request made when one is, the address and link base derived from `DOMAIN`, a relative link refusing to go out without `APP_URL`, and a refusal, a network failure and an addressless invite all degrading to the link rather than throwing. `config.ts` reads the environment once at import, so each case sets its variables behind `vi.resetModules()`.
 
 ### Browser tests — Playwright, `e2e/`
 
-- 18 tests, run with `npm run test:e2e`. Config is `playwright.config.ts` at the repo root.
+- 19 tests, run with `npm run test:e2e`. Config is `playwright.config.ts` at the repo root.
 - **Three areas: the guest flow, the statistics page and multiple households.** The guest flow is the riskiest path — the one surface reachable without an account — and was the only coverage for a long time. (The theme test lives there because the toggle is on the guest header too.)
 - `statistics.spec.ts` exists because **every bug that page has had was invisible to the server suite**: a fold bucket that borrowed a real category's name, a one-month range drawing a lone dot, a stale response overwriting a newer one. Those are questions about what is on the screen. It reaches the page through the header link, never a direct URL — a page nobody can navigate to is a page nobody has.
 - `seedStatsHousehold()` builds a household through the API, giving **each joining member its own request context**: joining sets a session cookie, and a shared jar would sign the owner out halfway through.
@@ -494,7 +539,7 @@ Two suites, run together with `npm run test:all`.
 - Chromium: the config uses the sandbox's prebuilt binary when `/opt/pw-browsers/chromium` exists (override with `CHROMIUM_PATH`) and a normally installed browser otherwise. **Never run `playwright install` in the sandbox.**
 - Every guest gets `browser.newContext()` — a guest is *defined* by having no cookies and no carried-over storage, so sharing a context would defeat the point.
 - Tests create their own household, so they share nothing but the server and can run in parallel.
-- `households.spec.ts` asks the questions only a browser can: that the switcher exists as a real control, that using it actually repaints the page (it did not, at first — see the `<main>` key in §9), that the choice survives a reload, that a single-household account can still reach `/households` (it could not, at first), and what a brand new account is shown before it has a household at all.
+- `households.spec.ts` asks the questions only a browser can: that the switcher exists as a real control, that using it actually repaints the page (it did not, at first — see the `<main>` key in §9), that the choice survives a reload, that a single-household account can still reach `/households` (it could not, at first), what a brand new account is shown before it has a household at all, and that such an account can still delete itself — the Household page carrying the same action needs a household open, so without a control here there was no way out (§3).
 
 What it asserts: a member creates and shares a list through the UI; a guest with no account opens the link, names themselves, adds an item and ticks one off; the member sees those changes. A second journey covers the comment: a guest adds an item carrying one, the household reads it and rewrites it, and the guest sees the new wording. A third covers "Copy list" on all three screens it appears on: the clipboard is read back and compared to the exact expected text, and asserted not to contain the share token. The index case also asserts the page did not navigate, since that button lives inside a row that is otherwise a link. Plus view-only enforcement — including that a view-only guest can read a comment but is offered no control to change it — instant revocation, the name prompt appearing only once, a dead token, that a guest is bounced off every private route, that a chosen theme survives a reload without a flash, and that the sign-in page carries the toggle at all — the one signed-out screen everybody sees.
 
@@ -502,7 +547,7 @@ What it asserts: a member creates and shares a list through the UI; a guest with
 
 ### Both suites were verified by breaking the code
 
-Twenty-four deliberate regressions were introduced, and each was caught by a failing test:
+Twenty-eight deliberate regressions were introduced, and each was caught by a failing test:
 
 1. Removing the `household_id` filter from the expenses list query → `isolation` failed.
 2. Adding `householdId` to the guest share response → `share` failed.
@@ -528,6 +573,10 @@ Twenty-four deliberate regressions were introduced, and each was caught by a fai
 22. Reducing `PAYER_IF_STILL_HERE` to a plain `e.paid_by` → `expenses` failed on both the removed-payer case and the cross-tab totals, the per-member split quietly ceasing to add up.
 23. Removing the recovery-link retirement from member removal → `password` failed, an owner able to mint a link, remove the person, and take over an account that may belong to other households.
 24. Listing memberships without filtering by account → `isolation` failed, one account seeing another's households.
+25. Sending regardless of whether a key is configured → `notifications` failed, the suite trying to reach a provider it must never depend on.
+26. Dropping the `APP_URL` guard from the email body → `notifications` failed, a message going out carrying a link an inbox cannot follow.
+27. Ignoring `ownersOnly` in `householdAddresses()` → `notificationsSending` failed, everybody in the household hearing what only its owners should.
+28. Gathering a household's recipients *after* deleting it rather than before → `notificationsSending` failed, nobody told it was gone.
 
 The statistics suite also earned its place on the way in: the one-month test failed against the unguarded fetch, which is how the stale-response race in §9.2 was found.
 
@@ -568,6 +617,7 @@ Alongside each screenshot it reports the body colour — the cheap proof a theme
 - **Everything runs from the Actions tab** — deploy, backup and restore — because the person maintaining this may only have a tablet. Lightsail's browser SSH covers the rest.
 - `deploy/bootstrap.sh` runs once on a fresh instance: installs Docker, creates `/opt/home-budget`, generates `JWT_SECRET`. It deliberately never regenerates an existing secret, since that would sign everyone out.
 - `APP_IMAGE` in the server's `.env` records the deployed tag. Rolling back is editing it to an earlier SHA and running `docker compose up -d`.
+- **`RESEND_API_KEY` is written into that same `.env` on every deploy**, from the repository secret of the same name, so rotating the key is changing the secret and re-running the deploy. An empty secret writes an empty line, which the app reads as "no provider" (§4.1) rather than failing — mail stops, sign-up does not.
 - Measured sizing: ~85 MB peak RSS, under 6 MB of data after ten years, ~30 MB/month egress. The $5/month bundle includes 1 TB of transfer.
 - **Fly.io was the original target** and the Dockerfile came from that work. It was abandoned for an account-level reason, not a technical one: Fly refuses API tokens to accounts belonging to an SSO-requiring organization, and fails silently in the UI. Without a token there is no CI deploy. Nothing in the app had to change to move.
 
@@ -609,8 +659,9 @@ Honest list — these are real, and none is currently blocking.
 - **There is no way to leave a household without deleting your account.** An
   owner can remove anyone but themselves, so a member who simply wants out has
   to ask. `DELETE /household/members/me` is the missing route.
-- **Nothing is ever emailed. This is the current blocker** — `TODO.md` carries the working brief, including what only a human can do (provider account, DNS, API key). **Links are generated, not delivered — including email confirmation.** Invites, password recovery and now address confirmation are all shown on screen rather than sent; there is no email provider. This is why recovery is owner-issued rather than self-service "forgot password", and it means **confirmation currently proves nothing about the address** — whoever registered is handed the link immediately, so it is a step in the flow rather than a real check. It becomes a real one the moment `deliver()` in `notifications.ts` learns to send, and nothing else has to change. Until then, do not describe it as verification anywhere user-facing.
-- **An owner-issued recovery link grants the whole account, which may span households.** Removing someone now retires their outstanding links (§3), which closes the obvious abuse, but an owner can still reset the password of an account that belongs to other households while that person is a member. That was contained when an account *was* a household; it is not any more. A self-service "forgot password" would remove the need for the feature altogether.
+- **Recovery is still owner-issued, not self-service.** Email now sends (§4.1), so a "forgot password" flow has become possible — but it does not exist yet, and until it does a locked-out member has to ask an owner. The link is emailed to them, which was the part that could not work before.
+- **Nothing proves an address on an unconfigured deployment.** Without `RESEND_API_KEY` the confirmation link is handed straight to whoever registered, so it is a step in the flow rather than a check. That is the right trade for the suite and for local work, but it means "confirmed" only means "verified" where a provider is actually configured.
+- **An owner-issued recovery link grants the whole account, which may span households.** It is now emailed to the member as well as shown to the owner, which does not change who can issue one. Removing someone now retires their outstanding links (§3), which closes the obvious abuse, but an owner can still reset the password of an account that belongs to other households while that person is a member. That was contained when an account *was* a household; it is not any more. A self-service "forgot password" would remove the need for the feature altogether.
 - **The guest list page polls every 15 s; the member list page does not poll at all.** So a member can be looking at a stale list while a guest shops. Unifying this — or moving both to SSE/WebSocket — is the natural fix.
 - Rate limiting is in-process and will not survive horizontal scaling (see §13) — moot while the deployment is deliberately one machine.
 - **The container runs as root.** Fly volumes mount root-owned, and dropping privileges needs a startup chown dance that was not worth the risk of an unverifiable failure. Worth hardening later.

@@ -110,6 +110,31 @@ test.describe('several households', () => {
     await expect(page.getByRole('button', { name: 'Create a household' })).toBeDisabled();
     await expect(page.getByText(/before creating or joining a household/)).toBeVisible();
   });
+
+  test('an account with no household can still delete itself', async ({ page }) => {
+    // The Household page carries the same action, but it needs a household
+    // open — so without this control, an account in this state had no way out
+    // at all.
+    const email = uniqueEmail('closing');
+    await page.goto('/register');
+    await page.getByLabel('Email').fill(email);
+    await page.getByLabel('Password').fill(PASSWORD);
+    await page.getByRole('button', { name: 'Create account' }).click();
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await expect(page).toHaveURL('/households');
+
+    page.once('dialog', (dialog) => dialog.accept());
+    await page.getByRole('button', { name: 'Delete account' }).click();
+    await page.getByLabel('Confirm with your password').fill(PASSWORD);
+    await page.getByRole('button', { name: 'Delete my account' }).click();
+
+    await expect(page).toHaveURL('/login');
+    // Really gone: the address is free again rather than "already taken".
+    await page.getByLabel('Email').fill(email);
+    await page.getByLabel('Password').fill(PASSWORD);
+    await page.getByRole('button', { name: 'Sign in' }).click();
+    await expect(page.getByText('Incorrect email or password')).toBeVisible();
+  });
 });
 
 /** Today, in the app's own local-time reckoning. */
