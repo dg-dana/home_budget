@@ -3,7 +3,7 @@
 The running state of this project. **Updated after every step** — see the
 "Working agreement" in `CLAUDE.md`.
 
-Last updated: 2026-08-07 · live: deploy run #24 (`51ae836`)
+Last updated: 2026-08-07 · live: deploy run #25 (`660551a`)
 
 ---
 
@@ -18,7 +18,12 @@ the Actions tab.
   are not, since you did it.
 - **No password on it**, alone in that card: a new invite undoes leaving, so
   asking for one would be friction aimed at the person with the least power in
-  the household. Both deletions still ask.
+  the household. Deleting the household still asks.
+- **The Danger zone on `/household` is no longer owner-only.** Run #25 made it
+  so, rightly, when deleting the household was the only thing left in it — but
+  leaving is for ordinary members above all, so the card is back for everyone
+  and the delete form inside it is the owner-only half. Caught while merging
+  the two changes together, not by a test.
 - Refused in two cases, both of which would strand something — you are the
   **only owner** with other people still here (make someone else an owner
   first), or you are the **last person in it** (delete the household instead).
@@ -79,9 +84,10 @@ agent sandbox cannot reach the site, so that check is yours.
 ### Fixed alongside it
 
 - **An account with no household can now delete itself**, from `/households`.
-  The "Danger zone" lives on the Household page, which needs a household open,
+  The "Danger zone" lived on the Household page, which needs a household open,
   so an account that had left its only household — or never joined one — was
   stuck with an account it could not close. Covered by a browser test.
+  (`/households` is since the only place it lives — see Done, run #25.)
 
 ### Follow-ups since it went live
 
@@ -108,18 +114,11 @@ agent sandbox cannot reach the site, so that check is yours.
 
 ## Also needs your hands
 
-- [x] ~~**GitHub stopped creating Actions runs mid-session**~~ — **it came back
-      on its own.** Pushes after 15:27 UTC on 2026-08-06 produced no CI run at
-      all, which is why PR #35 was merged on a local run of typecheck and both
-      suites rather than on CI. The push for PR #37 the next morning created
-      two `verify` runs and both passed, so nothing needs changing in the
-      Actions or billing settings. Nobody found out what it was; if it goes
-      quiet again, that is the thing to say.
-
-- [ ] **Check the live site on a phone.** Runs #17–#24 have never been looked
-      at by a human. A green deploy proves the URL responds, nothing more.
-      Worth checking: the new sign-up flow, the household switcher, "Make
-      owner", and that your existing household looks untouched.
+- [ ] **Check the rest of the live site on a phone.** The Household page was
+      checked on run #25 and looks right. The rest of what runs #17–#25
+      shipped has not been: the new sign-up flow, the household switcher,
+      "Make owner", and that your existing household looks untouched. A green
+      deploy proves the URL responds, nothing more.
 
 ## Open work
 
@@ -135,6 +134,20 @@ agent sandbox cannot reach the site, so that check is yours.
 - [x] Leave a household without deleting your account — "Leave this household"
       in the Danger zone, `DELETE /household/members/me`. (merged, **not
       deployed**)
+- [x] **"Delete my account" is gone from the Household page** — it lives on
+      `/households` only (live, run #25). It ends the account and every
+      membership it holds, so sitting beside "Delete this household" made it
+      read as something scoped to the household you happened to have open. The
+      foot of `/household` keeps the household deletion alone and is now
+      **owner-only**, with a link across to Your households. The server was
+      untouched: `DELETE /auth/account` still exists and `/households` still
+      calls it. (PRs #38, #39 — live on run #25 and **confirmed by hand**.)
+- [x] **CI is creating runs again.** Pushes after 15:27 UTC on 2026-08-06
+      produced no Actions run at all, which cost PR #35 its safety net. Runs
+      #156–#163 fired normally on 2026-08-07, push and `pull_request` alike,
+      so nothing needs changing in the repository's Actions or billing
+      settings. It went quiet on its own and came back on its own — if that
+      happens again, check the Actions tab before assuming a push failed.
 - [x] Email sends through Resend, and the app also emails what has happened —
       joins, removals, role changes, renames, both deletions, password
       changes. Plus "Delete account" on `/households`, and invitations listed

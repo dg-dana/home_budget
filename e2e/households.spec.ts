@@ -164,9 +164,9 @@ test.describe('several households', () => {
   });
 
   test('an account with no household can still delete itself', async ({ page }) => {
-    // The Household page carries the same action, but it needs a household
-    // open — so without this control, an account in this state had no way out
-    // at all.
+    // `/households` is the only place this action lives, and the only screen
+    // an account in this state can reach — without it there was no way out at
+    // all.
     const email = uniqueEmail('closing');
     await page.goto('/register');
     await page.getByLabel('Email').fill(email);
