@@ -88,12 +88,10 @@ export default function HouseholdsPage() {
   };
 
   /**
-   * Closing the account from here, where an account with no household has to
-   * be able to do it.
-   *
-   * The Household page carries the same action, but that page needs a
-   * household open — so before this, an account that had left or never joined
-   * one had no way to delete itself at all.
+   * Closing the account lives here and nowhere else: it ends the account and
+   * every membership it holds, so it is not scoped to whichever household
+   * happens to be open — and this is the one screen an account with no
+   * household can still reach.
    */
   const handleDeleteAccount = async (event: React.FormEvent) => {
     event.preventDefault();

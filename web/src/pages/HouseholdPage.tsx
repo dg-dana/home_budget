@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { api, type Category, type Invite, type Member, type Notice } from '../api';
 import { formatMoney } from '../format';
 import { useSession } from '../session';
@@ -7,7 +7,7 @@ import { useSession } from '../session';
 const CURRENCIES = ['USD', 'EUR', 'GBP', 'ILS', 'CAD', 'AUD', 'CHF', 'SEK', 'PLN', 'INR'];
 
 export default function HouseholdPage() {
-  const { user, household, refresh, signOut } = useSession();
+  const { user, household, refresh } = useSession();
   const navigate = useNavigate();
   const isOwner = user?.role === 'owner';
   const currency = household?.currency ?? 'USD';
@@ -28,7 +28,7 @@ export default function HouseholdPage() {
   const [inviteNotice, setInviteNotice] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [displayNameNotice, setDisplayNameNotice] = useState('');
-  const [dangerPasswords, setDangerPasswords] = useState({ account: '', household: '' });
+  const [dangerPassword, setDangerPassword] = useState('');
   const [dangerError, setDangerError] = useState('');
 
   const load = useCallback(async () => {
@@ -65,13 +65,6 @@ export default function HouseholdPage() {
   };
 
   const inviteUrl = (token: string) => `${window.location.origin}/join/${token}`;
-
-  // A household must keep an owner, so its only one cannot delete their account
-  // while anybody else is still here — the server refuses it, and saying so
-  // before the button is pressed is cheaper than the round trip.
-  const soleOwner = isOwner && !members.some((m) => m.role === 'owner' && m.id !== user?.id);
-  const lastPerson = members.length === 1;
-  const strandedOwner = soleOwner && !lastPerson;
 
   const copyInvite = async (token: string) => {
     try {
@@ -118,36 +111,14 @@ export default function HouseholdPage() {
     }
   };
 
-  /** Deleting the account really does end the session. */
-  const leaveAfterDeletion = async () => {
-    await signOut();
-    navigate('/login', { replace: true });
-  };
-
   /**
-   * Deleting a household does not. The account outlives it and may hold others,
-   * so the picker is where this lands — signing someone out of an account that
-   * still exists would be a lie about what just happened.
+   * Deleting a household does not end the session. The account outlives it and
+   * may hold others, so the picker is where this lands — signing someone out of
+   * an account that still exists would be a lie about what just happened.
    */
   const returnToHouseholds = async () => {
     await refresh();
     navigate('/households', { replace: true });
-  };
-
-  const handleDeleteAccount = async (event: React.FormEvent) => {
-    event.preventDefault();
-    setDangerError('');
-    // The last person out takes the household with them, so say so.
-    const warning = lastPerson
-      ? `Delete your account? You are the only person here, so "${household?.name ?? 'this household'}" and everything in it goes too. This cannot be undone.`
-      : 'Delete your account? You lose access to this household. What you spent stays in its history, listed without a payer. This cannot be undone.';
-    if (!window.confirm(warning)) return;
-    try {
-      await api.delete('/auth/account', { password: dangerPasswords.account });
-      await leaveAfterDeletion();
-    } catch (err) {
-      setDangerError(err instanceof Error ? err.message : 'Could not delete your account');
-    }
   };
 
   const handleDeleteHousehold = async (event: React.FormEvent) => {
@@ -163,7 +134,7 @@ export default function HouseholdPage() {
       '. This cannot be undone.';
     if (!window.confirm(warning)) return;
     try {
-      await api.delete('/household', { password: dangerPasswords.household });
+      await api.delete('/household', { password: dangerPassword });
       await returnToHouseholds();
     } catch (err) {
       setDangerError(err instanceof Error ? err.message : 'Could not delete the household');
@@ -640,81 +611,52 @@ export default function HouseholdPage() {
         </p>
       </div>
 
-      <div className="card stack danger-zone">
-        <div className="card-title">
-          <h2>Danger zone</h2>
-        </div>
+      {/*
+        Closing an account is not here: it belongs to the account rather than to
+        whichever household happens to be open, and it lives on `/households`,
+        which is the one page an account with no household can still reach.
+      */}
+      {isOwner && (
+        <div className="card stack danger-zone">
+          <div className="card-title">
+            <h2>Danger zone</h2>
+          </div>
 
-        {dangerError && <div className="alert">{dangerError}</div>}
+          {dangerError && <div className="alert">{dangerError}</div>}
 
-        <div className="grid-2">
-          <form className="stack" onSubmit={handleDeleteAccount}>
+          <form className="stack" onSubmit={handleDeleteHousehold}>
             <div>
-              <h3 style={{ margin: 0 }}>Delete your account</h3>
+              <h3 style={{ margin: 0 }}>Delete this household</h3>
               <p className="small muted" style={{ margin: '0.25rem 0 0' }}>
-                {strandedOwner
-                  ? 'You are this household’s only owner. Make someone else an owner first, or delete the household instead.'
-                  : lastPerson
-                    ? 'You are the only person here, so this deletes the household with you.'
-                    : 'Your expenses stay in the household history, listed without a payer.'}
+                Removes every expense, budget, recurring rule, shopping list and share link, for
+                everyone in it. Their accounts survive — only this household goes.
               </p>
             </div>
             <div>
-              <label htmlFor="deleteAccountPassword">Confirm with your password</label>
+              <label htmlFor="deleteHouseholdPassword">Confirm with your password</label>
               <input
-                id="deleteAccountPassword"
+                id="deleteHouseholdPassword"
                 type="password"
                 required
-                disabled={strandedOwner}
                 autoComplete="current-password"
-                value={dangerPasswords.account}
-                onChange={(event) =>
-                  setDangerPasswords({ ...dangerPasswords, account: event.target.value })
-                }
+                value={dangerPassword}
+                onChange={(event) => setDangerPassword(event.target.value)}
+                style={{ maxWidth: '320px' }}
               />
             </div>
             <div>
-              <button type="submit" className="button danger-solid" disabled={strandedOwner}>
-                Delete my account
+              <button type="submit" className="button danger-solid">
+                Delete household
               </button>
             </div>
           </form>
 
-          {isOwner && (
-            <form className="stack" onSubmit={handleDeleteHousehold}>
-              <div>
-                <h3 style={{ margin: 0 }}>Delete this household</h3>
-                <p className="small muted" style={{ margin: '0.25rem 0 0' }}>
-                  Removes every expense, budget, recurring rule, shopping list and share link, for
-                  everyone in it. Their accounts survive — only this household goes.
-                </p>
-              </div>
-              <div>
-                <label htmlFor="deleteHouseholdPassword">Confirm with your password</label>
-                <input
-                  id="deleteHouseholdPassword"
-                  type="password"
-                  required
-                  autoComplete="current-password"
-                  value={dangerPasswords.household}
-                  onChange={(event) =>
-                    setDangerPasswords({ ...dangerPasswords, household: event.target.value })
-                  }
-                />
-              </div>
-              <div>
-                <button type="submit" className="button danger-solid">
-                  Delete household
-                </button>
-              </div>
-            </form>
-          )}
+          <p className="small muted" style={{ margin: 0 }}>
+            There is no undo and no export. Nothing here can be recovered afterwards. To close your
+            account instead, go to <Link to="/households">Your households</Link>.
+          </p>
         </div>
-
-        <p className="small muted" style={{ margin: 0 }}>
-          There is no undo and no export. Nothing here can be recovered afterwards.
-        </p>
-      </div>
+      )}
     </div>
   );
 }

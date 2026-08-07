@@ -3,7 +3,7 @@
 The running state of this project. **Updated after every step** — see the
 "Working agreement" in `CLAUDE.md`.
 
-Last updated: 2026-08-06 · live: deploy run #24 (`51ae836`)
+Last updated: 2026-08-07 · live: deploy run #24 (`51ae836`)
 
 ---
 
@@ -52,9 +52,10 @@ agent sandbox cannot reach the site, so that check is yours.
 ### Fixed alongside it
 
 - **An account with no household can now delete itself**, from `/households`.
-  The "Danger zone" lives on the Household page, which needs a household open,
+  The "Danger zone" lived on the Household page, which needs a household open,
   so an account that had left its only household — or never joined one — was
   stuck with an account it could not close. Covered by a browser test.
+  (`/households` is since the only place it lives — see "Waiting on a deploy".)
 
 ### Follow-ups since it went live
 
@@ -78,6 +79,19 @@ agent sandbox cannot reach the site, so that check is yours.
 - The word **"verification"** is fair on the live deployment now, but not on
   an unconfigured one — anywhere without a key, the link is handed straight
   to whoever registered.
+
+## Waiting on a deploy
+
+- [ ] **"Delete my account" is gone from the Household page** — it now lives on
+      `/households` only. It ends the account and every membership it holds, so
+      sitting beside "Delete this household" made it read as something scoped to
+      the household you happened to have open. The foot of `/household` keeps
+      the household deletion alone, is now **owner-only** (that card had nothing
+      else in it for a member), and closes with a link across to Your
+      households. Nothing changed on the server: `DELETE /auth/account` still
+      exists and `/households` still calls it, so the browser test that closes
+      an account is untouched. Merged but **not deployed** — run **Deploy to
+      Lightsail** from the Actions tab.
 
 ## Also needs your hands
 
