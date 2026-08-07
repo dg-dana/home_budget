@@ -108,14 +108,13 @@ agent sandbox cannot reach the site, so that check is yours.
 
 ## Also needs your hands
 
-- [ ] **GitHub stopped creating Actions runs mid-session** — pushes after
-      15:27 UTC on 2026-08-06 produced no CI run at all (the workflow is
-      active, and `workflow_dispatch` still works). PR #35 was therefore
-      merged on a local run of typecheck, the server suite and the browser
-      suite rather than on CI, and the deploy — which runs typecheck and the
-      server tests itself before building — went green. Worth a look at the
-      repository's Actions and billing settings; if CI stays silent, every
-      future merge loses its safety net.
+- [x] ~~**GitHub stopped creating Actions runs mid-session**~~ — **it came back
+      on its own.** Pushes after 15:27 UTC on 2026-08-06 produced no CI run at
+      all, which is why PR #35 was merged on a local run of typecheck and both
+      suites rather than on CI. The push for PR #37 the next morning created
+      two `verify` runs and both passed, so nothing needs changing in the
+      Actions or billing settings. Nobody found out what it was; if it goes
+      quiet again, that is the thing to say.
 
 - [ ] **Check the live site on a phone.** Runs #17–#24 have never been looked
       at by a human. A green deploy proves the URL responds, nothing more.
