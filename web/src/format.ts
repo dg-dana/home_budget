@@ -1,6 +1,16 @@
+import { activeLocale } from './language';
+
+/**
+ * Money and dates follow the **chosen language**, not only the device
+ * (`language.ts`): picking German has to move the decimal point as well as the
+ * labels, or the page reads as half-translated. `activeLocale()` is read on
+ * every call rather than captured, so switching repaints straight into the new
+ * conventions — the toggle sets it before the re-render it triggers.
+ */
+
 /** Formats integer cents using the household's currency. */
 export function formatMoney(cents: number, currency: string): string {
-  return new Intl.NumberFormat(undefined, {
+  return new Intl.NumberFormat(activeLocale(), {
     style: 'currency',
     currency,
     maximumFractionDigits: 2,
@@ -32,15 +42,15 @@ export function shiftMonth(month: string, delta: number): string {
 
 export function monthLabel(month: string): string {
   const date = new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)) - 1, 1);
-  return date.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+  return date.toLocaleDateString(activeLocale(), { month: 'long', year: 'numeric' });
 }
 
 export function shortMonthLabel(month: string): string {
   const date = new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)) - 1, 1);
-  return date.toLocaleDateString(undefined, { month: 'short' });
+  return date.toLocaleDateString(activeLocale(), { month: 'short' });
 }
 
 export function dayLabel(date: string): string {
   const parsed = new Date(`${date}T00:00:00`);
-  return parsed.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+  return parsed.toLocaleDateString(activeLocale(), { day: 'numeric', month: 'short' });
 }

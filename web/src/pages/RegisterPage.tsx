@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { api, type Notice, type SessionPayload } from '../api';
+import { useI18n } from '../i18n';
 import { useSession } from '../session';
 import AuthPage from '../components/AuthPage';
 import NoticeCard from '../components/NoticeCard';
@@ -15,6 +16,7 @@ import NoticeCard from '../components/NoticeCard';
  */
 export default function RegisterPage() {
   const { refresh } = useSession();
+  const { t, tx } = useI18n();
   const navigate = useNavigate();
   const location = useLocation();
   // Someone who followed an invite link lands here via the sign-in page; keep
@@ -54,7 +56,7 @@ export default function RegisterPage() {
       // read. The session is adopted on Continue instead.
       setNotice(created.verification);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not create the account');
+      setError(err instanceof Error ? err.message : t('register.failed'));
     } finally {
       setBusy(false);
     }
@@ -65,8 +67,8 @@ export default function RegisterPage() {
       <AuthPage>
         <div className="card auth-card stack">
           <div>
-            <h1>Confirm your address</h1>
-            <p className="muted">One step left before you can create or join a household.</p>
+            <h1>{t('register.confirmTitle')}</h1>
+            <p className="muted">{t('register.confirmSubtitle')}</p>
           </div>
 
           <NoticeCard notice={notice} onResend={resendVerification} />
@@ -79,7 +81,7 @@ export default function RegisterPage() {
               navigate(from ?? '/households', { replace: true });
             }}
           >
-            Continue
+            {t('register.continue')}
           </button>
         </div>
       </AuthPage>
@@ -90,14 +92,14 @@ export default function RegisterPage() {
     <AuthPage>
       <form className="card auth-card stack" onSubmit={handleSubmit}>
         <div>
-          <h1>Create your account</h1>
-          <p className="muted">You will set up a household — or join one — next.</p>
+          <h1>{t('register.title')}</h1>
+          <p className="muted">{t('register.subtitle')}</p>
         </div>
 
         {error && <div className="alert">{error}</div>}
 
         <div>
-          <label htmlFor="email">Email</label>
+          <label htmlFor="email">{t('common.email')}</label>
           <input
             id="email"
             type="email"
@@ -109,7 +111,7 @@ export default function RegisterPage() {
         </div>
 
         <div>
-          <label htmlFor="password">Password</label>
+          <label htmlFor="password">{t('common.password')}</label>
           <input
             id="password"
             type="password"
@@ -120,16 +122,18 @@ export default function RegisterPage() {
             onChange={update('password')}
           />
           <p className="small muted" style={{ margin: '0.3rem 0 0' }}>
-            At least 8 characters.
+            {t('common.minPassword')}
           </p>
         </div>
 
         <button type="submit" className="button" disabled={busy}>
-          {busy ? 'Creating…' : 'Create account'}
+          {t(busy ? 'register.submitting' : 'register.submit')}
         </button>
 
         <p className="small muted">
-          Already have an account? <Link to="/login">Sign in</Link>
+          {tx('register.haveAccount', {
+            link: <Link to="/login">{t('register.signIn')}</Link>,
+          })}
         </p>
       </form>
     </AuthPage>

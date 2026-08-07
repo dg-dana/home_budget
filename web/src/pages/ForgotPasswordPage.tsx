@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
 import AuthPage from '../components/AuthPage';
+import { useI18n } from '../i18n';
 
 /**
  * Asking for a recovery link. No session, and no household — being locked out
@@ -15,6 +16,7 @@ import AuthPage from '../components/AuthPage';
  * sent you".
  */
 export default function ForgotPasswordPage() {
+  const { t, tx } = useI18n();
   const [email, setEmail] = useState('');
   const [sent, setSent] = useState(false);
   const [error, setError] = useState('');
@@ -30,7 +32,7 @@ export default function ForgotPasswordPage() {
     } catch (err) {
       // A deployment with no email provider refuses this outright (503) and
       // says to ask an owner, which is the recovery this app has always had.
-      setError(err instanceof Error ? err.message : 'Could not send a reset link');
+      setError(err instanceof Error ? err.message : t('forgot.failed'));
     } finally {
       setBusy(false);
     }
@@ -41,29 +43,29 @@ export default function ForgotPasswordPage() {
       <AuthPage>
         <div className="card auth-card stack">
           <div>
-            <h1>Check your email</h1>
+            <h1>{t('forgot.sentTitle')}</h1>
             <p className="muted">
-              If there is an account for <strong>{email}</strong>, a link to choose a new password
-              is on its way. It works once and expires in 24 hours.
+              {tx('forgot.sentBody', { email: <strong>{email}</strong> })}
             </p>
           </div>
           <p className="small muted">
-            Nothing after a few minutes? Check the spam folder, make sure the address is the one you
-            signed up with, or{' '}
-            <button
-              type="button"
-              className="link-button"
-              onClick={() => {
-                setSent(false);
-                setError('');
-              }}
-            >
-              try another address
-            </button>
-            .
+            {tx('forgot.nothingYet', {
+              retry: (
+                <button
+                  type="button"
+                  className="link-button"
+                  onClick={() => {
+                    setSent(false);
+                    setError('');
+                  }}
+                >
+                  {t('forgot.tryAnother')}
+                </button>
+              ),
+            })}
           </p>
           <p className="small muted">
-            <Link to="/login">Back to sign in</Link>
+            <Link to="/login">{t('forgot.backToSignIn')}</Link>
           </p>
         </div>
       </AuthPage>
@@ -74,16 +76,14 @@ export default function ForgotPasswordPage() {
     <AuthPage>
       <form className="card auth-card stack" onSubmit={handleSubmit}>
         <div>
-          <h1>Forgotten your password?</h1>
-          <p className="muted">
-            Give us the address you signed up with and we will email you a link to choose a new one.
-          </p>
+          <h1>{t('forgot.title')}</h1>
+          <p className="muted">{t('forgot.subtitle')}</p>
         </div>
 
         {error && <div className="alert">{error}</div>}
 
         <div>
-          <label htmlFor="email">Email</label>
+          <label htmlFor="email">{t('common.email')}</label>
           <input
             id="email"
             type="email"
@@ -95,11 +95,11 @@ export default function ForgotPasswordPage() {
         </div>
 
         <button type="submit" className="button" disabled={busy}>
-          {busy ? 'Sending…' : 'Email me a link'}
+          {t(busy ? 'forgot.submitting' : 'forgot.submit')}
         </button>
 
         <p className="small muted">
-          Remembered it? <Link to="/login">Sign in</Link>
+          {tx('forgot.remembered', { link: <Link to="/login">{t('register.signIn')}</Link> })}
         </p>
       </form>
     </AuthPage>

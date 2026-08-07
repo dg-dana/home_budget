@@ -33,6 +33,15 @@ export default defineConfig({
 
   use: {
     baseURL: BASE_URL,
+    /**
+     * Pinned because the app now picks its language off the browser when
+     * nothing has been chosen (`web/src/language.ts`), and almost every
+     * assertion in this suite is an English string. Without this the run would
+     * pass or fail on whatever locale the machine happens to be set to — which
+     * is exactly the sort of thing that goes green here and red on somebody's
+     * German laptop.
+     */
+    locale: 'en-US',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     launchOptions: { executablePath },

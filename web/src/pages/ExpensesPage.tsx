@@ -10,6 +10,7 @@ import {
   shortMonthLabel,
   today,
 } from '../format';
+import { useI18n } from '../i18n';
 import { useSession } from '../session';
 
 interface ExpenseForm {
@@ -30,6 +31,7 @@ const emptyForm = (userId: string): ExpenseForm => ({
 
 export default function ExpensesPage() {
   const { user, household } = useSession();
+  const { t, plural } = useI18n();
   const currency = household?.currency ?? 'USD';
 
   const [month, setMonth] = useState(currentMonth());
@@ -73,7 +75,7 @@ export default function ExpensesPage() {
     event.preventDefault();
     const amount = Number(form.amount);
     if (!Number.isFinite(amount) || amount <= 0) {
-      setError('Enter an amount greater than zero');
+      setError(t('expenses.amountPositive'));
       return;
     }
 
@@ -99,7 +101,7 @@ export default function ExpensesPage() {
       if (targetMonth !== month) setMonth(targetMonth);
       else await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not save the expense');
+      setError(err instanceof Error ? err.message : t('expenses.saveFailed'));
     } finally {
       setBusy(false);
     }
@@ -118,13 +120,14 @@ export default function ExpensesPage() {
   };
 
   const handleDelete = async (expense: Expense) => {
-    if (!window.confirm(`Delete "${expense.description || 'this expense'}"?`)) return;
+    const what = expense.description || t('expenses.thisExpense');
+    if (!window.confirm(t('expenses.confirmDelete', { what }))) return;
     try {
       await api.delete(`/expenses/${expense.id}`);
       if (editingId === expense.id) resetForm();
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not delete the expense');
+      setError(err instanceof Error ? err.message : t('expenses.deleteFailed'));
     }
   };
 
@@ -141,18 +144,18 @@ export default function ExpensesPage() {
         <div>
           <h1>{monthLabel(month)}</h1>
           <p>
-            {summary ? `${summary.count} expense${summary.count === 1 ? '' : 's'} this month` : 'Loading…'}
+            {summary ? plural(summary.count, 'expenses.count') : t('common.loading')}
           </p>
         </div>
         <div className="row">
           <button type="button" className="button secondary small" onClick={() => setMonth(shiftMonth(month, -1))}>
-            ← Previous
+            {t('expenses.previous')}
           </button>
           <button type="button" className="button secondary small" onClick={() => setMonth(currentMonth())}>
-            This month
+            {t('expenses.thisMonth')}
           </button>
           <button type="button" className="button secondary small" onClick={() => setMonth(shiftMonth(month, 1))}>
-            Next →
+            {t('expenses.next')}
           </button>
         </div>
       </div>
@@ -161,11 +164,11 @@ export default function ExpensesPage() {
 
       <div className="stat-grid">
         <div className="stat">
-          <div className="stat-label">Total spent</div>
+          <div className="stat-label">{t('expenses.totalSpent')}</div>
           <div className="stat-value">{formatMoney(summary?.total_cents ?? 0, currency)}</div>
         </div>
         <div className="stat">
-          <div className="stat-label">Biggest category</div>
+          <div className="stat-label">{t('expenses.biggestCategory')}</div>
           <div className="stat-value">
             {summary && summary.by_category[0] && summary.by_category[0].spent_cents > 0
               ? summary.by_category[0].name
@@ -173,7 +176,7 @@ export default function ExpensesPage() {
           </div>
         </div>
         <div className="stat">
-          <div className="stat-label">Daily average</div>
+          <div className="stat-label">{t('expenses.dailyAverage')}</div>
           <div className="stat-value">
             {formatMoney(
               Math.round((summary?.total_cents ?? 0) / new Date(
@@ -191,17 +194,17 @@ export default function ExpensesPage() {
         <div className="stack">
           <form className="card stack" onSubmit={handleSubmit}>
             <div className="card-title">
-              <h2>{editingId ? 'Edit expense' : 'Add an expense'}</h2>
+              <h2>{t(editingId ? 'expenses.editTitle' : 'expenses.addTitle')}</h2>
               {editingId && (
                 <button type="button" className="button secondary small" onClick={resetForm}>
-                  Cancel
+                  {t('common.cancel')}
                 </button>
               )}
             </div>
 
             <div className="field-row">
               <div>
-                <label htmlFor="amount">Amount</label>
+                <label htmlFor="amount">{t('common.amount')}</label>
                 <input
                   id="amount"
                   type="number"
@@ -209,22 +212,22 @@ export default function ExpensesPage() {
                   min="0.01"
                   required
                   inputMode="decimal"
-                  placeholder="0.00"
+                  placeholder={t('common.amountPlaceholder')}
                   value={form.amount}
                   onChange={update('amount')}
                 />
               </div>
               <div>
-                <label htmlFor="spentOn">Date</label>
+                <label htmlFor="spentOn">{t('common.date')}</label>
                 <input id="spentOn" type="date" required value={form.spentOn} onChange={update('spentOn')} />
               </div>
             </div>
 
             <div>
-              <label htmlFor="description">Description</label>
+              <label htmlFor="description">{t('common.description')}</label>
               <input
                 id="description"
-                placeholder="Supermarket, electricity bill…"
+                placeholder={t('expenses.descriptionPlaceholder')}
                 value={form.description}
                 onChange={update('description')}
               />
@@ -232,9 +235,9 @@ export default function ExpensesPage() {
 
             <div className="field-row">
               <div>
-                <label htmlFor="categoryId">Category</label>
+                <label htmlFor="categoryId">{t('common.category')}</label>
                 <select id="categoryId" value={form.categoryId} onChange={update('categoryId')}>
-                  <option value="">Uncategorised</option>
+                  <option value="">{t('common.uncategorised')}</option>
                   {categories.map((category) => (
                     <option key={category.id} value={category.id}>
                       {category.name}
@@ -243,7 +246,7 @@ export default function ExpensesPage() {
                 </select>
               </div>
               <div>
-                <label htmlFor="paidBy">Paid by</label>
+                <label htmlFor="paidBy">{t('common.paidBy')}</label>
                 <select id="paidBy" value={form.paidBy} onChange={update('paidBy')}>
                   {members.map((member) => (
                     <option key={member.id} value={member.id}>
@@ -255,18 +258,24 @@ export default function ExpensesPage() {
             </div>
 
             <button type="submit" className="button" disabled={busy}>
-              {busy ? 'Saving…' : editingId ? 'Save changes' : 'Add expense'}
+              {t(
+                busy
+                  ? 'common.saving'
+                  : editingId
+                    ? 'expenses.saveChanges'
+                    : 'expenses.addSubmit',
+              )}
             </button>
           </form>
 
           <div className="card">
             <div className="card-title">
-              <h2>Expenses</h2>
-              <span className="muted small">{expenses.length} shown</span>
+              <h2>{t('expenses.listTitle')}</h2>
+              <span className="muted small">{t('expenses.shown', { count: expenses.length })}</span>
             </div>
 
             {expenses.length === 0 ? (
-              <p className="empty">Nothing recorded for {monthLabel(month)} yet.</p>
+              <p className="empty">{t('expenses.emptyMonth', { month: monthLabel(month) })}</p>
             ) : (
               <div>
                 {expenses.map((expense) => (
@@ -278,17 +287,21 @@ export default function ExpensesPage() {
                     />
                     <div className="item-main">
                       <div className="item-name">
-                        {expense.description || 'Expense'}
+                        {expense.description || t('expenses.fallbackName')}
                         {expense.recurring_id && (
-                          <span className="tag" style={{ marginLeft: '0.4rem' }} title="Added automatically by a recurring rule">
-                            ↻ repeating
+                          <span
+                            className="tag"
+                            style={{ marginLeft: '0.4rem' }}
+                            title={t('expenses.repeatingTitle')}
+                          >
+                            {t('expenses.repeating')}
                           </span>
                         )}
                       </div>
                       <div className="item-meta">
                         <span>{dayLabel(expense.spent_on)}</span>
                         <span>·</span>
-                        <span>{expense.category_name ?? 'Uncategorised'}</span>
+                        <span>{expense.category_name ?? t('common.uncategorised')}</span>
                         {expense.paid_by_name && (
                           <>
                             <span>·</span>
@@ -301,7 +314,7 @@ export default function ExpensesPage() {
                     <button
                       type="button"
                       className="icon-button"
-                      title="Edit"
+                      title={t('common.edit')}
                       onClick={() => startEdit(expense)}
                     >
                       ✎
@@ -309,7 +322,7 @@ export default function ExpensesPage() {
                     <button
                       type="button"
                       className="icon-button danger"
-                      title="Delete"
+                      title={t('common.delete')}
                       onClick={() => handleDelete(expense)}
                     >
                       ✕
@@ -324,12 +337,10 @@ export default function ExpensesPage() {
         <div className="stack">
           <div className="card">
             <div className="card-title">
-              <h2>Budgets</h2>
+              <h2>{t('expenses.budgets')}</h2>
             </div>
             {budgeted.length === 0 ? (
-              <p className="empty small">
-                No monthly limits set yet. Add them under Household → Categories.
-              </p>
+              <p className="empty small">{t('expenses.noBudgets')}</p>
             ) : (
               budgeted.map((row) => {
                 const budget = row.monthly_budget_cents ?? 0;
@@ -354,7 +365,9 @@ export default function ExpensesPage() {
                     </div>
                     {over && (
                       <span className="small" style={{ color: 'var(--danger)' }}>
-                        Over by {formatMoney(row.spent_cents - budget, currency)}
+                        {t('expenses.overBy', {
+                          amount: formatMoney(row.spent_cents - budget, currency),
+                        })}
                       </span>
                     )}
                   </div>
@@ -365,7 +378,7 @@ export default function ExpensesPage() {
 
           <div className="card">
             <div className="card-title">
-              <h2>By category</h2>
+              <h2>{t('expenses.byCategory')}</h2>
             </div>
             {summary && summary.total_cents > 0 ? (
               <div className="stack" style={{ gap: '0.6rem' }}>
@@ -396,19 +409,19 @@ export default function ExpensesPage() {
                   ))}
                 {summary.uncategorised_cents > 0 && (
                   <div className="budget-head">
-                    <span className="muted">Uncategorised</span>
+                    <span className="muted">{t('common.uncategorised')}</span>
                     <span className="muted">{formatMoney(summary.uncategorised_cents, currency)}</span>
                   </div>
                 )}
               </div>
             ) : (
-              <p className="empty small">No spending to break down yet.</p>
+              <p className="empty small">{t('expenses.noBreakdown')}</p>
             )}
           </div>
 
           <div className="card">
             <div className="card-title">
-              <h2>Who paid</h2>
+              <h2>{t('expenses.whoPaid')}</h2>
             </div>
             {summary && summary.by_member.some((row) => row.spent_cents > 0) ? (
               summary.by_member.map((row) => (
@@ -418,13 +431,13 @@ export default function ExpensesPage() {
                 </div>
               ))
             ) : (
-              <p className="empty small">Nothing recorded yet.</p>
+              <p className="empty small">{t('expenses.nothingRecorded')}</p>
             )}
           </div>
 
           <div className="card">
             <div className="card-title">
-              <h2>Last 6 months</h2>
+              <h2>{t('expenses.lastSixMonths')}</h2>
             </div>
             {summary && summary.trend.length > 0 ? (
               <div className="trend">
@@ -440,7 +453,7 @@ export default function ExpensesPage() {
                 ))}
               </div>
             ) : (
-              <p className="empty small">Not enough history yet.</p>
+              <p className="empty small">{t('expenses.notEnoughHistory')}</p>
             )}
           </div>
         </div>

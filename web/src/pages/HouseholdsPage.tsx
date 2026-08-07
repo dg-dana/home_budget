@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, type Household, type Invitation, type Notice } from '../api';
+import { useI18n } from '../i18n';
 import { useSession } from '../session';
 import AuthPage from '../components/AuthPage';
 import NoticeCard from '../components/NoticeCard';
@@ -16,6 +17,7 @@ const CURRENCIES = ['USD', 'EUR', 'GBP', 'ILS', 'CAD', 'AUD', 'CHF', 'SEK', 'PLN
  */
 export default function HouseholdsPage() {
   const { user, households, switchHousehold, refresh, signOut } = useSession();
+  const { t, tx, plural } = useI18n();
   const navigate = useNavigate();
 
   const [form, setForm] = useState({ name: '', currency: 'USD', displayName: '' });
@@ -53,7 +55,7 @@ export default function HouseholdsPage() {
       await refresh();
       navigate('/', { replace: true });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not join the household');
+      setError(err instanceof Error ? err.message : t('join.failed'));
       await loadInvitations().catch(() => {});
     } finally {
       setBusy(false);
@@ -66,7 +68,7 @@ export default function HouseholdsPage() {
       await switchHousehold(id);
       navigate('/', { replace: true });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not open that household');
+      setError(err instanceof Error ? err.message : t('households.openFailed'));
     }
   };
 
@@ -81,7 +83,7 @@ export default function HouseholdsPage() {
       setForm({ name: '', currency: 'USD', displayName: '' });
       setCreating(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not create the household');
+      setError(err instanceof Error ? err.message : t('households.createFailed'));
     } finally {
       setBusy(false);
     }
@@ -96,10 +98,11 @@ export default function HouseholdsPage() {
   const handleDeleteAccount = async (event: React.FormEvent) => {
     event.preventDefault();
     setError('');
-    const warning =
+    const warning = t(
       households.length === 0
-        ? 'Delete your account? This cannot be undone.'
-        : 'Delete your account? You lose your place in every household listed here, and any household where you are the only person goes with you. What you spent stays in each history, listed without a payer. This cannot be undone.';
+        ? 'households.confirmDeleteNone'
+        : 'households.confirmDeleteSome',
+    );
     if (!window.confirm(warning)) return;
 
     setBusy(true);
@@ -110,7 +113,7 @@ export default function HouseholdsPage() {
     } catch (err) {
       // The server refuses while you are the only owner of a household with
       // other people in it, and names which — that message is the useful one.
-      setError(err instanceof Error ? err.message : 'Could not delete your account');
+      setError(err instanceof Error ? err.message : t('households.deleteFailed'));
     } finally {
       setBusy(false);
     }
@@ -131,11 +134,9 @@ export default function HouseholdsPage() {
     <AuthPage>
       <div className="card auth-card stack">
         <div>
-          <h1>Your households</h1>
+          <h1>{t('households.title')}</h1>
           <p className="muted">
-            {households.length === 0
-              ? 'You are not in a household yet.'
-              : 'Pick the one to open, or add another.'}
+            {t(households.length === 0 ? 'households.none' : 'households.pick')}
           </p>
         </div>
 
@@ -144,7 +145,7 @@ export default function HouseholdsPage() {
         {!verified && (
           <div className="stack" style={{ gap: '0.6rem' }}>
             <div className="alert info">
-              Confirm <strong>{user?.email}</strong> before creating or joining a household.
+              {tx('households.confirmFirst', { email: <strong>{user?.email}</strong> })}
             </div>
             {resent ? (
               <NoticeCard notice={resent} onResend={handleResend} />
@@ -154,11 +155,11 @@ export default function HouseholdsPage() {
                 className="button secondary"
                 onClick={() => {
                   handleResend().catch((err: unknown) =>
-                    setError(err instanceof Error ? err.message : 'Could not send a new link'),
+                    setError(err instanceof Error ? err.message : t('households.sendLinkFailed')),
                   );
                 }}
               >
-                Send a new confirmation link
+                {t('households.sendNewLink')}
               </button>
             )}
           </div>
@@ -169,7 +170,7 @@ export default function HouseholdsPage() {
         {invitations.length > 0 && (
           <div className="stack" style={{ gap: '0.5rem' }}>
             <h2 className="small muted" style={{ margin: 0 }}>
-              {invitations.length === 1 ? 'You have an invitation' : 'You have invitations'}
+              {plural(invitations.length, 'households.invitations')}
             </h2>
             <ul className="item-list">
               {invitations.map((invitation) => (
@@ -177,8 +178,8 @@ export default function HouseholdsPage() {
                   <div className="item-main">
                     <div className="item-name">{invitation.householdName}</div>
                     <div className="item-meta">
-                      <span>invited as</span>
-                      <span className="tag">{invitation.role}</span>
+                      <span>{t('households.invitedAs')}</span>
+                      <span className="tag">{t(`common.role.${invitation.role}`)}</span>
                     </div>
                   </div>
                   <button
@@ -187,7 +188,7 @@ export default function HouseholdsPage() {
                     disabled={!verified || joining?.token === invitation.token}
                     onClick={() => setJoining({ token: invitation.token, displayName: '' })}
                   >
-                    Join
+                    {t('households.join')}
                   </button>
                 </li>
               ))}
@@ -196,12 +197,12 @@ export default function HouseholdsPage() {
             {joining && (
               <form className="stack" style={{ gap: '0.5rem' }} onSubmit={handleJoin}>
                 <div>
-                  <label htmlFor="joinDisplayName">Your name in that household</label>
+                  <label htmlFor="joinDisplayName">{t('households.joinNameLabel')}</label>
                   <input
                     id="joinDisplayName"
                     required
                     autoFocus
-                    placeholder="Dana"
+                    placeholder={t('common.examplePerson')}
                     value={joining.displayName}
                     onChange={(event) =>
                       setJoining({ ...joining, displayName: event.target.value })
@@ -210,14 +211,14 @@ export default function HouseholdsPage() {
                 </div>
                 <div className="row">
                   <button type="submit" className="button" disabled={busy}>
-                    {busy ? 'Joining…' : 'Join household'}
+                    {t(busy ? 'join.submitting' : 'join.submit')}
                   </button>
                   <button
                     type="button"
                     className="button secondary"
                     onClick={() => setJoining(null)}
                   >
-                    Cancel
+                    {t('common.cancel')}
                   </button>
                 </div>
               </form>
@@ -232,12 +233,12 @@ export default function HouseholdsPage() {
                 <div className="item-main">
                   <div className="item-name">{household.name}</div>
                   <div className="item-meta">
-                    <span>as {household.displayName}</span>
-                    <span className="tag">{household.role}</span>
+                    <span>{t('households.as', { name: household.displayName })}</span>
+                    <span className="tag">{t(`common.role.${household.role}`)}</span>
                   </div>
                 </div>
                 <button type="button" className="button small" onClick={() => open(household.id)}>
-                  Open
+                  {t('households.open')}
                 </button>
               </li>
             ))}
@@ -247,28 +248,28 @@ export default function HouseholdsPage() {
         {creating ? (
           <form className="stack" onSubmit={handleCreate}>
             <div>
-              <label htmlFor="householdName">Household name</label>
+              <label htmlFor="householdName">{t('households.nameLabel')}</label>
               <input
                 id="householdName"
                 required
-                placeholder="The Levy family"
+                placeholder={t('households.namePlaceholder')}
                 value={form.name}
                 onChange={(event) => setForm({ ...form, name: event.target.value })}
               />
             </div>
             <div className="field-row">
               <div>
-                <label htmlFor="displayName">Your name in it</label>
+                <label htmlFor="displayName">{t('households.yourNameLabel')}</label>
                 <input
                   id="displayName"
                   required
-                  placeholder="Dana"
+                  placeholder={t('common.examplePerson')}
                   value={form.displayName}
                   onChange={(event) => setForm({ ...form, displayName: event.target.value })}
                 />
               </div>
               <div>
-                <label htmlFor="currency">Currency</label>
+                <label htmlFor="currency">{t('common.currency')}</label>
                 <select
                   id="currency"
                   value={form.currency}
@@ -283,15 +284,14 @@ export default function HouseholdsPage() {
               </div>
             </div>
             <p className="small muted" style={{ margin: 0 }}>
-              This is the name the rest of the household sees on expenses and shopping lists. You can
-              go by something different in each one.
+              {t('households.displayNameHelp')}
             </p>
             <div className="row">
               <button type="submit" className="button" disabled={busy}>
-                {busy ? 'Creating…' : 'Create household'}
+                {t(busy ? 'households.creating' : 'households.create')}
               </button>
               <button type="button" className="button secondary" onClick={() => setCreating(false)}>
-                Cancel
+                {t('common.cancel')}
               </button>
             </div>
           </form>
@@ -302,31 +302,35 @@ export default function HouseholdsPage() {
             disabled={!verified}
             onClick={() => setCreating(true)}
           >
-            Create a household
+            {t('households.createCta')}
           </button>
         )}
 
         <p className="small muted" style={{ margin: 0 }}>
-          Joining someone else's? Open the invite link they sent you.
+          {t('households.someoneElse')}
         </p>
 
         <p className="small muted" style={{ margin: 0 }}>
-          Signed in as {user?.email}.{' '}
-          <button
-            type="button"
-            className="link-button"
-            onClick={async () => {
-              await signOut();
-              navigate('/login', { replace: true });
-            }}
-          >
-            Sign out
-          </button>
+          {tx('households.signedInAs', {
+            email: user?.email ?? '',
+            signOut: (
+              <button
+                type="button"
+                className="link-button"
+                onClick={async () => {
+                  await signOut();
+                  navigate('/login', { replace: true });
+                }}
+              >
+                {t('nav.signOut')}
+              </button>
+            ),
+          })}
           {!closing && (
             <>
               {' · '}
               <button type="button" className="link-button" onClick={() => setClosing(true)}>
-                Delete account
+                {t('households.deleteAccount')}
               </button>
             </>
           )}
@@ -335,15 +339,17 @@ export default function HouseholdsPage() {
         {closing && (
           <form className="card danger-zone stack" style={{ gap: '0.6rem' }} onSubmit={handleDeleteAccount}>
             <div>
-              <h3 style={{ margin: 0 }}>Delete your account</h3>
+              <h3 style={{ margin: 0 }}>{t('households.deleteTitle')}</h3>
               <p className="small muted" style={{ margin: '0.25rem 0 0' }}>
-                {households.length === 0
-                  ? 'You are not in any household, so this removes the account and nothing else.'
-                  : 'You lose your place in every household above, and any where you are the only person goes with you. What you spent stays in each history, listed without a payer.'}
+                {t(
+                  households.length === 0
+                    ? 'households.deleteBodyNone'
+                    : 'households.deleteBodySome',
+                )}
               </p>
             </div>
             <div>
-              <label htmlFor="closeAccountPassword">Confirm with your password</label>
+              <label htmlFor="closeAccountPassword">{t('common.confirmPassword')}</label>
               <input
                 id="closeAccountPassword"
                 type="password"
@@ -355,7 +361,7 @@ export default function HouseholdsPage() {
             </div>
             <div className="row">
               <button type="submit" className="button danger-solid" disabled={busy}>
-                {busy ? 'Deleting…' : 'Delete my account'}
+                {t(busy ? 'households.deleting' : 'households.deleteSubmit')}
               </button>
               <button
                 type="button"
@@ -365,7 +371,7 @@ export default function HouseholdsPage() {
                   setPassword('');
                 }}
               >
-                Cancel
+                {t('common.cancel')}
               </button>
             </div>
           </form>

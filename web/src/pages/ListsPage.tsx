@@ -2,9 +2,11 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, type ShoppingList, type ShoppingListDetail } from '../api';
 import CopyListButton from '../components/CopyListButton';
+import { useI18n } from '../i18n';
 import { usePoll } from '../usePoll';
 
 export default function ListsPage() {
+  const { t } = useI18n();
   const [lists, setLists] = useState<ShoppingList[]>([]);
   const [name, setName] = useState('');
   const [error, setError] = useState('');
@@ -38,7 +40,7 @@ export default function ListsPage() {
       setName('');
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not create the list');
+      setError(err instanceof Error ? err.message : t('lists.createFailed'));
     } finally {
       setBusy(false);
     }
@@ -48,8 +50,8 @@ export default function ListsPage() {
     <div className="stack">
       <div className="page-header">
         <div>
-          <h1>Shopping lists</h1>
-          <p>Share a list by link so anyone can pick things up — no account needed.</p>
+          <h1>{t('lists.title')}</h1>
+          <p>{t('lists.subtitle')}</p>
         </div>
       </div>
 
@@ -57,19 +59,19 @@ export default function ListsPage() {
 
       <form className="card row" onSubmit={handleCreate}>
         <input
-          aria-label="New list name"
-          placeholder="Supermarket, hardware store…"
+          aria-label={t('lists.newListName')}
+          placeholder={t('lists.newListPlaceholder')}
           value={name}
           onChange={(event) => setName(event.target.value)}
           style={{ flex: 1, minWidth: '200px' }}
         />
         <button type="submit" className="button" disabled={busy || !name.trim()}>
-          New list
+          {t('lists.newList')}
         </button>
       </form>
 
       {lists.length === 0 ? (
-        <p className="empty">No lists yet. Create your first one above.</p>
+        <p className="empty">{t('lists.empty')}</p>
       ) : (
         <div className="stack" style={{ gap: '0.6rem' }}>
           {lists.map((list) => (
@@ -82,12 +84,14 @@ export default function ListsPage() {
                   <div className="item-name">{list.name}</div>
                   <div className="item-meta">
                     <span>
-                      {list.openCount} of {list.itemCount} still to buy
+                      {t('lists.stillToBuy', { open: list.openCount, total: list.itemCount })}
                     </span>
                     {list.shareToken && (
                       <>
                         <span>·</span>
-                        <span className="tag">🔗 Shared{list.shareCanEdit ? '' : ' (view only)'}</span>
+                        <span className="tag">
+                          {t(list.shareCanEdit ? 'lists.shared' : 'lists.sharedViewOnly')}
+                        </span>
                       </>
                     )}
                   </div>
@@ -99,7 +103,7 @@ export default function ListsPage() {
               <CopyListButton
                 load={() => api.get<ShoppingListDetail>(`/lists/${list.id}`)}
                 onError={setError}
-                label="Copy"
+                label="copy.short"
               />
             </div>
           ))}

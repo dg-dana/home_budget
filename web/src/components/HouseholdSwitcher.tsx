@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom';
+import { useI18n } from '../i18n';
 import { useSession } from '../session';
 
 /**
@@ -16,6 +17,7 @@ import { useSession } from '../session';
  */
 export default function HouseholdSwitcher() {
   const { household, households, switchHousehold } = useSession();
+  const { t } = useI18n();
   const navigate = useNavigate();
 
   if (!household) return null;
@@ -23,7 +25,7 @@ export default function HouseholdSwitcher() {
   return (
     <select
       className="household-switcher"
-      aria-label="Household"
+      aria-label={t('switcher.label')}
       value={household.id}
       onChange={async (event) => {
         const id = event.target.value;
@@ -43,7 +45,7 @@ export default function HouseholdSwitcher() {
         </option>
       ))}
       <option value={MANAGE}>
-        {households.length > 1 ? 'All households…' : 'Households…'}
+        {t(households.length > 1 ? 'switcher.manageMany' : 'switcher.manageOne')}
       </option>
     </select>
   );

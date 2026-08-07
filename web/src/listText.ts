@@ -1,4 +1,5 @@
 import type { ShoppingItem } from './api';
+import type { I18n } from './i18n';
 
 /**
  * Turns a shopping list into plain text for pasting into a chat.
@@ -19,8 +20,13 @@ import type { ShoppingItem } from './api';
  *
  * Who added an item and who picked it up are left out too: useful on screen,
  * noise in a message someone is reading in a shop.
+ *
+ * The three lines of scaffolding come in through `t` so the text goes out in
+ * whatever language the sender is reading (`strings.ts`, `copy.*`). The German
+ * ones stay inside the GSM 7-bit alphabet for the same reason the English ones
+ * do — umlauts are in it, typographic quotes are not.
  */
-export function listAsText(name: string, items: ShoppingItem[]): string {
+export function listAsText(name: string, items: ShoppingItem[], t: I18n['t']): string {
   const lines = [name];
 
   const open = items.filter((item) => item.is_checked === 0);
@@ -28,7 +34,7 @@ export function listAsText(name: string, items: ShoppingItem[]): string {
   if (open.length === 0) {
     // Two different pieces of news, and a shopper needs to be able to tell them
     // apart: nobody has written anything down, versus it is all bought.
-    lines.push(items.length === 0 ? 'Nothing on the list yet.' : 'Nothing left to buy.');
+    lines.push(t(items.length === 0 ? 'copy.nothingYet' : 'copy.nothingLeft'));
     return lines.join('\n');
   }
 
@@ -36,7 +42,7 @@ export function listAsText(name: string, items: ShoppingItem[]): string {
    * The name runs straight into the heading — a blank line there just pushes
    * the shopping further down a phone screen.
    */
-  lines.push('To buy:', ...open.flatMap(itemLines));
+  lines.push(t('copy.toBuy'), ...open.flatMap(itemLines));
 
   return lines.join('\n');
 }

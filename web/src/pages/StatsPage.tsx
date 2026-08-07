@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api, type Stats } from '../api';
 import { currentMonth, formatMoney, monthLabel, shiftMonth, shortMonthLabel } from '../format';
+import { useI18n, type I18n } from '../i18n';
 import { useSession } from '../session';
+import type { StringKey } from '../strings';
 
 /**
  * The categorical slots from styles.css, in the order the API returns members
@@ -19,16 +21,20 @@ const SERIES = [
 ];
 const FOLDED = 'var(--muted)';
 
-const PRESETS: Array<{ label: string; months: number }> = [
-  { label: 'This month', months: 1 },
-  { label: '3 months', months: 3 },
-  { label: '6 months', months: 6 },
-  { label: '12 months', months: 12 },
+const PRESETS: Array<{ label: StringKey; months: number }> = [
+  { label: 'stats.presetThisMonth', months: 1 },
+  { label: 'stats.preset3', months: 3 },
+  { label: 'stats.preset6', months: 6 },
+  { label: 'stats.preset12', months: 12 },
 ];
 
-/** What a row with a null id is called. The API leaves naming to the UI. */
-const memberName = (name: string | null) => name ?? 'Unassigned';
-const categoryName = (name: string | null) => name ?? 'Uncategorised';
+/**
+ * What a row with a null id is called. The API leaves the naming to the UI —
+ * which is now also where the translation of it lives, so `t` comes in rather
+ * than the strings being baked in here.
+ */
+const memberName = (name: string | null, t: I18n['t']) => name ?? t('stats.unassigned');
+const categoryName = (name: string | null, t: I18n['t']) => name ?? t('common.uncategorised');
 
 /**
  * How many categories get a slice of their own before the tail is folded into
@@ -70,6 +76,7 @@ function CategoryTrend({
   currency: string;
   points: Array<{ month: string; cents: number }>;
 }) {
+  const { t } = useI18n();
   const top = 8;
   const bottom = 74;
   const left = 6;
@@ -87,8 +94,10 @@ function CategoryTrend({
     return (
       <div className="trend-panel">
         <p className="muted small" style={{ margin: 0 }}>
-          {formatMoney(points[0].cents, currency)} in {monthLabel(points[0].month)}. Widen the range
-          to see how it moves.
+          {t('stats.oneMonth', {
+            amount: formatMoney(points[0].cents, currency),
+            month: monthLabel(points[0].month),
+          })}
         </p>
       </div>
     );
@@ -106,9 +115,14 @@ function CategoryTrend({
         viewBox="0 0 300 90"
         className="trend-chart"
         role="img"
-        aria-label={`${label} by month: ${points
-          .map((point) => `${shortMonthLabel(point.month)} ${formatMoney(point.cents, currency)}`)
-          .join(', ')}`}
+        aria-label={t('stats.trendAria', {
+          label,
+          series: points
+            .map(
+              (point) => `${shortMonthLabel(point.month)} ${formatMoney(point.cents, currency)}`,
+            )
+            .join(', '),
+        })}
       >
         <line x1={left} y1={bottom} x2={right} y2={bottom} stroke="var(--border)" strokeWidth="1" />
         <path d={area} fill={color} opacity="0.16" />
@@ -125,7 +139,12 @@ function CategoryTrend({
             <circle cx={x(index)} cy={y(point.cents)} r="3" fill={color} />
             {/* A bigger, invisible target: 3px of circle is not a hit area. */}
             <circle cx={x(index)} cy={y(point.cents)} r="9" fill="transparent">
-              <title>{`${monthLabel(point.month)}: ${formatMoney(point.cents, currency)}`}</title>
+              <title>
+                {t('stats.monthTitle', {
+                  month: monthLabel(point.month),
+                  amount: formatMoney(point.cents, currency),
+                })}
+              </title>
             </circle>
           </g>
         ))}
@@ -139,8 +158,11 @@ function CategoryTrend({
         </text>
       </svg>
       <p className="muted small" style={{ margin: 0 }}>
-        {formatMoney(Math.round(spent / points.length), currency)} a month on average · highest{' '}
-        {formatMoney(busiest.cents, currency)} in {monthLabel(busiest.month)}
+        {t('stats.trendSummary', {
+          average: formatMoney(Math.round(spent / points.length), currency),
+          peak: formatMoney(busiest.cents, currency),
+          month: monthLabel(busiest.month),
+        })}
       </p>
     </div>
   );
@@ -148,6 +170,7 @@ function CategoryTrend({
 
 export default function StatsPage() {
   const { household } = useSession();
+  const { t, plural } = useI18n();
   const currency = household?.currency ?? 'USD';
 
   const [to, setTo] = useState(currentMonth());
@@ -228,7 +251,7 @@ export default function StatsPage() {
     const folded = (stats?.members ?? []).filter((row) => colorOf.get(row.user_id) === FOLDED);
     const rows = own.map((row) => ({
       key: row.user_id ?? 'folded',
-      label: memberName(row.name),
+      label: memberName(row.name, t),
       color: colorOf.get(row.user_id) ?? FOLDED,
       ids: [row.user_id],
     }));
@@ -237,13 +260,13 @@ export default function StatsPage() {
         key: 'folded',
         // Not "Other": a household is seeded with a category of that name, and
         // three different meanings of the word on one page is two too many.
-        label: folded.length === 1 ? memberName(folded[0].name) : 'Other people',
+        label: folded.length === 1 ? memberName(folded[0].name, t) : t('stats.otherPeople'),
         color: FOLDED,
         ids: folded.map((row) => row.user_id),
       });
     }
     return rows;
-  }, [stats, colorOf]);
+  }, [stats, colorOf, t]);
 
   const total = stats?.total_cents ?? 0;
   const memberMax = Math.max(1, ...membersBySpend.map((row) => row.spent_cents));
@@ -266,7 +289,7 @@ export default function StatsPage() {
   const slices = useMemo(() => {
     const named = spentCategories.slice(0, PIE_SLICES).map((row) => ({
       key: row.category_id ?? 'uncategorised',
-      label: categoryName(row.name),
+      label: categoryName(row.name, t),
       color: row.color ?? 'var(--muted)',
       ids: [row.category_id],
     }));
@@ -275,13 +298,13 @@ export default function StatsPage() {
       named.push({
         key: 'other',
         // "Other" is a real seeded category name, so the fold cannot borrow it.
-        label: `Everything else (${folded.length})`,
+        label: t('stats.everythingElse', { count: folded.length }),
         color: 'var(--muted)',
         ids: folded.map((row) => row.category_id),
       });
     }
     return named;
-  }, [spentCategories]);
+  }, [spentCategories, t]);
 
   /** One pie per person: their spending split across those slices. */
   const pies = spenders.map((member) => {
@@ -306,11 +329,11 @@ export default function StatsPage() {
     <div className="stack">
       <div className="page-header">
         <div>
-          <h1>Statistics</h1>
+          <h1>{t('stats.title')}</h1>
           <p>
             {stats
-              ? `${stats.count} expense${stats.count === 1 ? '' : 's'} · ${rangeLabel}`
-              : 'Loading…'}
+              ? plural(stats.count, 'stats.count', { range: rangeLabel })
+              : t('common.loading')}
           </p>
         </div>
         <div className="row">
@@ -324,7 +347,7 @@ export default function StatsPage() {
                 aria-pressed={active}
                 onClick={() => applyPreset(preset.months)}
               >
-                {preset.label}
+                {t(preset.label)}
               </button>
             );
           })}
@@ -335,7 +358,7 @@ export default function StatsPage() {
 
       <div className="card range-picker">
         <div>
-          <label htmlFor="statsFrom">From</label>
+          <label htmlFor="statsFrom">{t('stats.from')}</label>
           <input
             id="statsFrom"
             type="month"
@@ -344,7 +367,7 @@ export default function StatsPage() {
           />
         </div>
         <div>
-          <label htmlFor="statsTo">To</label>
+          <label htmlFor="statsTo">{t('stats.to')}</label>
           <input
             id="statsTo"
             type="month"
@@ -356,23 +379,23 @@ export default function StatsPage() {
 
       <div className="stat-grid">
         <div className="stat">
-          <div className="stat-label">Total spent</div>
+          <div className="stat-label">{t('stats.totalSpent')}</div>
           <div className="stat-value">{formatMoney(total, currency)}</div>
         </div>
         <div className="stat">
-          <div className="stat-label">Monthly average</div>
+          <div className="stat-label">{t('stats.monthlyAverage')}</div>
           <div className="stat-value">
             {formatMoney(Math.round(total / Math.max(1, stats?.months ?? 1)), currency)}
           </div>
         </div>
         <div className="stat">
-          <div className="stat-label">Spent most</div>
-          <div className="stat-value">{spenders[0] ? memberName(spenders[0].name) : '—'}</div>
+          <div className="stat-label">{t('stats.spentMost')}</div>
+          <div className="stat-value">{spenders[0] ? memberName(spenders[0].name, t) : '—'}</div>
         </div>
         <div className="stat">
-          <div className="stat-label">Biggest category</div>
+          <div className="stat-label">{t('stats.biggestCategory')}</div>
           <div className="stat-value">
-            {spentCategories[0] ? categoryName(spentCategories[0].name) : '—'}
+            {spentCategories[0] ? categoryName(spentCategories[0].name, t) : '—'}
           </div>
         </div>
       </div>
@@ -380,11 +403,11 @@ export default function StatsPage() {
       <div className="grid-2">
         <div className="card">
           <div className="card-title">
-            <h2>Who spent what</h2>
+            <h2>{t('stats.whoSpentWhat')}</h2>
             <span className="muted small">{rangeLabel}</span>
           </div>
           {spenders.length === 0 ? (
-            <p className="empty small">Nothing recorded in this range yet.</p>
+            <p className="empty small">{t('stats.nothingInRange')}</p>
           ) : (
             membersBySpend.map((row) => (
               <div className="budget-row" key={row.user_id ?? 'unassigned'}>
@@ -396,7 +419,7 @@ export default function StatsPage() {
                       aria-hidden="true"
                     />
                     <span className={row.name === null ? 'muted' : undefined}>
-                      {memberName(row.name)}
+                      {memberName(row.name, t)}
                     </span>
                   </span>
                   <span className="num">
@@ -414,9 +437,11 @@ export default function StatsPage() {
                   />
                 </div>
                 <span className="muted small">
-                  {row.count} expense{row.count === 1 ? '' : 's'}
+                  {plural(row.count, 'stats.expenses')}
                   {row.count > 0 &&
-                    ` · ${formatMoney(Math.round(row.spent_cents / row.count), currency)} average`}
+                    t('stats.average', {
+                      amount: formatMoney(Math.round(row.spent_cents / row.count), currency),
+                    })}
                 </span>
               </div>
             ))
@@ -425,15 +450,15 @@ export default function StatsPage() {
 
         <div className="card">
           <div className="card-title">
-            <h2>Where it went</h2>
+            <h2>{t('stats.whereItWent')}</h2>
             <span className="muted small">{rangeLabel}</span>
           </div>
           {spentCategories.length === 0 ? (
-            <p className="empty small">No spending to break down yet.</p>
+            <p className="empty small">{t('stats.noBreakdown')}</p>
           ) : (
             <>
               <p className="muted small" style={{ margin: '-0.4rem 0 0.7rem' }}>
-                Pick a category to see how it moved over the range.
+                {t('stats.pickCategory')}
               </p>
               {spentCategories.map((row) => {
                 const key = row.category_id ?? 'uncategorised';
@@ -457,7 +482,7 @@ export default function StatsPage() {
                             aria-hidden="true"
                           />
                           <span className={row.name === null ? 'muted' : undefined}>
-                            {categoryName(row.name)}
+                            {categoryName(row.name, t)}
                           </span>
                           <span className="chevron" aria-hidden="true">
                             {open ? '▾' : '▸'}
@@ -480,7 +505,7 @@ export default function StatsPage() {
                     </button>
                     {open && (
                       <CategoryTrend
-                        label={categoryName(row.name)}
+                        label={categoryName(row.name, t)}
                         color={row.color ?? 'var(--muted)'}
                         currency={currency}
                         points={(stats?.monthly ?? []).map((point) => ({
@@ -501,11 +526,11 @@ export default function StatsPage() {
 
       <div className="card">
         <div className="card-title">
-          <h2>Month by month</h2>
-          <span className="muted small">Stacked by who paid</span>
+          <h2>{t('stats.monthByMonth')}</h2>
+          <span className="muted small">{t('stats.stackedByPayer')}</span>
         </div>
         {total === 0 ? (
-          <p className="empty small">Nothing recorded in this range yet.</p>
+          <p className="empty small">{t('stats.nothingInRange')}</p>
         ) : (
           <>
             <div className="stacked-chart">
@@ -519,7 +544,10 @@ export default function StatsPage() {
                     style={{
                       height: `${(point.total_cents / monthMax) * 100}%`,
                     }}
-                    title={`${monthLabel(point.month)}: ${formatMoney(point.total_cents, currency)}`}
+                    title={t('stats.monthTitle', {
+                      month: monthLabel(point.month),
+                      amount: formatMoney(point.total_cents, currency),
+                    })}
                   >
                     {series.map((row) => {
                       const cents = point.by_member
@@ -531,7 +559,11 @@ export default function StatsPage() {
                           key={row.key}
                           className="stacked-seg"
                           style={{ flexGrow: cents, background: row.color }}
-                          title={`${row.label}, ${monthLabel(point.month)}: ${formatMoney(cents, currency)}`}
+                          title={t('stats.segmentTitle', {
+                            label: row.label,
+                            month: monthLabel(point.month),
+                            amount: formatMoney(cents, currency),
+                          })}
                         />
                       );
                     })}
@@ -554,11 +586,11 @@ export default function StatsPage() {
 
       <div className="card">
         <div className="card-title">
-          <h2>How much each spent, per category</h2>
+          <h2>{t('stats.crossTab')}</h2>
           <span className="muted small">{rangeLabel}</span>
         </div>
         {spenders.length === 0 || spentCategories.length === 0 ? (
-          <p className="empty small">Nothing to cross-reference yet.</p>
+          <p className="empty small">{t('stats.nothingToCross')}</p>
         ) : (
           <>
             <div className="legend" style={{ marginTop: 0, marginBottom: '1rem' }}>
@@ -577,15 +609,16 @@ export default function StatsPage() {
                     className="pie"
                     viewBox="0 0 100 100"
                     role="img"
-                    aria-label={`${memberName(member.name)} spent ${formatMoney(
-                      member.spent_cents,
-                      currency,
-                    )}: ${wedges
-                      .map(
-                        (part) =>
-                          `${part.label} ${Math.round((part.cents / member.spent_cents) * 100)}%`,
-                      )
-                      .join(', ')}`}
+                    aria-label={t('stats.pieAria', {
+                      name: memberName(member.name, t),
+                      amount: formatMoney(member.spent_cents, currency),
+                      slices: wedges
+                        .map(
+                          (part) =>
+                            `${part.label} ${Math.round((part.cents / member.spent_cents) * 100)}%`,
+                        )
+                        .join(', '),
+                    })}
                   >
                     {/* A lone slice is a whole circle; an arc from 0° to 360°
                         would collapse to nothing. */}
@@ -603,16 +636,18 @@ export default function StatsPage() {
                           strokeWidth="2"
                         >
                           <title>
-                            {`${memberName(member.name)} · ${part.label}: ${formatMoney(
-                              part.cents,
-                              currency,
-                            )} (${Math.round((part.cents / member.spent_cents) * 100)}%)`}
+                            {t('stats.sliceTitle', {
+                              name: memberName(member.name, t),
+                              label: part.label,
+                              amount: formatMoney(part.cents, currency),
+                              percent: Math.round((part.cents / member.spent_cents) * 100),
+                            })}
                           </title>
                         </path>
                       ))
                     )}
                   </svg>
-                  <div className="pie-name">{memberName(member.name)}</div>
+                  <div className="pie-name">{memberName(member.name, t)}</div>
                   <div className="muted small">{formatMoney(member.spent_cents, currency)}</div>
                 </div>
               ))}
@@ -621,18 +656,18 @@ export default function StatsPage() {
             {/* Angles are for the glance; the numbers are for the argument
                 about who owes what. Both, rather than one or the other. */}
             <details className="table-details">
-              <summary>Show the numbers</summary>
+              <summary>{t('stats.showNumbers')}</summary>
               <div className="table-wrap">
                 <table>
                   <thead>
                     <tr>
-                      <th>Category</th>
+                      <th>{t('common.category')}</th>
                       {spenders.map((member) => (
                         <th key={member.user_id ?? 'unassigned'} className="num">
-                          {memberName(member.name)}
+                          {memberName(member.name, t)}
                         </th>
                       ))}
-                      <th className="num">Total</th>
+                      <th className="num">{t('common.total')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -649,7 +684,7 @@ export default function StatsPage() {
                               }}
                               aria-hidden="true"
                             />
-                            {categoryName(row.name)}
+                            {categoryName(row.name, t)}
                           </span>
                         </td>
                         {spenders.map((member) => {
@@ -668,7 +703,7 @@ export default function StatsPage() {
                       </tr>
                     ))}
                     <tr>
-                      <td className="strong">Total</td>
+                      <td className="strong">{t('common.total')}</td>
                       {spenders.map((member) => (
                         <td key={member.user_id ?? 'unassigned'} className="num strong">
                           {formatMoney(member.spent_cents, currency)}

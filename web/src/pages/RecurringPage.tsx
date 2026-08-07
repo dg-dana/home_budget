@@ -7,7 +7,9 @@ import {
   type RecurringExpense,
 } from '../api';
 import { centsToAmount, dayLabel, formatMoney, today } from '../format';
+import { useI18n } from '../i18n';
 import { useSession } from '../session';
+import type { StringKey } from '../strings';
 
 interface RuleForm {
   amount: string;
@@ -29,10 +31,10 @@ const emptyForm = (userId: string): RuleForm => ({
   endsOn: '',
 });
 
-const FREQUENCY_LABELS: Record<Frequency, string> = {
-  weekly: 'Every week',
-  monthly: 'Every month',
-  yearly: 'Every year',
+const FREQUENCY_LABELS: Record<Frequency, StringKey> = {
+  weekly: 'recurring.weekly',
+  monthly: 'recurring.monthly',
+  yearly: 'recurring.yearly',
 };
 
 /** Roughly what a rule costs per month, so mixed frequencies can be compared. */
@@ -44,6 +46,7 @@ function monthlyEquivalent(rule: RecurringExpense): number {
 
 export default function RecurringPage() {
   const { user, household } = useSession();
+  const { t } = useI18n();
   const currency = household?.currency ?? 'USD';
 
   const [rules, setRules] = useState<RecurringExpense[]>([]);
@@ -75,7 +78,7 @@ export default function RecurringPage() {
       await action();
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong');
+      setError(err instanceof Error ? err.message : t('common.somethingWrong'));
     }
   };
 
@@ -93,7 +96,7 @@ export default function RecurringPage() {
     event.preventDefault();
     const amount = Number(form.amount);
     if (!Number.isFinite(amount) || amount <= 0) {
-      setError('Enter an amount greater than zero');
+      setError(t('expenses.amountPositive'));
       return;
     }
 
@@ -131,13 +134,8 @@ export default function RecurringPage() {
   };
 
   const handleDelete = (rule: RecurringExpense) => {
-    if (
-      !window.confirm(
-        `Stop "${rule.description || 'this recurring expense'}"? Expenses it already created are kept.`,
-      )
-    ) {
-      return;
-    }
+    const what = rule.description || t('recurring.thisRule');
+    if (!window.confirm(t('recurring.confirmDelete', { what }))) return;
     void run(() => api.delete(`/recurring/${rule.id}`));
   };
 
@@ -149,11 +147,8 @@ export default function RecurringPage() {
     <div className="stack">
       <div className="page-header">
         <div>
-          <h1>Recurring expenses</h1>
-          <p>
-            Rent, bills and subscriptions. Each one is added to your expenses automatically when it
-            falls due — including anything missed while you were away.
-          </p>
+          <h1>{t('recurring.title')}</h1>
+          <p>{t('recurring.subtitle')}</p>
         </div>
       </div>
 
@@ -161,28 +156,28 @@ export default function RecurringPage() {
 
       <div className="stat-grid">
         <div className="stat">
-          <div className="stat-label">Committed per month</div>
+          <div className="stat-label">{t('recurring.committed')}</div>
           <div className="stat-value">{formatMoney(activeTotal, currency)}</div>
         </div>
         <div className="stat">
-          <div className="stat-label">Active rules</div>
+          <div className="stat-label">{t('recurring.activeRules')}</div>
           <div className="stat-value">{rules.filter((rule) => rule.is_active === 1).length}</div>
         </div>
       </div>
 
       <form className="card stack" onSubmit={handleSubmit}>
         <div className="card-title">
-          <h2>{editingId ? 'Edit recurring expense' : 'Add a recurring expense'}</h2>
+          <h2>{t(editingId ? 'recurring.editTitle' : 'recurring.addTitle')}</h2>
           {editingId && (
             <button type="button" className="button secondary small" onClick={resetForm}>
-              Cancel
+              {t('common.cancel')}
             </button>
           )}
         </div>
 
         <div className="field-row">
           <div>
-            <label htmlFor="amount">Amount</label>
+            <label htmlFor="amount">{t('common.amount')}</label>
             <input
               id="amount"
               type="number"
@@ -190,17 +185,17 @@ export default function RecurringPage() {
               min="0.01"
               required
               inputMode="decimal"
-              placeholder="0.00"
+              placeholder={t('common.amountPlaceholder')}
               value={form.amount}
               onChange={update('amount')}
             />
           </div>
           <div>
-            <label htmlFor="frequency">Repeats</label>
+            <label htmlFor="frequency">{t('recurring.repeats')}</label>
             <select id="frequency" value={form.frequency} onChange={update('frequency')}>
               {(Object.keys(FREQUENCY_LABELS) as Frequency[]).map((value) => (
                 <option key={value} value={value}>
-                  {FREQUENCY_LABELS[value]}
+                  {t(FREQUENCY_LABELS[value])}
                 </option>
               ))}
             </select>
@@ -208,11 +203,11 @@ export default function RecurringPage() {
         </div>
 
         <div>
-          <label htmlFor="description">Description</label>
+          <label htmlFor="description">{t('common.description')}</label>
           <input
             id="description"
             required
-            placeholder="Rent, electricity, streaming…"
+            placeholder={t('recurring.descriptionPlaceholder')}
             value={form.description}
             onChange={update('description')}
           />
@@ -220,9 +215,9 @@ export default function RecurringPage() {
 
         <div className="field-row">
           <div>
-            <label htmlFor="categoryId">Category</label>
+            <label htmlFor="categoryId">{t('common.category')}</label>
             <select id="categoryId" value={form.categoryId} onChange={update('categoryId')}>
-              <option value="">Uncategorised</option>
+              <option value="">{t('common.uncategorised')}</option>
               {categories.map((category) => (
                 <option key={category.id} value={category.id}>
                   {category.name}
@@ -231,7 +226,7 @@ export default function RecurringPage() {
             </select>
           </div>
           <div>
-            <label htmlFor="paidBy">Paid by</label>
+            <label htmlFor="paidBy">{t('common.paidBy')}</label>
             <select id="paidBy" value={form.paidBy} onChange={update('paidBy')}>
               {members.map((member) => (
                 <option key={member.id} value={member.id}>
@@ -244,31 +239,34 @@ export default function RecurringPage() {
 
         <div className="field-row">
           <div>
-            <label htmlFor="startsOn">First charge</label>
+            <label htmlFor="startsOn">{t('recurring.firstCharge')}</label>
             <input id="startsOn" type="date" required value={form.startsOn} onChange={update('startsOn')} />
           </div>
           <div>
-            <label htmlFor="endsOn">Stops after (optional)</label>
+            <label htmlFor="endsOn">{t('recurring.stopsAfter')}</label>
             <input id="endsOn" type="date" value={form.endsOn} onChange={update('endsOn')} />
           </div>
         </div>
 
         <button type="submit" className="button" disabled={busy}>
-          {busy ? 'Saving…' : editingId ? 'Save changes' : 'Add recurring expense'}
+          {t(
+            busy
+              ? 'common.saving'
+              : editingId
+                ? 'expenses.saveChanges'
+                : 'recurring.addSubmit',
+          )}
         </button>
       </form>
 
       <div className="card">
         <div className="card-title">
-          <h2>Scheduled</h2>
-          <span className="muted small">{rules.length} total</span>
+          <h2>{t('recurring.scheduled')}</h2>
+          <span className="muted small">{t('recurring.totalCount', { count: rules.length })}</span>
         </div>
 
         {rules.length === 0 ? (
-          <p className="empty">
-            Nothing recurring yet. Add your rent or a subscription above and it will appear in your
-            expenses on its own.
-          </p>
+          <p className="empty">{t('recurring.empty')}</p>
         ) : (
           <ul className="item-list">
             {rules.map((rule) => (
@@ -280,13 +278,17 @@ export default function RecurringPage() {
                 />
                 <div className="item-main">
                   <div className="item-name">
-                    {rule.description || 'Recurring expense'}
-                    {rule.is_active === 0 && <span className="tag" style={{ marginLeft: '0.4rem' }}>Paused</span>}
+                    {rule.description || t('recurring.fallbackName')}
+                    {rule.is_active === 0 && (
+                      <span className="tag" style={{ marginLeft: '0.4rem' }}>
+                        {t('recurring.paused')}
+                      </span>
+                    )}
                   </div>
                   <div className="item-meta">
-                    <span>{FREQUENCY_LABELS[rule.frequency]}</span>
+                    <span>{t(FREQUENCY_LABELS[rule.frequency])}</span>
                     <span>·</span>
-                    <span>{rule.category_name ?? 'Uncategorised'}</span>
+                    <span>{rule.category_name ?? t('common.uncategorised')}</span>
                     {rule.paid_by_name && (
                       <>
                         <span>·</span>
@@ -296,13 +298,13 @@ export default function RecurringPage() {
                     {rule.next_due_on && (
                       <>
                         <span>·</span>
-                        <span>next {dayLabel(rule.next_due_on)}</span>
+                        <span>{t('recurring.nextOn', { date: dayLabel(rule.next_due_on) })}</span>
                       </>
                     )}
                     {rule.ends_on && (
                       <>
                         <span>·</span>
-                        <span>until {dayLabel(rule.ends_on)}</span>
+                        <span>{t('recurring.until', { date: dayLabel(rule.ends_on) })}</span>
                       </>
                     )}
                   </div>
@@ -317,12 +319,12 @@ export default function RecurringPage() {
                     )
                   }
                 >
-                  {rule.is_active === 1 ? 'Pause' : 'Resume'}
+                  {t(rule.is_active === 1 ? 'recurring.pause' : 'recurring.resume')}
                 </button>
                 <button
                   type="button"
                   className="icon-button"
-                  title="Edit"
+                  title={t('common.edit')}
                   onClick={() => startEdit(rule)}
                 >
                   ✎
@@ -330,7 +332,7 @@ export default function RecurringPage() {
                 <button
                   type="button"
                   className="icon-button danger"
-                  title="Delete"
+                  title={t('common.delete')}
                   onClick={() => handleDelete(rule)}
                 >
                   ✕

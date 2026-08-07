@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { api, type SessionPayload } from '../api';
+import { useI18n } from '../i18n';
 import { useSession } from '../session';
 import AuthPage from '../components/AuthPage';
 
 export default function LoginPage() {
   const { setSession } = useSession();
+  const { t, tx } = useI18n();
   const navigate = useNavigate();
   const location = useLocation();
   // Someone sent here from an invite link should land back on it once in.
@@ -26,7 +28,7 @@ export default function LoginPage() {
       // picker is the only page that can render.
       navigate(from ?? (signedIn.household ? '/' : '/households'), { replace: true });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not sign in');
+      setError(err instanceof Error ? err.message : t('login.failed'));
     } finally {
       setBusy(false);
     }
@@ -36,14 +38,14 @@ export default function LoginPage() {
     <AuthPage>
       <form className="card auth-card stack" onSubmit={handleSubmit}>
         <div>
-          <h1>Welcome back</h1>
-          <p className="muted">Sign in to your households.</p>
+          <h1>{t('login.title')}</h1>
+          <p className="muted">{t('login.subtitle')}</p>
         </div>
 
         {error && <div className="alert">{error}</div>}
 
         <div>
-          <label htmlFor="email">Email</label>
+          <label htmlFor="email">{t('common.email')}</label>
           <input
             id="email"
             type="email"
@@ -55,7 +57,7 @@ export default function LoginPage() {
         </div>
 
         <div>
-          <label htmlFor="password">Password</label>
+          <label htmlFor="password">{t('common.password')}</label>
           <input
             id="password"
             type="password"
@@ -67,14 +69,20 @@ export default function LoginPage() {
         </div>
 
         <button type="submit" className="button" disabled={busy}>
-          {busy ? 'Signing in…' : 'Sign in'}
+          {t(busy ? 'login.submitting' : 'login.submit')}
         </button>
 
         <p className="small muted">
-          Starting fresh? <Link to="/register" state={{ from }}>Create an account</Link>
+          {tx('login.newHere', {
+            link: (
+              <Link to="/register" state={{ from }}>
+                {t('login.createAccount')}
+              </Link>
+            ),
+          })}
         </p>
         <p className="small muted" style={{ marginTop: '-0.5rem' }}>
-          <Link to="/forgot">Forgotten your password?</Link>
+          <Link to="/forgot">{t('login.forgot')}</Link>
         </p>
       </form>
     </AuthPage>
