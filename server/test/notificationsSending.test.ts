@@ -21,6 +21,8 @@ const { addMember, createClient, registerAccount, registerHousehold, resetDataba
 interface Sent {
   to: string;
   subject: string;
+  /** Kept for the one case that needs a link out of the message itself. */
+  text: string;
 }
 
 let sent: Sent[] = [];
@@ -36,7 +38,9 @@ beforeAll(async () => {
   vi.stubGlobal('fetch', async (input: string | URL | Request, init?: RequestInit) => {
     if (String(input).startsWith('https://api.resend.com')) {
       const payload = JSON.parse(String(init?.body));
-      for (const address of payload.to) sent.push({ to: address, subject: payload.subject });
+      for (const address of payload.to) {
+        sent.push({ to: address, subject: payload.subject, text: payload.text });
+      }
       return new Response(JSON.stringify({ id: 'msg_1' }), { status: 200 });
     }
     return realFetch(input, init);
@@ -180,9 +184,13 @@ describe('who hears about what', () => {
     expect(to(owner.email)).toEqual(['Your Home Budget password was changed']);
 
     sent = [];
-    const issued = await owner.client.post(`/api/household/members/${owner.userId}/reset-password`);
-    const stranger = createClient();
-    await stranger.post('/api/auth/reset', { token: issued.body.token, password: 'another-password' });
+    // A provider is configured here, so recovery is the account's own doing —
+    // the owner-issued route is refused on a deployment that can email
+    // (`ARCHITECTURE.md` §4). The reset link is only ever in the message, so
+    // the token comes out of what was sent.
+    await createClient().post('/api/auth/forgot', { email: owner.email });
+    const token = sent.at(-1)!.text.match(/\/reset\/(\S+)/)![1]!;
+    await createClient().post('/api/auth/reset', { token, password: 'another-password' });
 
     expect(to(owner.email)).toEqual([
       'Reset your Home Budget password',

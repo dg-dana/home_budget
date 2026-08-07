@@ -75,6 +75,14 @@ export interface SessionPayload {
   user: SessionUser;
   household: Household | null;
   households: Household[];
+  /**
+   * Whether an owner can still mint a recovery link for somebody locked out.
+   * True only where the app cannot send email: everywhere else people help
+   * themselves from the sign-in page, and an owner holding a key to accounts
+   * that may span other households is a power worth not having
+   * (`ARCHITECTURE.md` §4).
+   */
+  ownerRecovery: boolean;
 }
 
 /**

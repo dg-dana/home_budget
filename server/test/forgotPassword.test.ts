@@ -138,10 +138,25 @@ describe('asking for your own recovery link', () => {
     expect(JSON.stringify(asked.body)).not.toContain(tokenFromEmail(owner.email));
   });
 
-  it('retires an owner-issued link, and an earlier one of its own', async () => {
+  it('retires an earlier link of its own, and one an owner left behind', async () => {
     const owner = await registerHousehold();
     const member = await addMember(owner, 'Yossi');
-    const issued = await owner.client.post(`/api/household/members/${member.userId}/reset-password`);
+
+    // An owner-issued link, written straight in because the route that mints
+    // them is refused on a deployment that can email — this is the deployment
+    // that turned email *on* afterwards, holding a link from before. It must
+    // not outlive the first self-service request.
+    const stale = 'stale-owner-issued-token';
+    db.prepare(
+      `INSERT INTO password_resets (token, user_id, created_by, expires_at, created_at)
+       VALUES (?, ?, ?, ?, ?)`,
+    ).run(
+      stale,
+      member.userId,
+      owner.userId,
+      new Date(Date.now() + 3600_000).toISOString(),
+      new Date().toISOString(),
+    );
     sent = [];
 
     await forgot(member.email);
@@ -151,7 +166,7 @@ describe('asking for your own recovery link', () => {
     expect(second).not.toBe(first);
 
     // Only the newest link works, whoever asked for it.
-    for (const dead of [issued.body.token, first]) {
+    for (const dead of [stale, first]) {
       expect(
         (await createClient().post('/api/auth/reset', { token: dead, password: NEW_PASSWORD }))
           .status,
@@ -161,6 +176,37 @@ describe('asking for your own recovery link', () => {
       (await createClient().post('/api/auth/reset', { token: second, password: NEW_PASSWORD }))
         .status,
     ).toBe(201);
+  });
+
+  it('leaves owners no way to mint a link for somebody else', async () => {
+    const owner = await registerHousehold();
+    const member = await addMember(owner, 'Yossi');
+
+    // The power an owner used to have, and the reason it went: it grants a
+    // whole account, which may belong to households this owner has never heard
+    // of (`ARCHITECTURE.md` §4). Anybody locked out helps themselves now.
+    const refused = await owner.client.post(
+      `/api/household/members/${member.userId}/reset-password`,
+    );
+    expect(refused.status).toBe(403);
+    expect(refused.body.error).toMatch(/forgotten your password/i);
+    expect(
+      (db.prepare('SELECT COUNT(*) AS n FROM password_resets').get() as { n: number }).n,
+    ).toBe(0);
+
+    // Not even for themselves, where the argument would be harmless: keeping
+    // one door open keeps the code, the tests and the button that go with it.
+    expect(
+      (await owner.client.post(`/api/household/members/${owner.userId}/reset-password`)).status,
+    ).toBe(403);
+  });
+
+  it('tells the frontend the owner control is gone', async () => {
+    const owner = await registerHousehold();
+    // What the Household page renders the "Reset password" button on. False
+    // here because this deployment can email; `password.test.ts` holds the
+    // other side.
+    expect((await owner.client.get('/api/auth/me')).body.ownerRecovery).toBe(false);
   });
 
   it('finds the account however the address was typed', async () => {

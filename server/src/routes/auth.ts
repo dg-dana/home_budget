@@ -115,6 +115,12 @@ function sessionPayload(user: UserRow, currentHouseholdId: string | null) {
     user: toSessionAccount(user, membership),
     household: current,
     households,
+    // Deployment-wide rather than per-account, but this is the channel the
+    // frontend already reads for "what can be done here". It is the *effect*
+    // (owners can still mint recovery links) rather than the cause (no mail
+    // provider), because the effect is what the Household page renders on and
+    // the cause is nobody's business out here.
+    ownerRecovery: !config.emailConfigured,
   };
 }
 

@@ -43,8 +43,10 @@ Two kinds of people use it:
 - **Forgotten your password?** on the sign-in page emails a single-use recovery
   link. It says the same thing whether or not the address has an account, so it
   cannot be used to find out who does
-- Owner can also issue a recovery link for anyone locked out — the fallback where
-  no email provider is configured
+- Where no email provider is configured, an owner can issue that link instead —
+  the fallback, and the *only* place that power still exists. A recovery link
+  grants a whole account, which may belong to households the owner has never
+  heard of, so it is refused anywhere people can help themselves
 - Owner can rename the household, change currency, manage categories, remove members
   and promote another member to owner
 - Members can record expenses and use lists; only the owner manages the household itself
@@ -102,7 +104,7 @@ to get started; seven default categories are created with it.
 ### Tests
 
 ```bash
-npm test          # server integration suite (233 tests, Vitest)
+npm test          # server integration suite (236 tests, Vitest)
 npm run test:e2e  # browser tests (20 tests, Playwright)
 npm run test:all  # both
 ```
@@ -201,7 +203,7 @@ session currently names.
 | DELETE | `/household/invites/:token`       | owner          |
 | DELETE | `/household/members/:id`          | owner          |
 | PUT    | `/household/members/:id/role`     | owner          |
-| POST   | `/household/members/:id/reset-password` | owner    |
+| POST   | `/household/members/:id/reset-password` | owner, and only where email is unconfigured |
 | CRUD   | `/categories`                     | member         |
 | CRUD   | `/expenses`                       | member         |
 | GET    | `/expenses/summary?month=YYYY-MM` | member         |
