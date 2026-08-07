@@ -71,11 +71,12 @@ Two routes end things for good: `DELETE /auth/account` (your own account, and
 every membership it holds) and `DELETE /household` (owner only, the household
 currently open). Both take the caller's password in the body.
 
-- **Closing an account is reachable from two screens, deliberately.** The
-  Household page's "Danger zone" needs a household open, so `/households` — the
-  picker — carries the same action. Without it an account that had left its
-  only household, or never joined one, could not delete itself at all: every
-  other screen is behind a household.
+- **Closing an account is reachable from `/households` and nowhere else.** It
+  ends the account and every membership it holds, so it does not belong to
+  whichever household happens to be open — and the picker is the one screen an
+  account with no household can still reach. It sat on the Household page's
+  "Danger zone" too until it was removed for reading as a household-scoped
+  action beside "Delete this household".
 - **The password is the confirmation, not a dialog.** A session cookie proves a
   browser signed in once, not who is holding it now — the same reasoning that
   makes `POST /auth/password` ask for the current one. `assertPassword()` in
@@ -400,16 +401,18 @@ different questions. Keep them apart rather than merging them.
   items are two words and a quantity; a permanent textarea above the list, or
   an inline editor on every row, would be a lot of machinery for a string that
   is usually empty.
-- **The two deletions live in a "Danger zone" card at the foot of
-  `/household`**, red-bordered and last, so nobody arrives at one by scrolling
+- **Each deletion lives in a "Danger zone" card at the foot of its own page** —
+  the household's at the foot of `/household`, the account's at the foot of
+  `/households` — red-bordered and last, so nobody arrives at one by scrolling
   past a form that looked like the ones above it. Each has its own password
-  field and its own `window.confirm`, worded with what the household actually
-  loses — the confirm counts the other accounts that go with it. `.button
+  field and its own `window.confirm`, worded with what is actually lost — the
+  household's confirm counts the other accounts that go with it. `.button
   .danger-solid` is filled rather than the ghost `.button.danger` used for the
   ✕ on a single row: ending an account should not look like the quietest
-  control on the page. **The sole owner's "Delete my account" is disabled with
-  the reason printed underneath**, since the server refuses it anyway (§3) and
-  saying so beats a round trip that only produces an error.
+  control on the page. The Household page's card is **owner-only**, since
+  deleting the household is now the only thing in it, and it closes with a link
+  to `/households` for whoever came looking for the account deletion that used
+  to sit beside it.
 - A row's trailing controls are wrapped in `.item-actions` so that on a phone
   they wrap **as a group**, instead of peeling off one at a time under the
   checkbox.

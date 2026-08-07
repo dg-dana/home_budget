@@ -3,7 +3,7 @@
 The running state of this project. **Updated after every step** — see the
 "Working agreement" in `CLAUDE.md`.
 
-Last updated: 2026-08-06 · live: deploy run #24 (`51ae836`)
+Last updated: 2026-08-07 · live: deploy run #24 (`51ae836`)
 
 ---
 
@@ -52,9 +52,10 @@ agent sandbox cannot reach the site, so that check is yours.
 ### Fixed alongside it
 
 - **An account with no household can now delete itself**, from `/households`.
-  The "Danger zone" lives on the Household page, which needs a household open,
+  The "Danger zone" lived on the Household page, which needs a household open,
   so an account that had left its only household — or never joined one — was
   stuck with an account it could not close. Covered by a browser test.
+  (`/households` is since the only place it lives — see "Waiting on a deploy".)
 
 ### Follow-ups since it went live
 
@@ -79,16 +80,20 @@ agent sandbox cannot reach the site, so that check is yours.
   an unconfigured one — anywhere without a key, the link is handed straight
   to whoever registered.
 
-## Also needs your hands
+## Waiting on a deploy
 
-- [ ] **GitHub stopped creating Actions runs mid-session** — pushes after
-      15:27 UTC on 2026-08-06 produced no CI run at all (the workflow is
-      active, and `workflow_dispatch` still works). PR #35 was therefore
-      merged on a local run of typecheck, the server suite and the browser
-      suite rather than on CI, and the deploy — which runs typecheck and the
-      server tests itself before building — went green. Worth a look at the
-      repository's Actions and billing settings; if CI stays silent, every
-      future merge loses its safety net.
+- [ ] **"Delete my account" is gone from the Household page** — it now lives on
+      `/households` only. It ends the account and every membership it holds, so
+      sitting beside "Delete this household" made it read as something scoped to
+      the household you happened to have open. The foot of `/household` keeps
+      the household deletion alone, is now **owner-only** (that card had nothing
+      else in it for a member), and closes with a link across to Your
+      households. Nothing changed on the server: `DELETE /auth/account` still
+      exists and `/households` still calls it, so the browser test that closes
+      an account is untouched. **PR #38**, CI green on both the push and the
+      pull request run. Not merged and not deployed yet.
+
+## Also needs your hands
 
 - [ ] **Check the live site on a phone.** Runs #17–#24 have never been looked
       at by a human. A green deploy proves the URL responds, nothing more.
@@ -109,6 +114,12 @@ agent sandbox cannot reach the site, so that check is yours.
 
 ## Done
 
+- [x] **CI is creating runs again.** Pushes after 15:27 UTC on 2026-08-06
+      produced no Actions run at all, which cost PR #35 its safety net. Runs
+      #156–#163 fired normally on 2026-08-07, push and `pull_request` alike,
+      so nothing needs changing in the repository's Actions or billing
+      settings. It went quiet on its own and came back on its own — if that
+      happens again, check the Actions tab before assuming a push failed.
 - [x] Email sends through Resend, and the app also emails what has happened —
       joins, removals, role changes, renames, both deletions, password
       changes. Plus "Delete account" on `/households`, and invitations listed
