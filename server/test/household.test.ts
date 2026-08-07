@@ -346,6 +346,104 @@ describe('deleting your own account', () => {
   });
 });
 
+/**
+ * Leaving without deleting your account — the way out for somebody who is not
+ * an owner and does not want to ask one.
+ */
+describe('leaving a household', () => {
+  beforeAll(async () => {
+    await startServer({ enableRateLimits: false });
+  });
+  afterAll(stopServer);
+
+  let owner: Household;
+  let member: { client: Client; userId: string; email: string };
+
+  beforeEach(async () => {
+    resetDatabase();
+    owner = await registerHousehold({ householdName: 'The Cohens' });
+    member = await addMember(owner, 'Yossi');
+  });
+
+  it('lets a member out and leaves the money behind', async () => {
+    await member.client.post('/api/expenses', {
+      amount: 40,
+      description: 'Yossi shop',
+      spentOn: '2026-04-10',
+    });
+
+    expect((await member.client.delete('/api/household/members/me')).status).toBe(204);
+
+    // The account is untouched — only the membership went. Their cookie is
+    // still in the jar, and the household is simply out of reach.
+    const me = await member.client.get('/api/auth/me');
+    expect(me.status).toBe(200);
+    expect(me.body.household).toBeNull();
+    expect(me.body.households).toEqual([]);
+    expect((await member.client.get('/api/expenses')).status).toBe(403);
+    expect((await member.client.get('/api/household/members')).status).toBe(403);
+
+    // The household keeps its history, with the departed payer folded away.
+    expect((await owner.client.get('/api/household/members')).body).toHaveLength(1);
+    const expenses = (await owner.client.get('/api/expenses?month=2026-04')).body;
+    expect(expenses).toHaveLength(1);
+    expect(expenses[0].amount_cents).toBe(4000);
+    expect(expenses[0].paid_by_name).toBeNull();
+  });
+
+  it('refuses the only owner while anyone else is still here', async () => {
+    const response = await owner.client.delete('/api/household/members/me');
+    expect(response.status).toBe(400);
+    expect(response.body.error).toMatch(/only owner/i);
+    expect((await owner.client.get('/api/household/members')).body).toHaveLength(2);
+  });
+
+  it('refuses the last person in it, rather than abandoning the household', async () => {
+    await owner.client.delete(`/api/household/members/${member.userId}`);
+
+    const response = await owner.client.delete('/api/household/members/me');
+    expect(response.status).toBe(400);
+    expect(response.body.error).toMatch(/only person/i);
+    // Nothing was left orphaned: the household is still theirs, and intact.
+    expect((await owner.client.get('/api/household')).body.name).toBe('The Cohens');
+    expect((await owner.client.get('/api/categories')).body.length).toBeGreaterThan(0);
+  });
+
+  it('lets an owner leave once somebody else owns the place', async () => {
+    await owner.client.put(`/api/household/members/${member.userId}/role`, { role: 'owner' });
+
+    expect((await owner.client.delete('/api/household/members/me')).status).toBe(204);
+    expect((await member.client.get('/api/household')).body.name).toBe('The Cohens');
+    expect((await member.client.get('/api/household/members')).body).toHaveLength(1);
+    // The account outlives the membership; it just has no household now.
+    expect((await owner.client.get('/api/auth/me')).body.households).toEqual([]);
+  });
+
+  it('is not an owners-only route hiding behind an id', async () => {
+    // `/members/me` has to be matched before `/members/:id`, which is owner
+    // only — reversed, every ordinary member would meet a 403 here.
+    const response = await member.client.delete('/api/household/members/me');
+    expect(response.status).toBe(204);
+  });
+
+  it('needs a household open at all', async () => {
+    const stranger = await registerAccount({ email: uniqueEmail('nomad') });
+    expect((await stranger.client.delete('/api/household/members/me')).status).toBe(403);
+    expect((await createClient().delete('/api/household/members/me')).status).toBe(401);
+  });
+
+  it('leaves the invite path open to come back', async () => {
+    await member.client.delete('/api/household/members/me');
+    const invite = await owner.client.post('/api/household/invites', { role: 'member' });
+    expect((await joinHousehold(
+      { client: member.client, userId: member.userId, email: member.email },
+      invite.body.token,
+      'Yossi',
+    )).status).toBe(201);
+    expect((await owner.client.get('/api/household/members')).body).toHaveLength(2);
+  });
+});
+
 describe('shopping lists', () => {
   beforeAll(async () => {
     await startServer({ enableRateLimits: false });

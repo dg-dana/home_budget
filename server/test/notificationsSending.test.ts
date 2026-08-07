@@ -95,6 +95,19 @@ describe('who hears about what', () => {
     expect(to(owner.email)).toEqual([]);
   });
 
+  it('tells the owners when somebody leaves, and not the person leaving', async () => {
+    const owner = await registerHousehold({ householdName: 'The Flat' });
+    const member = await addMember(owner, 'Noa');
+    sent = [];
+
+    expect((await member.client.delete('/api/household/members/me')).status).toBe(204);
+
+    // The household hears the same fact as a removal, so it is the same
+    // notice. Nothing goes back to the person who walked out — they know.
+    expect(to(owner.email)).toEqual(['Noa left "The Flat"']);
+    expect(to(member.email)).toEqual([]);
+  });
+
   it('tells somebody their role changed, and says nothing when it did not', async () => {
     const owner = await registerHousehold({ householdName: 'The Flat' });
     const member = await addMember(owner, 'Noa');

@@ -190,6 +190,23 @@ describe('cross-household isolation', () => {
     expect((await alice.client.get('/api/categories')).body.length).toBeGreaterThan(0);
   });
 
+  it('leaves only the household that is open, never the account’s others', async () => {
+    // Bob joins Alice's household, so one account holds two — then walks out
+    // of hers. Leaving is scoped by the cookie, and the cookie names one.
+    const invite = await alice.client.post('/api/household/invites', { role: 'member' });
+    expect((await joinHousehold(bob, invite.body.token, 'Bob')).status).toBe(201);
+
+    expect((await bob.client.delete('/api/household/members/me')).status).toBe(204);
+
+    const households = (await bob.client.get('/api/households')).body.households;
+    expect(households).toHaveLength(1);
+    expect(households[0].id).toBe(bob.householdId);
+    // His own household is untouched, and hers has only her in it again.
+    expect((await bob.client.post(`/api/households/${bob.householdId}/switch`)).status).toBe(200);
+    expect((await bob.client.get('/api/household')).body.name).toBe("Bob's home");
+    expect((await alice.client.get('/api/household/members')).body).toHaveLength(1);
+  });
+
   it('leaves the other household alone when someone deletes their account', async () => {
     const alicePartner = await addMember(alice, 'Alice partner');
     await alicePartner.client.post('/api/expenses', { amount: 12, spentOn: '2026-03-04' });

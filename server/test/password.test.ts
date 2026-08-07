@@ -293,4 +293,19 @@ describe('owner-issued password recovery', () => {
       })).status,
     ).toBe(400);
   });
+
+  it('drops outstanding links when the member leaves of their own accord', async () => {
+    const issued = await issueReset(member.userId);
+    expect((await member.client.delete('/api/household/members/me')).status).toBe(204);
+
+    // The door has to shut from this side too: an owner who minted a link an
+    // hour ago must not still be holding a key to an account that has walked
+    // out — it may belong to households they have never heard of.
+    expect(
+      (await createClient().post('/api/auth/reset', {
+        token: issued.body.token,
+        password: NEW_PASSWORD,
+      })).status,
+    ).toBe(400);
+  });
 });

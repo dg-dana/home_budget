@@ -66,6 +66,13 @@ export default function HouseholdPage() {
 
   const inviteUrl = (token: string) => `${window.location.origin}/join/${token}`;
 
+  // The two cases the server refuses to let somebody leave in (§3). Both are
+  // already on screen in the member list above, so saying so under a disabled
+  // button beats a round trip that only produces an error.
+  const soleOwner = isOwner && !members.some((m) => m.role === 'owner' && m.id !== user?.id);
+  const lastPerson = members.length === 1;
+  const strandedOwner = soleOwner && !lastPerson;
+
   const copyInvite = async (token: string) => {
     try {
       await navigator.clipboard.writeText(inviteUrl(token));
@@ -119,6 +126,31 @@ export default function HouseholdPage() {
   const returnToHouseholds = async () => {
     await refresh();
     navigate('/households', { replace: true });
+  };
+
+  /**
+   * Leaving, which is the only thing in here that takes no password: it
+   * destroys nothing and an invite undoes it, so the round trip would be
+   * friction for the person with the least power in the household. The two
+   * cases the server refuses are shown as text rather than tried — the
+   * conditions are already on screen in the member list.
+   */
+  const handleLeave = async () => {
+    setDangerError('');
+    if (
+      !window.confirm(
+        `Leave "${household?.name ?? 'this household'}"? You lose access to its expenses and lists. ` +
+          'What you spent stays in its history, listed without a payer. Getting back in needs a new invite.',
+      )
+    ) {
+      return;
+    }
+    try {
+      await api.delete('/household/members/me');
+      await returnToHouseholds();
+    } catch (err) {
+      setDangerError(err instanceof Error ? err.message : 'Could not leave the household');
+    }
   };
 
   const handleDeleteHousehold = async (event: React.FormEvent) => {
@@ -615,48 +647,77 @@ export default function HouseholdPage() {
         Closing an account is not here: it belongs to the account rather than to
         whichever household happens to be open, and it lives on `/households`,
         which is the one page an account with no household can still reach.
+        Leaving *is* here, because it is about this household and no other â and
+        it is why this card renders for everybody, where deleting the household
+        is the owner-only half inside it.
       */}
-      {isOwner && (
-        <div className="card stack danger-zone">
-          <div className="card-title">
-            <h2>Danger zone</h2>
-          </div>
+      <div className="card stack danger-zone">
+        <div className="card-title">
+          <h2>Danger zone</h2>
+        </div>
 
-          {dangerError && <div className="alert">{dangerError}</div>}
+        {dangerError && <div className="alert">{dangerError}</div>}
 
-          <form className="stack" onSubmit={handleDeleteHousehold}>
+        <div className="grid-2">
+          <div className="stack">
             <div>
-              <h3 style={{ margin: 0 }}>Delete this household</h3>
+              <h3 style={{ margin: 0 }}>Leave this household</h3>
               <p className="small muted" style={{ margin: '0.25rem 0 0' }}>
-                Removes every expense, budget, recurring rule, shopping list and share link, for
-                everyone in it. Their accounts survive — only this household goes.
+                {strandedOwner
+                  ? 'You are this household’s only owner. Make someone else an owner first.'
+                  : lastPerson
+                    ? 'You are the only person here, so there would be nobody left to reach it. Delete the household instead.'
+                    : 'Your account stays, and so does everything you spent — it is listed without a payer from then on. Getting back in needs a new invite.'}
               </p>
             </div>
             <div>
-              <label htmlFor="deleteHouseholdPassword">Confirm with your password</label>
-              <input
-                id="deleteHouseholdPassword"
-                type="password"
-                required
-                autoComplete="current-password"
-                value={dangerPassword}
-                onChange={(event) => setDangerPassword(event.target.value)}
-                style={{ maxWidth: '320px' }}
-              />
-            </div>
-            <div>
-              <button type="submit" className="button danger-solid">
-                Delete household
+              <button
+                type="button"
+                className="button danger-outline"
+                disabled={strandedOwner || lastPerson}
+                onClick={handleLeave}
+              >
+                Leave household
               </button>
             </div>
-          </form>
+          </div>
 
-          <p className="small muted" style={{ margin: 0 }}>
-            There is no undo and no export. Nothing here can be recovered afterwards. To close your
-            account instead, go to <Link to="/households">Your households</Link>.
-          </p>
+          {isOwner && (
+            <form className="stack" onSubmit={handleDeleteHousehold}>
+              <div>
+                <h3 style={{ margin: 0 }}>Delete this household</h3>
+                <p className="small muted" style={{ margin: '0.25rem 0 0' }}>
+                  Removes every expense, budget, recurring rule, shopping list and share link, for
+                  everyone in it. Their accounts survive — only this household goes.
+                </p>
+              </div>
+              <div>
+                <label htmlFor="deleteHouseholdPassword">Confirm with your password</label>
+                <input
+                  id="deleteHouseholdPassword"
+                  type="password"
+                  required
+                  autoComplete="current-password"
+                  value={dangerPassword}
+                  onChange={(event) => setDangerPassword(event.target.value)}
+                  style={{ maxWidth: '320px' }}
+                />
+              </div>
+              <div>
+                <button type="submit" className="button danger-solid">
+                  Delete household
+                </button>
+              </div>
+            </form>
+          )}
         </div>
-      )}
+
+        <p className="small muted" style={{ margin: 0 }}>
+          Leaving can be undone with a new invite. Deleting cannot be undone at all — there is
+          no export, and nothing it removes comes back. To close your account instead, go to{' '}
+          <Link to="/households">Your households</Link>.
+        </p>
+      </div>
     </div>
   );
 }
