@@ -7,6 +7,7 @@ import CopyListButton from '../components/CopyListButton';
 import ItemComposer from '../components/ItemComposer';
 import ItemRow from '../components/ItemRow';
 import { guestItemApi } from '../shoppingApi';
+import { usePoll } from '../usePoll';
 
 const GUEST_NAME_KEY = 'home-budget:guest-name';
 
@@ -39,10 +40,7 @@ export default function SharedListPage() {
   }, [load]);
 
   // The list is shared, so other people change it while this page is open.
-  useEffect(() => {
-    const timer = window.setInterval(() => void load(), 15_000);
-    return () => window.clearInterval(timer);
-  }, [load]);
+  usePoll(load);
 
   const run = async (action: () => Promise<unknown>) => {
     setError('');
