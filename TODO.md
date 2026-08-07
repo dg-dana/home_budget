@@ -82,10 +82,11 @@ agent sandbox cannot reach the site, so that check is yours.
 
 ## Also needs your hands
 
-- [ ] **Check the live site on a phone.** Runs #17–#25 have never been looked
-      at by a human. A green deploy proves the URL responds, nothing more.
-      Worth checking: the new sign-up flow, the household switcher, "Make
-      owner", and that your existing household looks untouched.
+- [ ] **Check the rest of the live site on a phone.** The Household page was
+      checked on run #25 and looks right. The rest of what runs #17–#25
+      shipped has not been: the new sign-up flow, the household switcher,
+      "Make owner", and that your existing household looks untouched. A green
+      deploy proves the URL responds, nothing more.
 
 ## Open work
 
@@ -108,7 +109,7 @@ agent sandbox cannot reach the site, so that check is yours.
       foot of `/household` keeps the household deletion alone and is now
       **owner-only**, with a link across to Your households. The server was
       untouched: `DELETE /auth/account` still exists and `/households` still
-      calls it. (PRs #38, #39)
+      calls it. (PRs #38, #39 — live on run #25 and **confirmed by hand**.)
 - [x] **CI is creating runs again.** Pushes after 15:27 UTC on 2026-08-06
       produced no Actions run at all, which cost PR #35 its safety net. Runs
       #156–#163 fired normally on 2026-08-07, push and `pull_request` alike,
