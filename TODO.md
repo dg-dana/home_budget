@@ -25,11 +25,6 @@ started, and none of it is urgent.
 None of these can be done from an agent sandbox: the egress proxy refuses the
 live domain by policy, so anything about the real site is yours.
 
-- [ ] **Send yourself a real invite and check it arrives.** Lower stakes than it
-      was: the reset email from run #27 arrived, so the provider, `MAIL_FROM`
-      and `APP_URL` are all proven. What an invite would add is that the *other*
-      messages travel too. Household page → Create invite with your address.
-      **Check spam** — a new sending domain often lands there for the first few.
 - [ ] **Say if the notices are too much or too little.** Wording and who hears
       what are both easy to change; what is hard is noticing later that nobody
       reads them. `ARCHITECTURE.md` §4.1 has the table.
@@ -41,6 +36,17 @@ live domain by policy, so anything about the real site is yours.
       URL responds, nothing more.
 
 ## Open work
+
+- [ ] **The join page only says "you are already in that household" after you
+      have filled the form in.** Found by inviting yourself: the email arrives,
+      the link opens a page headed "Join <household>" asking what you want to be
+      called, and the refusal comes from the server on submit. The check is
+      right — `POST /households/join` must refuse a second membership — but it
+      happens at the wrong moment. Two fixes, either or both: have
+      `GET /auth/invite/:token` say whether the caller is already in it (it can
+      read the session through `optionalAuth`) so the page offers "Open it"
+      instead of a form; and refuse at **creation**, since an owner inviting an
+      address that is already a member is almost always a mistake.
 
 - [ ] **An owner still reaches any account in their household where email is
       unconfigured.** What was the general case is now the exception: with a
@@ -64,6 +70,11 @@ live domain by policy, so anything about the real site is yours.
 
 ## Done
 
+- [x] **Invite email confirmed arriving on the live site**, which was the last
+      message type nobody had watched land. Every kind the app sends is now
+      either proven end to end (confirmation, recovery, invite) or shares the
+      same `deliver()` path with one that is. It turned up a rough edge in the
+      join page rather than in the sending — see "Open work".
 - [x] **Every shopping page keeps itself current** — one `usePoll` hook on the
       lists index, a member's list and the guest's, refetching every 15 s,
       skipping a hidden tab and refetching the moment one becomes visible.
