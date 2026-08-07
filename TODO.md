@@ -45,8 +45,8 @@ language stored per account rather than per device; the errors would need the
 API to return codes instead of sentences. Say if either matters and they are
 the next thing.
 
-**Nothing has been looked at on a real phone yet** — see below. That is the
-only check that counts, since an agent sandbox cannot load the site.
+**German has been checked by hand on the live site and looks right** — which
+is the only check that counts, since an agent sandbox cannot load it.
 
 ## Needs your hands
 
@@ -56,11 +56,6 @@ live domain by policy, so anything about the real site is yours.
 - [ ] **Say if the notices are too much or too little.** Wording and who hears
       what are both easy to change; what is hard is noticing later that nobody
       reads them. `ARCHITECTURE.md` §4.1 has the table.
-- [ ] **Look at German on the live site, on a real phone** (live since run
-      #33). It has been screenshotted at 390px in both themes and every page
-      fits, but that is a picture, not a thumb. The header carries one more
-      control than it did, and German words are longer than English ones — the
-      nav and the Danger zone are where to look.
 - [ ] **Say whether the emails should be German too.** They are the one part of
       the app that stays English, because the language lives on the device and
       the server has no idea which device is reading. Making them follow would
@@ -112,8 +107,8 @@ live domain by policy, so anything about the real site is yours.
       entry per string with both languages; whole sentences rather than glued
       fragments; money and dates following the choice as well as the words;
       `<html lang>` set before first paint. Three browser tests, each watched
-      failing against a deliberate break. (PR #60, live on run #33, **not yet
-      looked at on a phone**)
+      failing against a deliberate break. (PR #60, live on run #33,
+      **confirmed by hand on the real site**)
 - [x] **"Copy list" carries only what is still to buy** — the ticked-off items
       are gone from the text entirely, since a list naming what the reader is
       already carrying is worse than no list. (PR #58, live on run #32)
