@@ -14,9 +14,8 @@ every step green — so on the live site the lists index, a member's list and th
 guest's all refetch every 15 s, skip a hidden tab, and catch up the moment the
 phone comes back out.
 
-Worth a look when two of you are free: open the same list on two phones, add
-something on one, and watch it appear on the other without a reload. It is the
-only claim here that no test in the sandbox can make about the real site.
+**Watched on two real phones and it keeps up** — the one claim about this that
+no sandbox test could make.
 
 What is left is in "Needs your hands" and "Open work" below — none of it is
 started, and none of it is urgent.
@@ -70,7 +69,8 @@ live domain by policy, so anything about the real site is yours.
       skipping a hidden tab and refetching the moment one becomes visible.
       Closes the split where only the guest page kept up. The browser test for
       it is the only one where waiting *is* the assertion. (PR #49, live on run
-      #29 — **not watched on two real phones yet**)
+      #29, **confirmed on two real phones** — one adds, the other shows it with
+      nobody reloading)
 - [x] **Owner-issued recovery retired to a fallback** — refused (403) wherever
       email is configured, button hidden, `ownerRecovery` in the session
       payload telling the frontend which world it is in. Still working where
