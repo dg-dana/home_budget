@@ -41,7 +41,8 @@ because it is confidential.
 - [x] `bootstrap.sh` run on the instance — `.env` written with `DOMAIN` and `JWT_SECRET` (step 3)
 - [x] First deploy — run #1, all steps green, health check passed (step 6)
 - [x] `RESEND_API_KEY` set in repository secrets — email live since run #24, and
-      **a real message confirmed arriving** in a real inbox on run #27 (step 5)
+      **messages confirmed arriving** in a real inbox: a password reset on run
+      #27, an invite afterwards, both with working links (step 5)
 
 Setup is complete; the app is live. What follows is the reference for doing it
 again elsewhere, plus the everyday deploy, backup and restore procedures.
