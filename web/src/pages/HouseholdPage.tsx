@@ -26,6 +26,10 @@ export default function HouseholdPage() {
     {},
   );
   const [inviteNotice, setInviteNotice] = useState('');
+  // Invite failures show under the form rather than in the page-level alert at
+  // the top: on a phone that alert is off screen by the time you have typed an
+  // address, so a refusal looked like nothing happening at all.
+  const [inviteError, setInviteError] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [displayNameNotice, setDisplayNameNotice] = useState('');
   const [dangerPassword, setDangerPassword] = useState('');
@@ -349,18 +353,27 @@ export default function HouseholdPage() {
                 className="row"
                 onSubmit={(event) => {
                   event.preventDefault();
-                  void run(async () => {
-                    const created = await api.post<{ notice: Notice }>('/household/invites', {
-                      email: inviteEmail,
-                      role: 'member',
-                    });
-                    setInviteNotice(
-                      created.notice.delivered
-                        ? `Invite emailed to ${created.notice.to}. The link is below too.`
-                        : '',
-                    );
-                    setInviteEmail('');
-                  });
+                  setInviteError('');
+                  void (async () => {
+                    try {
+                      const created = await api.post<{ notice: Notice }>('/household/invites', {
+                        email: inviteEmail,
+                        role: 'member',
+                      });
+                      setInviteNotice(
+                        created.notice.delivered
+                          ? `Invite emailed to ${created.notice.to}. The link is below too.`
+                          : '',
+                      );
+                      setInviteEmail('');
+                      await load();
+                    } catch (err) {
+                      // Kept beside the form, and the address kept in the box:
+                      // "already in this household" is answered by editing what
+                      // was typed, not by typing it again.
+                      setInviteError(err instanceof Error ? err.message : 'Could not invite them');
+                    }
+                  })();
                 }}
               >
                 <input
@@ -375,6 +388,8 @@ export default function HouseholdPage() {
                   Create invite
                 </button>
               </form>
+
+              {inviteError && <div className="alert">{inviteError}</div>}
 
               {inviteNotice && (
                 <p className="small muted" style={{ margin: 0 }}>

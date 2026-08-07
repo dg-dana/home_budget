@@ -27,6 +27,11 @@ answer earlier:
 The invite itself is untouched by being looked at: it is single-use, and being
 told "you are already in" is not a use.
 
+The refusal is shown **under the invite form**, not in the page-level alert at
+the top: the Household page is several screens long on a phone, so an error up
+there is an error nobody sees. The address stays in the box, since that message
+is answered by editing it rather than typing it again.
+
 Two new tests, both watched failing first. The preview skill now seeds an
 unredeemed invite so `/join/:token` can be screenshotted — which is how the new
 screen was checked rather than reasoned about.
