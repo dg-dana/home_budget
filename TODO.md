@@ -90,8 +90,9 @@ agent sandbox cannot reach the site, so that check is yours.
       else in it for a member), and closes with a link across to Your
       households. Nothing changed on the server: `DELETE /auth/account` still
       exists and `/households` still calls it, so the browser test that closes
-      an account is untouched. **PR #38**, CI green on both the push and the
-      pull request run. Not merged and not deployed yet.
+      an account is untouched. **PR #38, merged** (`03b5199`) on green CI —
+      **not deployed**, so run **Deploy to Lightsail** from the Actions tab
+      when you want it live.
 
 ## Also needs your hands
 
