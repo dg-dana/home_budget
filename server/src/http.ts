@@ -17,6 +17,8 @@ export const unauthorized = (message = 'Not signed in') => new HttpError(401, me
 export const forbidden = (message = 'Not allowed') => new HttpError(403, message);
 export const notFound = (message = 'Not found') => new HttpError(404, message);
 export const conflict = (message: string) => new HttpError(409, message);
+/** The app is working, but this particular thing is not configured here. */
+export const unavailable = (message: string) => new HttpError(503, message);
 
 /** Wraps a handler so a rejected promise reaches the Express error middleware. */
 export function asyncHandler(

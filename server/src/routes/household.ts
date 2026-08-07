@@ -5,6 +5,7 @@ import {
   assertPassword,
   currentUser,
   householdAddresses,
+  issuePasswordReset,
   issueSession,
   newToken,
   nowIso,
@@ -387,20 +388,10 @@ householdRouter.post(
       .get(req.params.id, user.householdId) as { id: string; email: string } | undefined;
     if (!member) throw notFound('That member does not exist');
 
-    const token = newToken();
-    const expiresAt = new Date(Date.now() + config.passwordResetMaxAgeMs).toISOString();
-
-    db.transaction(() => {
-      // Only the newest link should work, so retire any outstanding ones.
-      db.prepare('UPDATE password_resets SET used_at = ? WHERE user_id = ? AND used_at IS NULL').run(
-        nowIso(),
-        member.id,
-      );
-      db.prepare(
-        `INSERT INTO password_resets (token, user_id, created_by, expires_at, created_at)
-         VALUES (?, ?, ?, ?, ?)`,
-      ).run(token, member.id, user.id, expiresAt, nowIso());
-    })();
+    // Shared with self-service recovery (`POST /auth/forgot`), so both kinds of
+    // link expire and retire each other by the same rule; `created_by` is what
+    // separates them.
+    const { token, expiresAt } = issuePasswordReset(member.id, user.id);
 
     res.status(201).json({
       token,

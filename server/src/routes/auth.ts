@@ -7,6 +7,7 @@ import {
   currentAccount,
   hashPassword,
   householdAddresses,
+  issuePasswordReset,
   issueSession,
   membershipsOf,
   newId,
@@ -18,12 +19,13 @@ import {
   verifyPassword,
 } from '../auth.js';
 import { db } from '../db.js';
-import { asyncHandler, badRequest, conflict, parseBody, unauthorized } from '../http.js';
+import { asyncHandler, badRequest, conflict, parseBody, unauthorized, unavailable } from '../http.js';
 import {
   accountDeletedNotice,
   memberRemovedNotice,
   notifyAll,
   passwordChangedNotice,
+  passwordResetNotice,
   verifyEmailNotice,
 } from '../notifications.js';
 import type {
@@ -282,6 +284,54 @@ authRouter.post(
     // whichever household it was looking at.
     issueSession(res, getUser(user.id), account.householdId);
     res.status(204).end();
+  }),
+);
+
+const forgotSchema = z.object({ email });
+
+/**
+ * Asking for a recovery link yourself — the way out when the person locked out
+ * is the owner, or the owner is unreachable.
+ *
+ * Three things hold this route together, and none of them is optional:
+ *
+ * - **It never says whether the address has an account.** Same 202, same
+ *   wording, same shape, whatever was typed. An endpoint that answers that
+ *   question is a way to enumerate who is a customer, and it cannot be
+ *   un-shipped once anybody has relied on it.
+ * - **The link is never in the response.** Everywhere else an unconfigured
+ *   deployment falls back to putting the link on screen (§4.1); here that would
+ *   hand anybody a way into any account by typing its address. So with no
+ *   provider configured the route refuses outright and says to ask an owner,
+ *   which is the recovery this app had before.
+ * - **It is limited per address as well as per IP** (`app.ts`), because each
+ *   request sends mail to somebody who did not ask for it.
+ *
+ * An unconfirmed address is served like any other: holding a link sent to that
+ * inbox is the same proof confirming an address asks for, so refusing here
+ * would strand exactly the people who most need a way back in.
+ */
+authRouter.post(
+  '/forgot',
+  asyncHandler(async (req, res) => {
+    if (!config.emailConfigured) {
+      throw unavailable(
+        'This site cannot send email, so it cannot reset a password by itself. Ask a household owner to send you a reset link.',
+      );
+    }
+
+    const input = parseBody(forgotSchema, req.body);
+    const user = findUserByEmail(input.email);
+
+    if (user) {
+      // Retires any outstanding link, the same as an owner issuing one: only
+      // the newest works, so a link asked for twice cannot leave two keys out.
+      const { token } = issuePasswordReset(user.id, null);
+      await passwordResetNotice(user.email, `/reset/${token}`);
+    }
+
+    // Accepted, not "sent": from out here the two cases have to look the same.
+    res.status(202).json({ ok: true });
   }),
 );
 

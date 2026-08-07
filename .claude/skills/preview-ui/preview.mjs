@@ -20,6 +20,8 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 
 const PASSWORD = 'preview-password';
 const OWNER = 'Dana';
+/** Screens that only exist for somebody with no session (`web/src/App.tsx`). */
+const SIGNED_OUT_ROUTES = ['/login', '/register', '/forgot', '/reset/', '/verify/'];
 
 // ---------------------------------------------------------------------------
 // Arguments
@@ -407,7 +409,7 @@ async function captureGroup(browser, options, context, group, theme, width) {
   );
 
   try {
-    if (!group.asGuest) await signIn(page, ownerEmail);
+    if (!group.asGuest && !group.signedOut) await signIn(page, ownerEmail);
 
     for (const { requested, resolved } of group.routes) {
       const before = problems.length;
@@ -436,9 +438,19 @@ async function capture(browser, options, context) {
   // Share links are captured in a context of their own, with no sign-in. A
   // guest is *defined* by having no cookie, so viewing `/s/:token` from a
   // signed-in session would not be the thing anybody wants to look at.
+  const isShare = (route) => route.requested.startsWith('/s/');
+  // The signed-out screens bounce a session straight to the app (or, for a
+  // recovery link, refuse to render at all), so signing in first would
+  // screenshot the expenses page under their name. They are not guests either
+  // — no share token, no name prompt — so they get a context of their own.
+  const isSignedOut = (route) => SIGNED_OUT_ROUTES.some((prefix) => route.requested.startsWith(prefix));
+
   const groups = [
-    { asGuest: false, routes: context.routes.filter((r) => !r.requested.startsWith('/s/')) },
-    { asGuest: true, routes: context.routes.filter((r) => r.requested.startsWith('/s/')) },
+    {
+      routes: context.routes.filter((route) => !isShare(route) && !isSignedOut(route)),
+    },
+    { asGuest: true, routes: context.routes.filter(isShare) },
+    { signedOut: true, routes: context.routes.filter(isSignedOut) },
   ].filter((group) => group.routes.length > 0);
 
   const results = [];

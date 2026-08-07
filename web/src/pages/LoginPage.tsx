@@ -74,7 +74,7 @@ export default function LoginPage() {
           Starting fresh? <Link to="/register" state={{ from }}>Create an account</Link>
         </p>
         <p className="small muted" style={{ marginTop: '-0.5rem' }}>
-          Forgotten your password? Ask the household owner to send you a reset link.
+          <Link to="/forgot">Forgotten your password?</Link>
         </p>
       </form>
     </AuthPage>

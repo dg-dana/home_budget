@@ -39,6 +39,12 @@ paste an id:
 | `/lists/:id` | the seeded "Supermarket" list |
 | `/s/:token` | that list's share link, **in a context with no cookie** but with a guest name already chosen, so it opens on the list rather than the name prompt |
 
+`/login`, `/register`, `/forgot`, `/reset/:token` and `/verify/:token` are also
+captured **with no session**. They have to be: the first three bounce a
+signed-in visitor to the expenses page, so screenshotting them from the seeded
+household would silently hand back a picture of the wrong screen — which is
+exactly what happened the first time `/forgot` was previewed.
+
 Flags:
 
 | Flag | Default | |

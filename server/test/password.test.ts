@@ -294,6 +294,24 @@ describe('owner-issued password recovery', () => {
     ).toBe(400);
   });
 
+  it('is the only recovery there is when nothing can send email', async () => {
+    // No provider is configured in this file, which is the state the suite and
+    // any local run are in. Self-service recovery refuses outright rather than
+    // showing the link the way every other flow does: printing it would hand
+    // anybody a way into any account by typing its address (`forgotPassword.test.ts`
+    // holds the configured half).
+    const response = await createClient().post('/api/auth/forgot', { email: member.email });
+    expect(response.status).toBe(503);
+    expect(response.body.error).toMatch(/household owner/i);
+    expect(JSON.stringify(response.body)).not.toMatch(/token|reset\//);
+    expect(
+      (db.prepare('SELECT COUNT(*) AS n FROM password_resets').get() as { n: number }).n,
+    ).toBe(0);
+
+    // The owner-issued route is untouched and still works.
+    expect((await issueReset(member.userId)).status).toBe(201);
+  });
+
   it('drops outstanding links when the member leaves of their own accord', async () => {
     const issued = await issueReset(member.userId);
     expect((await member.client.delete('/api/household/members/me')).status).toBe(204);

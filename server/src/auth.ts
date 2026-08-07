@@ -165,6 +165,32 @@ export async function setPassword(userId: string, plainPassword: string): Promis
 }
 
 /**
+ * Mints a recovery link, retiring any outstanding one for that account so only
+ * the newest works — the same rule as confirmation links and invites.
+ *
+ * `createdBy` is the owner who issued it, or **null** when the person asked for
+ * it themselves. The column has been nullable since it was created, which is
+ * why self-service recovery needed no migration.
+ */
+export function issuePasswordReset(userId: string, createdBy: string | null) {
+  const token = newToken();
+  const expiresAt = new Date(Date.now() + config.passwordResetMaxAgeMs).toISOString();
+
+  db.transaction(() => {
+    db.prepare('UPDATE password_resets SET used_at = ? WHERE user_id = ? AND used_at IS NULL').run(
+      nowIso(),
+      userId,
+    );
+    db.prepare(
+      `INSERT INTO password_resets (token, user_id, created_by, expires_at, created_at)
+       VALUES (?, ?, ?, ?, ?)`,
+    ).run(token, userId, createdBy, expiresAt, nowIso());
+  })();
+
+  return { token, expiresAt };
+}
+
+/**
  * Re-checks the caller's own password before something irreversible.
  *
  * The same guard as `POST /auth/password`, for the same reason: a session

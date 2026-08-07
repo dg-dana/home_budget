@@ -10,13 +10,29 @@ interface Bucket {
  * Small in-process fixed-window limiter. Enough to blunt password guessing and
  * share-token scanning on a single-instance deployment; swap for a shared store
  * (Redis) if this ever runs on more than one process.
+ *
+ * Buckets are keyed by client IP unless `key` says otherwise — recovery is
+ * limited per **address** as well, since one request there sends mail to
+ * somebody who did not ask for it, and changing IP is cheap.
  */
-export function rateLimit(options: { windowMs: number; max: number; message?: string }): RequestHandler {
+export function rateLimit(options: {
+  windowMs: number;
+  max: number;
+  message?: string;
+  /** What to count against. Returning an empty string skips the limiter. */
+  key?: (req: Parameters<RequestHandler>[0]) => string;
+}): RequestHandler {
   const buckets = new Map<string, Bucket>();
 
   return (req, _res, next) => {
     const now = Date.now();
-    const key = req.ip ?? 'unknown';
+    const key = options.key ? options.key(req) : (req.ip ?? 'unknown');
+    // A request the key function cannot read (a malformed body, say) is left to
+    // the route to reject, rather than counted against everybody at once.
+    if (!key) {
+      next();
+      return;
+    }
     const bucket = buckets.get(key);
 
     if (!bucket || bucket.resetAt <= now) {
