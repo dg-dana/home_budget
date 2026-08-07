@@ -194,7 +194,7 @@ they are simply dropped.
 | Action | Who hears |
 | --- | --- |
 | Registration, `POST /auth/verify/resend` | the address being confirmed (link) |
-| `POST /household/invites` with an address | the invitee (link) |
+| `POST /household/invites` with an address | the invitee (link) — refused outright if that address is already a member (§4) |
 | `POST /household/members/:id/reset-password` | the member (link) — **and the link is still returned to the owner**. Only reachable where nothing can send email, so in practice the link on screen is the message |
 | `POST /auth/forgot` | the address, **if it has an account** (link) — never the response, and never the caller |
 | `POST /households` | the new owner |
@@ -496,7 +496,7 @@ different questions. Keep them apart rather than merging them.
 - **No `data-theme` attribute at all means "follow the OS"** — that is the `color-scheme: light dark` on `:root`. Do not write `data-theme="system"`.
 - **An inline script in `web/index.html` applies the stored choice before first paint.** Without it, a dark-mode device flashes the light palette on every load while React boots. It duplicates `applyTheme()` in `theme.ts` on purpose — the two must be changed together, and there is an e2e test that blocks the JS bundle to prove the inline copy is doing the work.
 - `ThemeToggle` sits in both headers: the member `Layout` and `SharedListPage`'s own guest header. Three states, not a switch, because "match device" is the default and a two-way toggle would strand anyone whose phone flips to dark at sunset.
-- **The signed-out pages get it too, via `AuthPage`** — the shell every `.auth-page` screen renders through (sign-in, register, join, reset, and the guest page's own error and name-prompt states). They have no header to hold the control, and the sign-in page is where most people land: with no toggle there, the only route to dark mode was to sign in first. The toggle is absolutely positioned in the corner so the card stays centred rather than being pushed down by a second grid row.
+- **The signed-out pages get it too, via `AuthPage`** — the shell every `.auth-page` screen renders through (sign-in, register, forgot, verify, join, reset, and the guest page's own error and name-prompt states). They have no header to hold the control, and the sign-in page is where most people land: with no toggle there, the only route to dark mode was to sign in first. The toggle is absolutely positioned in the corner so the card stays centred rather than being pushed down by a second grid row.
 
 ### 9.2 Charts and the statistics page
 

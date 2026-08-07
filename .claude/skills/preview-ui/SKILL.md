@@ -91,6 +91,32 @@ If you need a different shape — an empty state, one person, a category past th
 sixth series colour — edit `seed()` in `preview.mjs` for the run and put it
 back, or use `--keep-open` and drive the running app yourself.
 
+## Looking at a state you have to reach first
+
+Screenshots capture a page as it loads. An error, a filled-in form, a
+disclosure that starts closed — none of those are a route. For those, use
+`--keep-open` and drive the running server yourself:
+
+```bash
+node .claude/skills/preview-ui/preview.mjs /household --keep-open
+# prints:  Server left running: http://127.0.0.1:PORT
+#          Sign in as dana-….@preview.local / preview-password
+```
+
+Then a dozen lines of Playwright against that URL — sign in, do the thing,
+`page.screenshot()`. That is how "the invite refusal appears under the form
+rather than at the top of the page" was checked, and it is not a claim any
+route screenshot could have supported.
+
+Two things that will bite:
+
+- **Run the script from the repo root.** Node resolves `@playwright/test` from
+  the working directory, so a file sitting in `/tmp` cannot import it.
+- **Clean up after yourself.** `--keep-open` leaves the server *and* its
+  database. Kill it with the `kill -- -PID` line it printed, or
+  `pkill -f "dist/inde[x].js"` — the brackets matter, or the pattern matches
+  the shell running it and kills the call instead (exit 144, no output).
+
 ## This is for looking, not for proving
 
 A screenshot confirms a change today; it does not stop it regressing tomorrow.
