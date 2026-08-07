@@ -449,11 +449,16 @@ different questions. Keep them apart rather than merging them.
   7-bit GSM alphabet fits 160 characters; a single tick or arrow switches the
   whole message to UCS-2 and halves that to 70. Names and comments may of
   course carry anything, but the app's own scaffolding — `- ` bullets, a
-  two-space indent for a comment, `To buy:` / `Already in the basket:` headings
-  — adds nothing that costs a segment. The name runs straight into the first
-  heading: a blank line there only pushes the shopping further down a phone
-  screen, and blank lines earn their place *between* sections. Who added an item and who picked it up
+  two-space indent for a comment, the `To buy:` heading — adds nothing that
+  costs a segment. The name runs straight into the heading: a blank line there
+  only pushes the shopping further down a phone screen. Who added an item and who picked it up
   are left out: useful on screen, noise in a message read in a shop.
+- **The copy carries only the unticked items.** A ticked item is one somebody
+  already has in the basket, so listing it tells the reader to buy what they are
+  carrying; the text is read in a shop and says what is left. With everything
+  ticked it reads `Nothing left to buy.`, which is deliberately different from
+  the empty list's `Nothing on the list yet.` — one means done, the other means
+  nobody has written anything down.
 - **The comment sits behind a disclosure in the composer**, and is edited from
   the row through `window.prompt` — the same thing renaming a list does. Most
   items are two words and a quantity; a permanent textarea above the list, or

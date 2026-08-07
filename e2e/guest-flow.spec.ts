@@ -176,7 +176,7 @@ test.describe('guest shopping list', () => {
     await guest.context().close();
   });
 
-  test('copies the whole list as plain text, ready to paste into a chat', async ({
+  test('copies what is still to buy as plain text, ready to paste into a chat', async ({
     page,
     browser,
     request,
@@ -204,18 +204,19 @@ test.describe('guest shopping list', () => {
     const copied = await guest.evaluate(() => navigator.clipboard.readText());
     expect(copied).toBe(
       [
-        // The name runs straight into the first heading; blank lines separate
-        // sections, not the title from its list.
+        // The name runs straight into the heading, with no blank line to push
+        // the shopping down a phone screen.
         'Supermarket',
         'To buy:',
         '- Milk (2 L)',
         '  The one in the glass bottle',
         '- Bread',
-        '',
-        'Already in the basket:',
-        '- Coffee',
       ].join('\n'),
     );
+
+    // Coffee is ticked off, so it is not in the message at all: a shopping list
+    // that lists what you are already carrying is worse than no list.
+    expect(copied).not.toContain('Coffee');
 
     // The share link is a credential and this text goes into group chats.
     expect(copied).not.toContain(owner.shareToken);
