@@ -2,12 +2,14 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api, type Category, type Invite, type Member, type Notice } from '../api';
 import { formatMoney } from '../format';
+import { useI18n } from '../i18n';
 import { useSession } from '../session';
 
 const CURRENCIES = ['USD', 'EUR', 'GBP', 'ILS', 'CAD', 'AUD', 'CHF', 'SEK', 'PLN', 'INR'];
 
 export default function HouseholdPage() {
   const { user, household, ownerRecovery, refresh } = useSession();
+  const { t, tx, plural } = useI18n();
   const navigate = useNavigate();
   const isOwner = user?.role === 'owner';
   const currency = household?.currency ?? 'USD';
@@ -64,7 +66,7 @@ export default function HouseholdPage() {
       await action();
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong');
+      setError(err instanceof Error ? err.message : t('common.somethingWrong'));
     }
   };
 
@@ -83,7 +85,7 @@ export default function HouseholdPage() {
       setCopiedToken(token);
       window.setTimeout(() => setCopiedToken(''), 2000);
     } catch {
-      setError('Could not copy automatically — select the link and copy it manually.');
+      setError(t('common.copyFailed'));
     }
   };
 
@@ -97,9 +99,9 @@ export default function HouseholdPage() {
         newPassword: passwords.next,
       });
       setPasswords({ current: '', next: '' });
-      setPasswordNotice('Password changed. Any other device using this account was signed out.');
+      setPasswordNotice(t('household.passwordChanged'));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not change the password');
+      setError(err instanceof Error ? err.message : t('household.passwordFailed'));
     }
   };
 
@@ -118,7 +120,7 @@ export default function HouseholdPage() {
         },
       }));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not create a reset link');
+      setError(err instanceof Error ? err.message : t('household.resetFailed'));
     }
   };
 
@@ -141,19 +143,13 @@ export default function HouseholdPage() {
    */
   const handleLeave = async () => {
     setDangerError('');
-    if (
-      !window.confirm(
-        `Leave "${household?.name ?? 'this household'}"? You lose access to its expenses and lists. ` +
-          'What you spent stays in its history, listed without a payer. Getting back in needs a new invite.',
-      )
-    ) {
-      return;
-    }
+    const name = household?.name ?? t('household.thisHousehold');
+    if (!window.confirm(t('household.confirmLeave', { household: name }))) return;
     try {
       await api.delete('/household/members/me');
       await returnToHouseholds();
     } catch (err) {
-      setDangerError(err instanceof Error ? err.message : 'Could not leave the household');
+      setDangerError(err instanceof Error ? err.message : t('household.leaveFailed'));
     }
   };
 
@@ -161,19 +157,19 @@ export default function HouseholdPage() {
     event.preventDefault();
     setDangerError('');
     const others = members.length - 1;
+    const name = household?.name ?? t('household.thisHousehold');
+    // Whole sentences either way rather than one built from clauses: what the
+    // other people lose sits in the middle of the German one, not the end.
     const warning =
-      `Delete "${household?.name ?? 'this household'}"? Every expense, budget, recurring rule and shopping list goes, ` +
-      'and share links stop working' +
-      (others > 0
-        ? `. ${others} other ${others === 1 ? 'person' : 'people'} lose access to it — their accounts survive`
-        : '') +
-      '. This cannot be undone.';
+      others > 0
+        ? plural(others, 'household.confirmDeleteOthers', { household: name })
+        : t('household.confirmDelete', { household: name });
     if (!window.confirm(warning)) return;
     try {
       await api.delete('/household', { password: dangerPassword });
       await returnToHouseholds();
     } catch (err) {
-      setDangerError(err instanceof Error ? err.message : 'Could not delete the household');
+      setDangerError(err instanceof Error ? err.message : t('household.deleteFailed'));
     }
   };
 
@@ -190,7 +186,7 @@ export default function HouseholdPage() {
     if (!newCategory.name.trim()) return;
     const budget = newCategory.budget.trim() === '' ? null : Number(newCategory.budget);
     if (budget !== null && (!Number.isFinite(budget) || budget < 0)) {
-      setError('Budget must be a positive number');
+      setError(t('household.budgetPositive'));
       return;
     }
     void run(async () => {
@@ -219,8 +215,8 @@ export default function HouseholdPage() {
     <div className="stack">
       <div className="page-header">
         <div>
-          <h1>Household</h1>
-          <p>Family members, invites, and the categories you budget against.</p>
+          <h1>{t('household.title')}</h1>
+          <p>{t('household.subtitle')}</p>
         </div>
       </div>
 
@@ -229,7 +225,7 @@ export default function HouseholdPage() {
       <div className="grid-2">
         <div className="card stack">
           <div className="card-title">
-            <h2>Family members</h2>
+            <h2>{t('household.members')}</h2>
             <span className="muted small">{members.length}</span>
           </div>
 
@@ -237,8 +233,7 @@ export default function HouseholdPage() {
               and there is no longer a button here for it. */}
           {isOwner && !ownerRecovery && (
             <p className="small muted" style={{ margin: 0 }}>
-              Locked out? Anyone can reset their own password from the sign-in page —
-              "Forgotten your password?" emails them a link.
+              {t('household.lockedOutHint')}
             </p>
           )}
 
@@ -248,11 +243,13 @@ export default function HouseholdPage() {
                 <div className="item-main">
                   <div className="item-name">
                     {member.name}
-                    {member.id === user?.id && <span className="muted small"> · you</span>}
+                    {member.id === user?.id && (
+                      <span className="muted small"> · {t('common.you')}</span>
+                    )}
                   </div>
                   <div className="item-meta">
                     <span>{member.email}</span>
-                    <span className="tag">{member.role}</span>
+                    <span className="tag">{t(`common.role.${member.role}`)}</span>
                   </div>
                 </div>
                 {/* Only where the app cannot email: everywhere else people
@@ -262,27 +259,30 @@ export default function HouseholdPage() {
                   <button
                     type="button"
                     className="button secondary small"
-                    title={`Create a password reset link for ${member.name}`}
+                    title={t('household.resetPasswordTitle', { name: member.name })}
                     onClick={() => handleIssueReset(member)}
                   >
-                    Reset password
+                    {t('household.resetPassword')}
                   </button>
                 )}
                 {isOwner && member.id !== user?.id && (
                   <button
                     type="button"
                     className="button secondary small"
-                    title={
+                    title={t(
                       member.role === 'owner'
-                        ? `Make ${member.name} an ordinary member`
-                        : `Let ${member.name} invite, rename and remove`
-                    }
+                        ? 'household.makeMemberTitle'
+                        : 'household.makeOwnerTitle',
+                      { name: member.name },
+                    )}
                     onClick={() => {
                       const next = member.role === 'owner' ? 'member' : 'owner';
-                      const question =
+                      const question = t(
                         next === 'owner'
-                          ? `Make ${member.name} an owner? They will be able to invite and remove people, rename the household and delete it.`
-                          : `Make ${member.name} an ordinary member? They will lose those powers.`;
+                          ? 'household.confirmMakeOwner'
+                          : 'household.confirmMakeMember',
+                        { name: member.name },
+                      );
                       if (window.confirm(question)) {
                         void run(async () => {
                           await api.put(`/household/members/${member.id}/role`, { role: next });
@@ -291,16 +291,16 @@ export default function HouseholdPage() {
                       }
                     }}
                   >
-                    {member.role === 'owner' ? 'Make member' : 'Make owner'}
+                    {t(member.role === 'owner' ? 'household.makeMember' : 'household.makeOwner')}
                   </button>
                 )}
                 {isOwner && member.id !== user?.id && (
                   <button
                     type="button"
                     className="icon-button danger"
-                    title={`Remove ${member.name}`}
+                    title={t('household.removeTitle', { name: member.name })}
                     onClick={() => {
-                      if (window.confirm(`Remove ${member.name} from the household?`)) {
+                      if (window.confirm(t('household.confirmRemove', { name: member.name }))) {
                         void run(() => api.delete(`/household/members/${member.id}`));
                       }
                     }}
@@ -314,15 +314,20 @@ export default function HouseholdPage() {
 
           {Object.entries(resetLinks).length > 0 && (
             <div className="stack" style={{ gap: '0.5rem' }}>
-              <h3 className="muted small">Reset links</h3>
+              <h3 className="muted small">{t('household.resetLinks')}</h3>
               {Object.entries(resetLinks).map(([memberId, link]) => (
                 <div key={memberId}>
                   <p className="small muted" style={{ margin: '0 0 0.25rem' }}>
-                    For {members.find((m) => m.id === memberId)?.name ?? 'member'} —{' '}
-                    {link.delivered
-                      ? 'emailed to them, and here as well.'
-                      : 'send it to them directly.'}{' '}
-                    It works once, expires in 24 hours, and signs out their other devices.
+                    {t(
+                      link.delivered
+                        ? 'household.resetLinkEmailed'
+                        : 'household.resetLinkDirect',
+                      {
+                        name:
+                          members.find((m) => m.id === memberId)?.name ??
+                          t('household.someMember'),
+                      },
+                    )}
                   </p>
                   <div className="share-box">
                     <code>{link.url}</code>
@@ -335,11 +340,11 @@ export default function HouseholdPage() {
                           setCopiedToken(memberId);
                           window.setTimeout(() => setCopiedToken(''), 2000);
                         } catch {
-                          setError('Could not copy automatically — select the link and copy it manually.');
+                          setError(t('common.copyFailed'));
                         }
                       }}
                     >
-                      {copiedToken === memberId ? 'Copied' : 'Copy'}
+                      {t(copiedToken === memberId ? 'common.copied' : 'common.copy')}
                     </button>
                   </div>
                 </div>
@@ -362,7 +367,7 @@ export default function HouseholdPage() {
                       });
                       setInviteNotice(
                         created.notice.delivered
-                          ? `Invite emailed to ${created.notice.to}. The link is below too.`
+                          ? t('household.inviteEmailed', { email: created.notice.to })
                           : '',
                       );
                       setInviteEmail('');
@@ -371,21 +376,23 @@ export default function HouseholdPage() {
                       // Kept beside the form, and the address kept in the box:
                       // "already in this household" is answered by editing what
                       // was typed, not by typing it again.
-                      setInviteError(err instanceof Error ? err.message : 'Could not invite them');
+                      setInviteError(
+                        err instanceof Error ? err.message : t('household.inviteFailed'),
+                      );
                     }
                   })();
                 }}
               >
                 <input
                   type="email"
-                  aria-label="Invite email (optional)"
-                  placeholder="Email (optional)"
+                  aria-label={t('household.inviteEmailLabel')}
+                  placeholder={t('household.inviteEmailPlaceholder')}
                   value={inviteEmail}
                   onChange={(event) => setInviteEmail(event.target.value)}
                   style={{ flex: 1, minWidth: '180px' }}
                 />
                 <button type="submit" className="button">
-                  Create invite
+                  {t('household.createInvite')}
                 </button>
               </form>
 
@@ -399,7 +406,7 @@ export default function HouseholdPage() {
 
               {invites.length > 0 && (
                 <div className="stack" style={{ gap: '0.5rem' }}>
-                  <h3 className="muted small">Pending invites</h3>
+                  <h3 className="muted small">{t('household.pendingInvites')}</h3>
                   {invites.map((invite) => (
                     <div className="share-box" key={invite.token}>
                       <code>{inviteUrl(invite.token)}</code>
@@ -408,19 +415,19 @@ export default function HouseholdPage() {
                         className="button small"
                         onClick={() => copyInvite(invite.token)}
                       >
-                        {copiedToken === invite.token ? 'Copied' : 'Copy'}
+                        {t(copiedToken === invite.token ? 'common.copied' : 'common.copy')}
                       </button>
                       <button
                         type="button"
                         className="button danger small"
                         onClick={() => run(() => api.delete(`/household/invites/${invite.token}`))}
                       >
-                        Revoke
+                        {t('household.revoke')}
                       </button>
                     </div>
                   ))}
                   <p className="small muted" style={{ margin: 0 }}>
-                    Each link works once and expires after 14 days.
+                    {t('household.inviteExpiry')}
                   </p>
                 </div>
               )}
@@ -431,13 +438,13 @@ export default function HouseholdPage() {
         <div className="stack">
         <div className="card stack">
           <div className="card-title">
-            <h2>Settings</h2>
+            <h2>{t('household.settings')}</h2>
           </div>
 
           {isOwner ? (
             <form className="stack" onSubmit={handleSaveSettings}>
               <div>
-                <label htmlFor="householdName">Household name</label>
+                <label htmlFor="householdName">{t('household.nameLabel')}</label>
                 <input
                   id="householdName"
                   required
@@ -446,7 +453,7 @@ export default function HouseholdPage() {
                 />
               </div>
               <div>
-                <label htmlFor="currency">Currency</label>
+                <label htmlFor="currency">{t('common.currency')}</label>
                 <select
                   id="currency"
                   value={settings.currency}
@@ -461,18 +468,18 @@ export default function HouseholdPage() {
               </div>
               <div>
                 <button type="submit" className="button">
-                  Save settings
+                  {t('household.saveSettings')}
                 </button>
               </div>
             </form>
           ) : (
-            <p className="muted small">Only the household owner can change these settings.</p>
+            <p className="muted small">{t('household.ownerOnly')}</p>
           )}
         </div>
 
         <div className="card stack">
           <div className="card-title">
-            <h2>Your name here</h2>
+            <h2>{t('household.yourNameHere')}</h2>
           </div>
 
           {displayNameNotice && <div className="alert info">{displayNameNotice}</div>}
@@ -485,12 +492,16 @@ export default function HouseholdPage() {
               void run(async () => {
                 await api.put('/household/me', { displayName });
                 await refresh();
-                setDisplayNameNotice('Saved.');
+                setDisplayNameNotice(t('household.saved'));
               });
             }}
           >
             <div>
-              <label htmlFor="displayName">Name in {household?.name ?? 'this household'}</label>
+              <label htmlFor="displayName">
+                {t('household.nameInLabel', {
+                  household: household?.name ?? t('household.thisHousehold'),
+                })}
+              </label>
               <input
                 id="displayName"
                 required
@@ -501,26 +512,25 @@ export default function HouseholdPage() {
             </div>
             <div>
               <button type="submit" className="button">
-                Save name
+                {t('household.saveName')}
               </button>
             </div>
             <p className="small muted" style={{ margin: 0 }}>
-              Only for this household — you can go by something different in each one. Your email
-              and password belong to your account and are shared across all of them.
+              {t('household.nameHelp')}
             </p>
           </form>
         </div>
 
         <div className="card stack">
           <div className="card-title">
-            <h2>Your password</h2>
+            <h2>{t('household.yourPassword')}</h2>
           </div>
 
           {passwordNotice && <div className="alert info">{passwordNotice}</div>}
 
           <form className="stack" onSubmit={handleChangePassword}>
             <div>
-              <label htmlFor="currentPassword">Current password</label>
+              <label htmlFor="currentPassword">{t('household.currentPassword')}</label>
               <input
                 id="currentPassword"
                 type="password"
@@ -531,7 +541,7 @@ export default function HouseholdPage() {
               />
             </div>
             <div>
-              <label htmlFor="newPassword">New password</label>
+              <label htmlFor="newPassword">{t('household.newPassword')}</label>
               <input
                 id="newPassword"
                 type="password"
@@ -544,11 +554,11 @@ export default function HouseholdPage() {
             </div>
             <div>
               <button type="submit" className="button">
-                Change password
+                {t('household.changePassword')}
               </button>
             </div>
             <p className="small muted" style={{ margin: 0 }}>
-              Changing it signs out every other device using your account.
+              {t('household.passwordHelp')}
             </p>
           </form>
         </div>
@@ -557,16 +567,16 @@ export default function HouseholdPage() {
 
       <div className="card stack">
         <div className="card-title">
-          <h2>Categories & budgets</h2>
+          <h2>{t('household.categories')}</h2>
         </div>
 
         <div className="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>Category</th>
-                <th>Monthly budget</th>
-                <th aria-label="Actions" />
+                <th>{t('common.category')}</th>
+                <th>{t('household.monthlyBudget')}</th>
+                <th aria-label={t('household.actions')} />
               </tr>
             </thead>
             <tbody>
@@ -576,7 +586,7 @@ export default function HouseholdPage() {
                     <span className="row" style={{ gap: '0.5rem' }}>
                       <input
                         type="color"
-                        aria-label={`${category.name} colour`}
+                        aria-label={t('household.categoryColour', { name: category.name })}
                         value={category.color}
                         style={{ width: '38px', padding: '2px', height: '32px' }}
                         onChange={(event) =>
@@ -600,8 +610,8 @@ export default function HouseholdPage() {
                       type="number"
                       min="0"
                       step="1"
-                      aria-label={`${category.name} monthly budget`}
-                      placeholder="No limit"
+                      aria-label={t('household.categoryBudget', { name: category.name })}
+                      placeholder={t('household.noLimit')}
                       defaultValue={
                         category.monthly_budget_cents === null
                           ? ''
@@ -615,11 +625,11 @@ export default function HouseholdPage() {
                     <button
                       type="button"
                       className="icon-button danger"
-                      title={`Delete ${category.name}`}
+                      title={t('household.deleteCategoryTitle', { name: category.name })}
                       onClick={() => {
                         if (
                           window.confirm(
-                            `Delete "${category.name}"? Its expenses stay, but become uncategorised.`,
+                            t('household.confirmDeleteCategory', { name: category.name }),
                           )
                         ) {
                           void run(() => api.delete(`/categories/${category.id}`));
@@ -637,15 +647,15 @@ export default function HouseholdPage() {
 
         <form className="row" onSubmit={handleAddCategory}>
           <input
-            aria-label="New category name"
-            placeholder="New category"
+            aria-label={t('household.newCategoryName')}
+            placeholder={t('household.newCategory')}
             value={newCategory.name}
             onChange={(event) => setNewCategory({ ...newCategory, name: event.target.value })}
             style={{ flex: 1, minWidth: '160px' }}
           />
           <input
             type="color"
-            aria-label="New category colour"
+            aria-label={t('household.newCategoryColour')}
             value={newCategory.color}
             onChange={(event) => setNewCategory({ ...newCategory, color: event.target.value })}
             style={{ width: '48px', padding: '2px', height: '38px' }}
@@ -653,20 +663,19 @@ export default function HouseholdPage() {
           <input
             type="number"
             min="0"
-            aria-label="Monthly budget"
-            placeholder={`Budget (${currency})`}
+            aria-label={t('household.monthlyBudget')}
+            placeholder={t('household.budgetPlaceholder', { currency })}
             value={newCategory.budget}
             onChange={(event) => setNewCategory({ ...newCategory, budget: event.target.value })}
             style={{ maxWidth: '160px' }}
           />
           <button type="submit" className="button" disabled={!newCategory.name.trim()}>
-            Add
+            {t('household.add')}
           </button>
         </form>
 
         <p className="small muted" style={{ margin: 0 }}>
-          Budgets are compared against each month's spending on the Expenses page. Example limit:{' '}
-          {formatMoney(50000, currency)}.
+          {t('household.budgetHelp', { amount: formatMoney(50000, currency) })}
         </p>
       </div>
 
@@ -680,7 +689,7 @@ export default function HouseholdPage() {
       */}
       <div className="card stack danger-zone">
         <div className="card-title">
-          <h2>Danger zone</h2>
+          <h2>{t('household.dangerZone')}</h2>
         </div>
 
         {dangerError && <div className="alert">{dangerError}</div>}
@@ -688,13 +697,15 @@ export default function HouseholdPage() {
         <div className="grid-2">
           <div className="stack">
             <div>
-              <h3 style={{ margin: 0 }}>Leave this household</h3>
+              <h3 style={{ margin: 0 }}>{t('household.leaveTitle')}</h3>
               <p className="small muted" style={{ margin: '0.25rem 0 0' }}>
-                {strandedOwner
-                  ? 'You are this household’s only owner. Make someone else an owner first.'
-                  : lastPerson
-                    ? 'You are the only person here, so there would be nobody left to reach it. Delete the household instead.'
-                    : 'Your account stays, and so does everything you spent — it is listed without a payer from then on. Getting back in needs a new invite.'}
+                {t(
+                  strandedOwner
+                    ? 'household.leaveSoleOwner'
+                    : lastPerson
+                      ? 'household.leaveLastPerson'
+                      : 'household.leaveBody',
+                )}
               </p>
             </div>
             <div>
@@ -704,7 +715,7 @@ export default function HouseholdPage() {
                 disabled={strandedOwner || lastPerson}
                 onClick={handleLeave}
               >
-                Leave household
+                {t('household.leaveButton')}
               </button>
             </div>
           </div>
@@ -712,14 +723,13 @@ export default function HouseholdPage() {
           {isOwner && (
             <form className="stack" onSubmit={handleDeleteHousehold}>
               <div>
-                <h3 style={{ margin: 0 }}>Delete this household</h3>
+                <h3 style={{ margin: 0 }}>{t('household.deleteTitle')}</h3>
                 <p className="small muted" style={{ margin: '0.25rem 0 0' }}>
-                  Removes every expense, budget, recurring rule, shopping list and share link, for
-                  everyone in it. Their accounts survive — only this household goes.
+                  {t('household.deleteBody')}
                 </p>
               </div>
               <div>
-                <label htmlFor="deleteHouseholdPassword">Confirm with your password</label>
+                <label htmlFor="deleteHouseholdPassword">{t('common.confirmPassword')}</label>
                 <input
                   id="deleteHouseholdPassword"
                   type="password"
@@ -732,7 +742,7 @@ export default function HouseholdPage() {
               </div>
               <div>
                 <button type="submit" className="button danger-solid">
-                  Delete household
+                  {t('household.deleteButton')}
                 </button>
               </div>
             </form>
@@ -740,9 +750,9 @@ export default function HouseholdPage() {
         </div>
 
         <p className="small muted" style={{ margin: 0 }}>
-          Leaving can be undone with a new invite. Deleting cannot be undone at all — there is
-          no export, and nothing it removes comes back. To close your account instead, go to{' '}
-          <Link to="/households">Your households</Link>.
+          {tx('household.dangerFooter', {
+            link: <Link to="/households">{t('household.yourHouseholds')}</Link>,
+          })}
         </p>
       </div>
     </div>

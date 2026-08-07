@@ -1,4 +1,5 @@
 import type { ShoppingItem } from '../api';
+import { useI18n } from '../i18n';
 import type { ItemApi } from '../shoppingApi';
 
 interface Props {
@@ -20,13 +21,17 @@ interface Props {
  * into two files drifts the first time one of them is touched.
  */
 export default function ItemRow({ item, api, editable, canDelete = false, run }: Props) {
+  const { t } = useI18n();
+
   const editNote = () => {
     // `window.prompt`, like renaming a list — a comment is one short string and
     // an inline editor on every row would be a lot of machinery for that.
-    const next = window.prompt(`Comment on ${item.name}`, item.note);
+    const next = window.prompt(t('item.commentOn', { name: item.name }), item.note);
     if (next === null || next.trim() === item.note) return;
     run(() => api.setNote(item, next.trim()));
   };
+
+  const commentLabel = t(item.note ? 'item.editCommentOn' : 'item.commentOn', { name: item.name });
 
   return (
     <li className={`item${item.is_checked ? ' checked' : ''}`}>
@@ -35,7 +40,7 @@ export default function ItemRow({ item, api, editable, canDelete = false, run }:
         checked={item.is_checked === 1}
         disabled={!editable}
         onChange={() => run(() => api.toggle(item))}
-        aria-label={`Mark ${item.name} as bought`}
+        aria-label={t('item.markBought', { name: item.name })}
       />
 
       <div className="item-main">
@@ -45,8 +50,10 @@ export default function ItemRow({ item, api, editable, canDelete = false, run }:
         </div>
         {item.note && <p className="item-note">{item.note}</p>}
         <div className="item-meta">
-          <span>Added by {item.added_by_name}</span>
-          {item.checked_by_name && <span>· picked up by {item.checked_by_name}</span>}
+          <span>{t('item.addedBy', { name: item.added_by_name })}</span>
+          {item.checked_by_name && (
+            <span>{t('item.pickedUpBy', { name: item.checked_by_name })}</span>
+          )}
         </div>
       </div>
 
@@ -57,8 +64,8 @@ export default function ItemRow({ item, api, editable, canDelete = false, run }:
           <button
             type="button"
             className="icon-button"
-            title={item.note ? `Edit the comment on ${item.name}` : `Comment on ${item.name}`}
-            aria-label={item.note ? `Edit the comment on ${item.name}` : `Comment on ${item.name}`}
+            title={commentLabel}
+            aria-label={commentLabel}
             onClick={editNote}
           >
             💬
@@ -69,7 +76,7 @@ export default function ItemRow({ item, api, editable, canDelete = false, run }:
           <button
             type="button"
             className="icon-button danger"
-            title="Remove"
+            title={t('common.remove')}
             onClick={() => run(() => api.remove(item))}
           >
             ✕

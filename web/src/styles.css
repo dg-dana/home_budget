@@ -349,7 +349,10 @@ input[type='checkbox'] {
 
 /* ----------------------------------------------------------- theme toggle */
 
-.theme-toggle {
+/* The language picker is the same control in a different alphabet, so it takes
+   the same two rules rather than a near-copy of them. */
+.theme-toggle,
+.lang-toggle {
   display: inline-flex;
   gap: 0.15rem;
   padding: 0.15rem;
@@ -359,7 +362,8 @@ input[type='checkbox'] {
   flex: none;
 }
 
-.theme-option {
+.theme-option,
+.lang-option {
   border: none;
   background: transparent;
   color: var(--muted);
@@ -369,11 +373,22 @@ input[type='checkbox'] {
   border-radius: 999px;
   cursor: pointer;
 }
-.theme-option:hover { color: var(--text); }
-.theme-option[aria-pressed='true'] {
+.theme-option:hover,
+.lang-option:hover { color: var(--text); }
+.theme-option[aria-pressed='true'],
+.lang-option[aria-pressed='true'] {
   background: var(--surface);
   color: var(--accent-text);
   box-shadow: 0 1px 2px var(--shadow-near);
+}
+
+/* Two letters, not a glyph: sized so EN and DE sit at the same optical weight
+   as the theme icons beside them rather than shouting over them. */
+.lang-option {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 0.38rem 0.45rem;
 }
 
 /* --------------------------------------------------------------- alerts */
@@ -706,6 +721,12 @@ input[type='checkbox'] {
   position: absolute;
   top: 1.5rem;
   right: 1.5rem;
+  /* Two controls now — theme and language — so they need a row of their own
+     rather than stacking on top of each other in the corner. */
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 .auth-card {
   width: 100%;

@@ -14,13 +14,20 @@ import ResetPasswordPage from './pages/ResetPasswordPage';
 import SharedListPage from './pages/SharedListPage';
 import StatsPage from './pages/StatsPage';
 import VerifyEmailPage from './pages/VerifyEmailPage';
+import { useI18n } from './i18n';
 import { useSession } from './session';
+
+/** The one-line placeholder all three guards show while `/auth/me` is in flight. */
+function Loading() {
+  const { t } = useI18n();
+  return <div className="empty">{t('common.loading')}</div>;
+}
 
 function RequireAuth({ children }: { children: JSX.Element }) {
   const { user, loading } = useSession();
   const location = useLocation();
 
-  if (loading) return <div className="empty">Loading…</div>;
+  if (loading) return <Loading />;
   if (!user) return <Navigate to="/login" state={{ from: location.pathname }} replace />;
   return children;
 }
@@ -33,14 +40,14 @@ function RequireAuth({ children }: { children: JSX.Element }) {
  */
 function RequireHousehold({ children }: { children: JSX.Element }) {
   const { household, loading } = useSession();
-  if (loading) return <div className="empty">Loading…</div>;
+  if (loading) return <Loading />;
   if (!household) return <Navigate to="/households" replace />;
   return children;
 }
 
 function RedirectIfSignedIn({ children }: { children: JSX.Element }) {
   const { user, loading } = useSession();
-  if (loading) return <div className="empty">Loading…</div>;
+  if (loading) return <Loading />;
   if (user) return <Navigate to="/" replace />;
   return children;
 }

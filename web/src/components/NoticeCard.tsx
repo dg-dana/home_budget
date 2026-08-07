@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { Notice } from '../api';
+import { useI18n } from '../i18n';
 
 /**
  * Shows a message the app has emailed — or would have.
@@ -22,11 +23,16 @@ export default function NoticeCard({
   /** Issues a fresh notice. Offered only once something was actually sent. */
   onResend?: () => Promise<void>;
 }) {
+  const { t, tx } = useI18n();
   const [copied, setCopied] = useState(false);
   const [resending, setResending] = useState(false);
   const [resent, setResent] = useState(false);
   const [resendError, setResendError] = useState('');
   const url = notice.link ? `${window.location.origin}${notice.link}` : null;
+
+  // The address is emphasised inside the sentence rather than bolted on either
+  // end of it, so German can put it where German puts it.
+  const to = <strong>{notice.to}</strong>;
 
   const resend = async () => {
     setResending(true);
@@ -35,7 +41,7 @@ export default function NoticeCard({
       await onResend!();
       setResent(true);
     } catch (err) {
-      setResendError(err instanceof Error ? err.message : 'Could not send it again');
+      setResendError(err instanceof Error ? err.message : t('notice.resendFailed'));
     } finally {
       setResending(false);
     }
@@ -52,24 +58,14 @@ export default function NoticeCard({
 
       {notice.delivered && (
         <p className="small muted" style={{ margin: 0 }}>
-          {url ? (
-            <>
-              We have emailed <strong>{notice.to}</strong> — open the link in that message to carry
-              on.
-            </>
-          ) : (
-            <>
-              Sent to <strong>{notice.to}</strong>.
-            </>
-          )}
+          {tx(url ? 'notice.emailedWithLink' : 'notice.sentTo', { to })}
         </p>
       )}
 
       {url && !notice.delivered && (
         <>
           <p className="small muted" style={{ margin: 0 }}>
-            Nothing was emailed, so this link is the only copy. Open it, or pass it on, to confirm{' '}
-            <strong>{notice.to}</strong>.
+            {tx('notice.notEmailed', { to })}
           </p>
           <div className="share-box">
             <code>{url}</code>
@@ -86,7 +82,7 @@ export default function NoticeCard({
                 }
               }}
             >
-              {copied ? 'Copied' : 'Copy'}
+              {t(copied ? 'common.copied' : 'common.copy')}
             </button>
           </div>
         </>
@@ -94,19 +90,20 @@ export default function NoticeCard({
 
       {notice.delivered && onResend && (
         <p className="small muted" style={{ margin: 0 }}>
-          {resent ? (
-            <>
-              Sent again to <strong>{notice.to}</strong>. Only the newest link works.
-            </>
-          ) : (
-            <>
-              Not there? Check the spam folder, or{' '}
-              <button type="button" className="link-button" onClick={resend} disabled={resending}>
-                {resending ? 'sending…' : 'send the confirmation link again'}
-              </button>
-              .
-            </>
-          )}
+          {resent
+            ? tx('notice.sentAgain', { to })
+            : tx('notice.notThere', {
+                resend: (
+                  <button
+                    type="button"
+                    className="link-button"
+                    onClick={resend}
+                    disabled={resending}
+                  >
+                    {t(resending ? 'notice.resending' : 'notice.resend')}
+                  </button>
+                ),
+              })}
         </p>
       )}
 

@@ -4,11 +4,13 @@ import { api, type ShoppingListDetail } from '../api';
 import CopyListButton from '../components/CopyListButton';
 import ItemComposer from '../components/ItemComposer';
 import ItemRow from '../components/ItemRow';
+import { useI18n } from '../i18n';
 import { memberItemApi } from '../shoppingApi';
 import { usePoll } from '../usePoll';
 
 export default function ListDetailPage() {
   const { id = '' } = useParams();
+  const { t } = useI18n();
   const navigate = useNavigate();
 
   const [list, setList] = useState<ShoppingListDetail | null>(null);
@@ -40,7 +42,7 @@ export default function ListDetailPage() {
       await action();
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong');
+      setError(err instanceof Error ? err.message : t('common.somethingWrong'));
     }
   };
 
@@ -53,29 +55,33 @@ export default function ListDetailPage() {
       setCopied(true);
       window.setTimeout(() => setCopied(false), 2000);
     } catch {
-      setError('Could not copy automatically — select the link and copy it manually.');
+      setError(t('common.copyFailed'));
     }
   };
 
   const handleRename = () => {
-    const next = window.prompt('List name', list?.name ?? '');
+    const next = window.prompt(t('list.renamePrompt'), list?.name ?? '');
     if (next && next.trim() && next !== list?.name) {
       void run(() => api.put(`/lists/${id}`, { name: next.trim() }));
     }
   };
 
   const handleDeleteList = async () => {
-    if (!window.confirm(`Delete the list "${list?.name}" and everything on it?`)) return;
+    if (!window.confirm(t('list.confirmDelete', { name: list?.name ?? '' }))) return;
     try {
       await api.delete(`/lists/${id}`);
       navigate('/lists', { replace: true });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not delete the list');
+      setError(err instanceof Error ? err.message : t('list.deleteFailed'));
     }
   };
 
   if (!list) {
-    return error ? <div className="alert">{error}</div> : <div className="empty">Loading…</div>;
+    return error ? (
+      <div className="alert">{error}</div>
+    ) : (
+      <div className="empty">{t('common.loading')}</div>
+    );
   }
 
   const open = list.items.filter((item) => item.is_checked === 0);
@@ -86,17 +92,15 @@ export default function ListDetailPage() {
       <div className="page-header">
         <div>
           <h1>{list.name}</h1>
-          <p>
-            {open.length} to buy · {done.length} in the basket
-          </p>
+          <p>{t('list.summary', { open: open.length, done: done.length })}</p>
         </div>
         <div className="row">
           <CopyListButton load={() => Promise.resolve(list)} onError={setError} />
           <button type="button" className="button secondary small" onClick={handleRename}>
-            Rename
+            {t('list.rename')}
           </button>
           <button type="button" className="button danger small" onClick={handleDeleteList}>
-            Delete list
+            {t('list.delete')}
           </button>
         </div>
       </div>
@@ -107,20 +111,20 @@ export default function ListDetailPage() {
 
       <div className="card">
         <div className="card-title">
-          <h2>To buy</h2>
+          <h2>{t('list.toBuy')}</h2>
           {done.length > 0 && (
             <button
               type="button"
               className="button secondary small"
               onClick={() => run(() => api.post(`/lists/${id}/items/clear-checked`))}
             >
-              Clear {done.length} bought
+              {t('list.clearBought', { count: done.length })}
             </button>
           )}
         </div>
 
         {list.items.length === 0 ? (
-          <p className="empty">This list is empty.</p>
+          <p className="empty">{t('list.empty')}</p>
         ) : (
           <ul className="item-list">
             {[...open, ...done].map((item) => (
@@ -132,19 +136,18 @@ export default function ListDetailPage() {
 
       <div className="card stack">
         <div className="card-title">
-          <h2>Share with anyone</h2>
+          <h2>{t('list.shareTitle')}</h2>
         </div>
 
         {shareUrl ? (
           <>
             <p className="small muted" style={{ margin: 0 }}>
-              Anyone with this link can open the list without signing in. They cannot see your
-              expenses or anything else in the household.
+              {t('list.shareBody')}
             </p>
             <div className="share-box">
               <code>{shareUrl}</code>
               <button type="button" className="button small" onClick={copyShareLink}>
-                {copied ? 'Copied' : 'Copy link'}
+                {t(copied ? 'common.copied' : 'list.copyLink')}
               </button>
             </div>
             <label className="toggle">
@@ -155,7 +158,7 @@ export default function ListDetailPage() {
                   run(() => api.post(`/lists/${id}/share`, { canEdit: event.target.checked }))
                 }
               />
-              Let guests add items and tick things off
+              {t('list.guestsCanEdit')}
             </label>
             <div>
               <button
@@ -163,15 +166,14 @@ export default function ListDetailPage() {
                 className="button danger small"
                 onClick={() => run(() => api.delete(`/lists/${id}/share`))}
               >
-                Stop sharing
+                {t('list.stopSharing')}
               </button>
             </div>
           </>
         ) : (
           <>
             <p className="small muted" style={{ margin: 0 }}>
-              Create a link for people outside the household — a neighbour, a babysitter, whoever is
-              near the shop.
+              {t('list.notSharedBody')}
             </p>
             <div>
               <button
@@ -179,7 +181,7 @@ export default function ListDetailPage() {
                 className="button"
                 onClick={() => run(() => api.post(`/lists/${id}/share`, { canEdit: true }))}
               >
-                Create share link
+                {t('list.createShareLink')}
               </button>
             </div>
           </>

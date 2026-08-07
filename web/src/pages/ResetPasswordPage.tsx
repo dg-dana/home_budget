@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, type SessionPayload } from '../api';
+import { useI18n } from '../i18n';
 import { useSession } from '../session';
 import AuthPage from '../components/AuthPage';
 
@@ -11,6 +12,7 @@ import AuthPage from '../components/AuthPage';
 export default function ResetPasswordPage() {
   const { token = '' } = useParams();
   const { setSession } = useSession();
+  const { t, tx } = useI18n();
   const navigate = useNavigate();
 
   const [account, setAccount] = useState<{ email: string } | null>(null);
@@ -30,7 +32,7 @@ export default function ResetPasswordPage() {
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (password !== confirmation) {
-      setError('The two passwords do not match');
+      setError(t('reset.mismatch'));
       return;
     }
     setBusy(true);
@@ -40,7 +42,7 @@ export default function ResetPasswordPage() {
       setSession(restored);
       navigate(restored.household ? '/' : '/households', { replace: true });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not set the new password');
+      setError(err instanceof Error ? err.message : t('reset.failed'));
     } finally {
       setBusy(false);
     }
@@ -50,30 +52,33 @@ export default function ResetPasswordPage() {
     return (
       <AuthPage>
         <div className="card auth-card stack">
-          <h1>Link not usable</h1>
+          <h1>{t('link.notUsable')}</h1>
           <div className="alert">{loadError}</div>
           <p className="small muted">
-            <Link to="/forgot">Ask for a fresh link</Link>, or <Link to="/login">sign in</Link>.
+            {tx('reset.linkHelp', {
+              fresh: <Link to="/forgot">{t('reset.askFresh')}</Link>,
+              signIn: <Link to="/login">{t('reset.signIn')}</Link>,
+            })}
           </p>
         </div>
       </AuthPage>
     );
   }
 
-  if (!account) return <div className="empty">Checking link…</div>;
+  if (!account) return <div className="empty">{t('link.checking')}</div>;
 
   return (
     <AuthPage>
       <form className="card auth-card stack" onSubmit={handleSubmit}>
         <div>
-          <h1>Choose a new password</h1>
-          <p className="muted">For {account.email}.</p>
+          <h1>{t('reset.title')}</h1>
+          <p className="muted">{t('reset.for', { email: account.email })}</p>
         </div>
 
         {error && <div className="alert">{error}</div>}
 
         <div>
-          <label htmlFor="password">New password</label>
+          <label htmlFor="password">{t('reset.newPassword')}</label>
           <input
             id="password"
             type="password"
@@ -84,12 +89,12 @@ export default function ResetPasswordPage() {
             onChange={(event) => setPassword(event.target.value)}
           />
           <p className="small muted" style={{ margin: '0.3rem 0 0' }}>
-            At least 8 characters.
+            {t('common.minPassword')}
           </p>
         </div>
 
         <div>
-          <label htmlFor="confirmation">Repeat it</label>
+          <label htmlFor="confirmation">{t('reset.repeat')}</label>
           <input
             id="confirmation"
             type="password"
@@ -101,12 +106,10 @@ export default function ResetPasswordPage() {
         </div>
 
         <button type="submit" className="button" disabled={busy}>
-          {busy ? 'Saving…' : 'Set password and sign in'}
+          {t(busy ? 'common.saving' : 'reset.submit')}
         </button>
 
-        <p className="small muted">
-          This will sign out any device already using this account.
-        </p>
+        <p className="small muted">{t('reset.evicts')}</p>
       </form>
     </AuthPage>
   );

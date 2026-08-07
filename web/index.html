@@ -17,6 +17,25 @@
       } catch (err) {
         /* localStorage can throw in private mode; the OS default is fine. */
       }
+
+      // Same idea for the language: <html lang> is what a screen reader reads
+      // and what the browser's own "translate this page?" prompt keys off, so
+      // it has to be right before React boots. Mirrors readLanguage() and
+      // applyLanguage() in src/language.ts — change one and change the other.
+      try {
+        var picked = localStorage.getItem('home-budget:language');
+        if (picked !== 'en' && picked !== 'de') {
+          var tags = navigator.languages || [navigator.language];
+          picked = Array.prototype.some.call(tags, function (tag) {
+            return String(tag).toLowerCase().indexOf('de') === 0;
+          })
+            ? 'de'
+            : 'en';
+        }
+        document.documentElement.lang = picked;
+      } catch (err) {
+        /* Same again: the markup already says lang="en". */
+      }
     </script>
   </head>
   <body>

@@ -1,10 +1,13 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { useI18n } from '../i18n';
 import { useSession } from '../session';
 import HouseholdSwitcher from './HouseholdSwitcher';
+import LanguageToggle from './LanguageToggle';
 import ThemeToggle from './ThemeToggle';
 
 export default function Layout() {
   const { user, household, signOut } = useSession();
+  const { t } = useI18n();
   const navigate = useNavigate();
 
   const handleSignOut = async () => {
@@ -27,19 +30,20 @@ export default function Layout() {
 
           <nav className="nav">
             <NavLink to="/" end>
-              Expenses
+              {t('nav.expenses')}
             </NavLink>
-            <NavLink to="/stats">Statistics</NavLink>
-            <NavLink to="/recurring">Recurring</NavLink>
-            <NavLink to="/lists">Shopping</NavLink>
-            <NavLink to="/household">Household</NavLink>
+            <NavLink to="/stats">{t('nav.statistics')}</NavLink>
+            <NavLink to="/recurring">{t('nav.recurring')}</NavLink>
+            <NavLink to="/lists">{t('nav.shopping')}</NavLink>
+            <NavLink to="/household">{t('nav.household')}</NavLink>
           </nav>
 
           <div className="row">
             <span className="muted small">{user?.name}</span>
+            <LanguageToggle />
             <ThemeToggle />
             <button type="button" className="button secondary small" onClick={handleSignOut}>
-              Sign out
+              {t('nav.signOut')}
             </button>
           </div>
         </div>

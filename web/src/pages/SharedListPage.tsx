@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { api, type SharedListView } from '../api';
+import LanguageToggle from '../components/LanguageToggle';
 import ThemeToggle from '../components/ThemeToggle';
 import AuthPage from '../components/AuthPage';
 import CopyListButton from '../components/CopyListButton';
 import ItemComposer from '../components/ItemComposer';
 import ItemRow from '../components/ItemRow';
+import { useI18n } from '../i18n';
 import { guestItemApi } from '../shoppingApi';
 import { usePoll } from '../usePoll';
 
@@ -18,6 +20,7 @@ const GUEST_NAME_KEY = 'home-budget:guest-name';
  */
 export default function SharedListPage() {
   const { token = '' } = useParams();
+  const { t } = useI18n();
 
   const [view, setView] = useState<SharedListView | null>(null);
   const [guestName, setGuestName] = useState(() => localStorage.getItem(GUEST_NAME_KEY) ?? '');
@@ -48,7 +51,7 @@ export default function SharedListPage() {
       await action();
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong');
+      setError(err instanceof Error ? err.message : t('common.somethingWrong'));
     }
   };
 
@@ -65,15 +68,15 @@ export default function SharedListPage() {
     return (
       <AuthPage>
         <div className="card auth-card stack">
-          <h1>Link not active</h1>
+          <h1>{t('share.linkNotActive')}</h1>
           <div className="alert">{loadError}</div>
-          <p className="small muted">Ask whoever sent it to share the list again.</p>
+          <p className="small muted">{t('share.linkNotActiveHelp')}</p>
         </div>
       </AuthPage>
     );
   }
 
-  if (!view) return <div className="empty">Loading…</div>;
+  if (!view) return <div className="empty">{t('common.loading')}</div>;
 
   // Ask a guest who they are once, so ticked-off items are attributable.
   if (view.canEdit && !nameConfirmed) {
@@ -82,10 +85,10 @@ export default function SharedListPage() {
         <form className="card auth-card stack" onSubmit={saveGuestName}>
           <div>
             <h1>{view.name}</h1>
-            <p className="muted">Who's shopping? This is only used to label items on the list.</p>
+            <p className="muted">{t('share.whoIsShopping')}</p>
           </div>
           <div>
-            <label htmlFor="guestName">Your name</label>
+            <label htmlFor="guestName">{t('share.yourName')}</label>
             <input
               id="guestName"
               required
@@ -95,7 +98,7 @@ export default function SharedListPage() {
             />
           </div>
           <button type="submit" className="button" disabled={!guestName.trim()}>
-            Open list
+            {t('share.openList')}
           </button>
         </form>
       </AuthPage>
@@ -118,16 +121,17 @@ export default function SharedListPage() {
           <div className="row" style={{ marginLeft: 'auto' }}>
             {view.canEdit && (
               <>
-                <span className="muted small">Shopping as {guestName}</span>
+                <span className="muted small">{t('share.shoppingAs', { name: guestName })}</span>
                 <button
                   type="button"
                   className="button secondary small"
                   onClick={() => setNameConfirmed(false)}
                 >
-                  Change
+                  {t('share.change')}
                 </button>
               </>
             )}
+            <LanguageToggle />
             <ThemeToggle />
           </div>
         </div>
@@ -137,24 +141,27 @@ export default function SharedListPage() {
         {error && <div className="alert">{error}</div>}
 
         {!view.canEdit && (
-          <div className="alert info">This list is shared as view-only — you can see it but not change it.</div>
+          <div className="alert info">{t('share.viewOnly')}</div>
         )}
 
         {view.canEdit && (
-          <ItemComposer onAdd={(input) => run(() => items.add(input))} quantityPlaceholder="Qty" />
+          <ItemComposer
+            onAdd={(input) => run(() => items.add(input))}
+            quantityPlaceholder="share.quantityShort"
+          />
         )}
 
         <div className="card">
           <div className="card-title">
-            <h2>To buy</h2>
+            <h2>{t('list.toBuy')}</h2>
             <div className="row">
-              <span className="muted small">{open.length} left</span>
+              <span className="muted small">{t('share.left', { count: open.length })}</span>
               <CopyListButton load={() => Promise.resolve(view)} onError={setError} />
             </div>
           </div>
 
           {view.items.length === 0 ? (
-            <p className="empty">Nothing on the list yet.</p>
+            <p className="empty">{t('share.emptyList')}</p>
           ) : (
             <ul className="item-list">
               {[...open, ...done].map((item) => (
@@ -165,7 +172,7 @@ export default function SharedListPage() {
         </div>
 
         <p className="small muted" style={{ textAlign: 'center' }}>
-          Shared from a Home Budget household. Only this list is visible through this link.
+          {t('share.footer')}
         </p>
       </main>
     </div>

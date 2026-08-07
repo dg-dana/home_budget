@@ -416,6 +416,10 @@ different questions. Keep them apart rather than merging them.
 - `format.ts` — money and date helpers. **Month/day helpers use local time, not UTC**, so "today" matches the user's calendar rather than the server's.
 - `styles.css` — plain CSS, custom properties, light/dark themes (§9.1). No CSS framework, no CSS-in-JS.
 - `theme.ts` — reads/writes the theme preference and applies it to `<html>`.
+- `language.ts` / `i18n.tsx` / `strings.ts` — the language preference, the
+  `t` / `tx` / `plural` helpers, and the dictionary (§9.1a). `language.ts` is
+  the theme's counterpart and holds no React; `format.ts` reads `activeLocale()`
+  from it, which is what makes money and dates follow the chosen language.
 - **The two shopping pages share their components, not just their API.**
   `shoppingApi.ts` is the frontend's half of `shoppingItems.ts`: one `ItemApi`
   interface, two implementations (`memberItemApi(listId)` and
@@ -502,6 +506,67 @@ different questions. Keep them apart rather than merging them.
 - **An inline script in `web/index.html` applies the stored choice before first paint.** Without it, a dark-mode device flashes the light palette on every load while React boots. It duplicates `applyTheme()` in `theme.ts` on purpose — the two must be changed together, and there is an e2e test that blocks the JS bundle to prove the inline copy is doing the work.
 - `ThemeToggle` sits in both headers: the member `Layout` and `SharedListPage`'s own guest header. Three states, not a switch, because "match device" is the default and a two-way toggle would strand anyone whose phone flips to dark at sunset.
 - **The signed-out pages get it too, via `AuthPage`** — the shell every `.auth-page` screen renders through (sign-in, register, forgot, verify, join, reset, and the guest page's own error and name-prompt states). They have no header to hold the control, and the sign-in page is where most people land: with no toggle there, the only route to dark mode was to sign in first. The toggle is absolutely positioned in the corner so the card stays centred rather than being pushed down by a second grid row.
+
+### 9.1a Language (English and German)
+
+Every screen reads in **English or German**, chosen by whoever is looking at it.
+
+- **The same shape as the theme, deliberately** (§9.1). It is
+  `localStorage['home-budget:language']`, one of `en` / `de`, it never touches
+  the API, and it is a **per-device** choice. A guest has no account to hang a
+  setting on, and the person who wants German on their phone may share a laptop
+  with somebody who does not. Making it a column on `users` would have excluded
+  the guest share page — which is the one screen most likely to be opened by
+  somebody outside the household.
+- **`web/src/strings.ts` is the whole dictionary**, one entry per string holding
+  `[English, German]`. Same reasoning as one `light-dark()` pair per colour: a
+  new string is one line rather than an edit in two places, and the `satisfies`
+  clause means TypeScript refuses a pair with a half missing, so German cannot
+  quietly fall behind English.
+- **Entries are whole sentences.** `'Delete ' + name + '?'` cannot be
+  translated, because German does not put the verb there. Where a sentence has
+  to contain a `<strong>` or a `<Link>`, `tx()` fills a `{named}` placeholder
+  with a React node instead of splitting the sentence into a "before" and an
+  "after" half at the call site.
+- **Counted things carry `_one` / `_other`** and go through `plural()`. Both
+  languages happen to share the 1-vs-other rule, which is why the helper is four
+  lines and not a library.
+- **Choosing German moves the numbers too**, not only the words:
+  `activeLocale()` in `language.ts` feeds every `Intl` call in `format.ts`, so
+  `225.80` becomes `225,80` and `Aug 15` becomes `15. Aug.`. A page with German
+  labels and English decimal points reads as half-finished, and it is exactly
+  the half a dictionary alone leaves behind. `applyLanguage()` is called
+  **before** the state update that re-renders, so the repaint is already in the
+  new locale.
+- **English pins no locale at all** — `Intl` gets `undefined`, meaning "ask the
+  browser". German pins `de-DE`. The asymmetry is deliberate: English is the
+  default, so the device is the better authority on whether today is `7 Aug` or
+  `Aug 7`; German is an explicit request, and has to look German on an English
+  phone.
+- **With nothing chosen, the device decides** (`navigator.languages`). A German
+  phone therefore lands on German without anybody hunting for a control. The
+  Playwright config pins `locale: 'en-US'` so the suite does not depend on the
+  machine it runs on.
+- **`LanguageToggle` sits everywhere `ThemeToggle` sits** — both headers and
+  `AuthPage` — and each option is labelled in **its own language** (`English`,
+  `Deutsch`), because somebody who cannot read the current interface is looking
+  for the word "Deutsch".
+- **`<html lang>` is set before first paint** by the inline script in
+  `web/index.html`, which duplicates `readLanguage()`/`applyLanguage()` the same
+  way the theme script duplicates `applyTheme()`. Change one, change the other;
+  there is a browser test that blocks the JS bundle to prove the inline copy is
+  doing the work.
+- **The copied list text is translated too** (`copy.*` in `strings.ts`), since
+  it is the one piece of output that leaves the app. The German scaffolding
+  stays inside the GSM 7-bit alphabet like the English — umlauts are in it,
+  typographic quotes are not — so a pasted list still fits an SMS segment (§9,
+  "Copy list").
+- **The server is still English-only.** Emails, and the error messages the API
+  returns and the UI shows verbatim, are not translated (§14).
+- Two things the browser decides and the app cannot: `<input type="date">` and
+  `<input type="month">` render in the **browser's** UI language, not the page's.
+  A German page on an English browser shows `08/07/2026` in the date field. The
+  fix would be replacing the native pickers, which costs more than it buys.
 
 ### 9.2 Charts and the statistics page
 
@@ -610,10 +675,18 @@ Two suites, run together with `npm run test:all`.
 
 ### Browser tests — Playwright, `e2e/`
 
-- 21 tests, run with `npm run test:e2e`. Config is `playwright.config.ts` at the repo root.
-- **Three areas: the guest flow, the statistics page and multiple households.** The guest flow is the riskiest path — the one surface reachable without an account — and was the only coverage for a long time. (The theme test lives there because the toggle is on the guest header too.)
+- 24 tests, run with `npm run test:e2e`. Config is `playwright.config.ts` at the repo root.
+- **Four areas: the guest flow, the statistics page, multiple households and the language switch.** The guest flow is the riskiest path — the one surface reachable without an account — and was the only coverage for a long time. (The theme test lives there because the toggle is on the guest header too.)
 - `statistics.spec.ts` exists because **every bug that page has had was invisible to the server suite**: a fold bucket that borrowed a real category's name, a one-month range drawing a lone dot, a stale response overwriting a newer one. Those are questions about what is on the screen. It reaches the page through the header link, never a direct URL — a page nobody can navigate to is a page nobody has.
 - `seedStatsHousehold()` builds a household through the API, giving **each joining member its own request context**: joining sets a session cookie, and a shared jar would sign the owner out halfway through.
+- `language.spec.ts` covers the English/German switch (§9.1a), and it is a
+  browser suite's job for the same reason the theme tests are: the questions are
+  whether the control is on the screens with no header to hold it, whether
+  choosing German moves the **numbers** as well as the labels, and whether
+  `<html lang>` is right before the bundle has run. `use.locale` is pinned to
+  `en-US` in the config, because the app now reads the browser's language when
+  nothing has been chosen and almost every assertion in the suite is an English
+  string.
 - **The e2e server runs with `RATE_LIMITS=off`.** An eight-person household signs in and out far more often inside one 15-minute window than a real visitor would, and the auth limiter is right to refuse that. `config.ts` ignores the variable when `NODE_ENV=production`, so it cannot un-protect the live site.
 - Playwright's `webServer` runs `npm run build && npm start`, so the tests drive **the production build**: one process serving the API and the built frontend, exactly as a deployment does.
 - The run gets a throwaway SQLite file, created in the config and deleted by `e2e/teardown.ts`.
@@ -628,7 +701,7 @@ What it asserts: a member creates and shares a list through the UI; a guest with
 
 ### Both suites were verified by breaking the code
 
-Thirty-nine deliberate regressions were introduced, and each was caught by a failing test:
+Forty-three deliberate regressions were introduced, and each was caught by a failing test:
 
 1. Removing the `household_id` filter from the expenses list query → `isolation` failed.
 2. Adding `householdId` to the guest share response → `share` failed.
@@ -669,6 +742,10 @@ Thirty-nine deliberate regressions were introduced, and each was caught by a fai
 37. Dropping `usePoll` from the member list page → the Playwright waiting test failed, a member left reading a list a guest had already changed.
 38. Hard-coding `alreadyIn: false` in the invite preview → `auth` failed, the join page back to asking a member for a display name it could never use.
 39. Skipping the already-a-member check when creating an invite → `auth` failed, an owner able to email somebody a link that can only be refused.
+40. Taking `LanguageToggle` out of the guest header → `language` failed, a guest with no account and no way to change the words in front of them.
+41. Taking it out of `AuthPage` → `language` failed, the sign-in page offering no way into German. (Same trap as 8, and the reason it was worth repeating.)
+42. Letting `applyLanguage()` set `<html lang>` without updating the locale `format.ts` reads → `language` failed on the money, which stayed `105.00` under German labels.
+43. Deleting the language half of the pre-paint script in `index.html` → `language` failed on the JS-blocked reload, exactly as 6 does for the theme.
 
 The statistics suite also earned its place on the way in: the one-month test failed against the unguarded fetch, which is how the stale-response race in §9.2 was found.
 
@@ -686,7 +763,7 @@ It matches on method and path shape, so it proves a suite *reaches* a route and 
 
 ### Looking at the pages the suites do not cover
 
-Everything in `web/` outside the guest flow, the sign-in toggle and the statistics page is unproven by any test, so a change there has to be looked at. `.claude/skills/preview-ui/` is the tool for that: it builds, runs the production build on a spare port against a throwaway database, seeds a three-person household with three months of expenses **plus a second household on the owner's account** (so the header's switcher has something to switch between — with one it deliberately renders as plain text), signs in, and screenshots the routes you name in both themes at 1100px and 390px.
+Everything in `web/` outside the guest flow, the sign-in toggles, the statistics page and the language switch is unproven by any test, so a change there has to be looked at. `.claude/skills/preview-ui/` is the tool for that: it builds, runs the production build on a spare port against a throwaway database, seeds a three-person household with three months of expenses **plus a second household on the owner's account** (so the header's switcher has something to switch between — with one it deliberately renders as plain text), signs in, and screenshots the routes you name in both themes at 1100px and 390px.
 
 ```bash
 node .claude/skills/preview-ui/preview.mjs /            # the expenses dashboard
@@ -747,11 +824,18 @@ Alongside each screenshot it reports the body colour — the cheap proof a theme
 
 Honest list — these are real, and none is currently blocking.
 
-- **Frontend coverage is the guest flow, the statistics page and the household switcher.** The expenses dashboard, budgets, recurring, invites and household settings have no browser tests — changes there still need checking by hand, against the built app rather than by reading the CSS.
+- **Frontend coverage is the guest flow, the statistics page, the household switcher and the language switch.** The expenses dashboard, budgets, recurring, invites and household settings have no browser tests — changes there still need checking by hand, against the built app rather than by reading the CSS.
 - **`POST /auth/forgot` is quiet about existence but not about timing.** An address with an account waits for the provider; one without answers straight away. Fixing it means replying before the send instead of awaiting it, which would leave the suite nothing to assert against and `delivered` nothing to report (§4.1). The per-address budget makes the difference useless at any scale, and that is the whole defence.
 - **Self-service recovery needs a mail provider, so on an unconfigured deployment there is none.** `POST /auth/forgot` refuses with a 503 pointing at the household owner, since the alternative — showing the link the way every other flow does — would let anybody into any account by typing its address. Local runs and the suite therefore exercise it only with `RESEND_API_KEY` set.
 - **Nothing proves an address on an unconfigured deployment.** Without `RESEND_API_KEY` the confirmation link is handed straight to whoever registered, so it is a step in the flow rather than a check. That is the right trade for the suite and for local work, but it means "confirmed" only means "verified" where a provider is actually configured.
 - **An owner can still reach any account in their household on a deployment with no mail provider.** This was the general case and is now the exception: with email configured the route is refused (§4). Where it is not, an owner minting a link for somebody who belongs to households they have never heard of remains possible, because the alternative is a locked-out member with no way back in. Removing someone retires their outstanding links (§3), which closes the worst of it. The real fix is configuring email, which is one secret.
+- **The interface is bilingual; the server is not.** Emails go out in English
+  whoever reads them, and so do the API's error messages, which the UI shows
+  verbatim — so a German page can still answer a bad password in English. Fixing
+  the emails needs a language stored per account rather than per device (§9.1a),
+  and fixing the errors needs the API to return codes the frontend translates
+  rather than sentences it prints. Neither is hard; both are more than a
+  dictionary.
 - **Polling is 15-second HTTP, not a push.** Every shopping page refetches on the same interval now (§9), which closes the old split where only the guest page kept up, but a change still takes up to fifteen seconds to appear and each open page costs a request. SSE or a WebSocket would be immediate and cheaper at rest; neither is worth a persistent connection on a 512 MB box for a household of four.
 - Rate limiting is in-process and will not survive horizontal scaling (see §13) — moot while the deployment is deliberately one machine.
 - **The container runs as root.** Fly volumes mount root-owned, and dropping privileges needs a startup chown dance that was not worth the risk of an unverifiable failure. Worth hardening later.

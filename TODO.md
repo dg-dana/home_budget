@@ -5,9 +5,49 @@ The running state of this project. **Updated after every step** — see the
 
 Last updated: 2026-08-07 · live: deploy run #31 (`9c43fac`)
 
+Two changes are merged and waiting for a deploy: the language switch, and the
+copy-list change below.
+
 ---
 
-## Next: deploy the copy-list change
+## Next: deploy German, and the copy-list change
+
+**Merged but not deployed.** The whole interface now reads in **English or
+German**, switched from a picker sitting beside the theme toggle — so it is on
+both headers, on every signed-out screen and on the guest share page, and needs
+no account. The choice is per device (`localStorage`), exactly like the theme
+and for the same reasons: a guest has nowhere to store a setting, and one
+person's phone is not another's laptop. With nothing chosen, a German phone
+gets German on its own.
+
+Three decisions worth knowing before touching it (`ARCHITECTURE.md` §9.1a):
+
+- `web/src/strings.ts` is the whole dictionary, **one entry per string holding
+  both languages** — the same shape as one `light-dark()` pair per colour, and
+  TypeScript refuses a pair with a half missing, so German cannot fall behind.
+- Entries are **whole sentences** with `{named}` placeholders, never fragments
+  glued together at the call site. German does not put the verb where English
+  does. `tx()` fills a placeholder with a `<Link>` or a `<strong>` so a sentence
+  containing markup still stays one entry.
+- Choosing German moves the **money and the dates** too, not only the words.
+  German labels over `105.00` read as half-finished, and that is the half a
+  dictionary alone leaves behind.
+
+Three browser tests cover it, and the code was broken four times to watch each
+one fail: the toggle removed from the guest header, removed from the signed-out
+shell, the locale stopped following the language, and the pre-paint `<html lang>`
+script deleted.
+
+**What is NOT translated: anything the server says.** Emails all go out in
+English, and so do the API's error messages, which the UI prints verbatim — so
+a German page can still answer a bad password in English. Emails would need a
+language stored per account rather than per device; the errors would need the
+API to return codes instead of sentences. Say if either matters and they are
+the next thing.
+
+Also still merged-but-not-deployed:
+
+## The copy-list change
 
 **Merged but not deployed.** "Copy list" now carries **only the items still to
 buy**. The ticked-off ones used to follow under "Already in the basket:", which
@@ -44,6 +84,15 @@ live domain by policy, so anything about the real site is yours.
 - [ ] **Say if the notices are too much or too little.** Wording and who hears
       what are both easy to change; what is hard is noticing later that nobody
       reads them. `ARCHITECTURE.md` §4.1 has the table.
+- [ ] **Look at German on a real phone.** It has been screenshotted at 390px
+      in both themes and every page fits, but that is a picture, not a thumb.
+      The header carries one more control than it did, and German words are
+      longer than English ones — the nav and the danger zone are where to look.
+- [ ] **Say whether the emails should be German too.** They are the one part of
+      the app that stays English, because the language lives on the device and
+      the server has no idea which device is reading. Making them follow would
+      mean storing a language on the account — worth doing only if the messages
+      are actually being read.
 - [ ] **Check the rest of the live site on a phone.** The Household page was
       checked on run #25, leaving a household on run #26, and password recovery
       on runs #27–#28 — all look right. What runs #17–#24 shipped still has
@@ -54,6 +103,15 @@ live domain by policy, so anything about the real site is yours.
 ## Open work
 
 
+- [ ] **The interface is bilingual; the server is not.** Emails and API error
+      messages are English whoever is reading. The errors are the more visible
+      of the two — they land in a German page's alert boxes — and fixing them
+      means the API returning codes the frontend translates rather than
+      sentences it prints. (§14)
+- [ ] **Native date and month pickers ignore the page's language.** Chrome
+      renders `<input type="date">` in the *browser's* UI language, so a German
+      page on an English browser still shows `08/07/2026`. Only replacing the
+      native pickers would change it, which costs more than it buys. (§9.1a)
 - [ ] **An owner still reaches any account in their household where email is
       unconfigured.** What was the general case is now the exception: with a
       mail provider the route is refused. Without one it stays, because the
@@ -76,6 +134,12 @@ live domain by policy, so anything about the real site is yours.
 
 ## Done
 
+- [x] **English and German across the whole interface**, per device, on every
+      screen including the guest's — dictionary in `web/src/strings.ts`, one
+      entry per string with both languages; whole sentences rather than glued
+      fragments; money and dates following the choice as well as the words;
+      `<html lang>` set before first paint. Three browser tests, each watched
+      failing against a deliberate break. (merged, **not yet deployed**)
 - [x] **Nobody is asked to join a household they are already in** — `alreadyIn`
       in the invite preview, so the page offers to open it; an address already
       in the household cannot be invited at all; and that refusal shows under

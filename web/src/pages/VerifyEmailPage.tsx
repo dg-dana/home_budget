@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, type SessionPayload } from '../api';
+import { useI18n } from '../i18n';
 import { useSession } from '../session';
 import AuthPage from '../components/AuthPage';
 
@@ -12,6 +13,7 @@ import AuthPage from '../components/AuthPage';
 export default function VerifyEmailPage() {
   const { token = '' } = useParams();
   const { setSession } = useSession();
+  const { t, tx } = useI18n();
   const navigate = useNavigate();
 
   const [account, setAccount] = useState<{ email: string } | null>(null);
@@ -33,7 +35,7 @@ export default function VerifyEmailPage() {
       setSession(await api.post<SessionPayload>('/auth/verify', { token }));
       navigate('/households', { replace: true });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not confirm the address');
+      setError(err instanceof Error ? err.message : t('verify.failed'));
     } finally {
       setBusy(false);
     }
@@ -43,36 +45,35 @@ export default function VerifyEmailPage() {
     return (
       <AuthPage>
         <div className="card auth-card stack">
-          <h1>Link not usable</h1>
+          <h1>{t('link.notUsable')}</h1>
           <div className="alert">{loadError}</div>
           <p className="small muted">
-            Confirmation links work once and expire after 24 hours.{' '}
-            <Link to="/login">Sign in</Link> to get a fresh one.
+            {tx('verify.linkHelp', {
+              signIn: <Link to="/login">{t('verify.signIn')}</Link>,
+            })}
           </p>
         </div>
       </AuthPage>
     );
   }
 
-  if (!account) return <div className="empty">Checking link…</div>;
+  if (!account) return <div className="empty">{t('link.checking')}</div>;
 
   return (
     <AuthPage>
       <div className="card auth-card stack">
         <div>
-          <h1>Confirm your address</h1>
+          <h1>{t('verify.title')}</h1>
           <p className="muted">{account.email}</p>
         </div>
 
         {error && <div className="alert">{error}</div>}
 
         <button type="button" className="button" onClick={handleConfirm} disabled={busy}>
-          {busy ? 'Confirming…' : 'Confirm this address'}
+          {t(busy ? 'verify.submitting' : 'verify.submit')}
         </button>
 
-        <p className="small muted">
-          Confirming signs you in on this device, so you can set up a household straight away.
-        </p>
+        <p className="small muted">{t('verify.after')}</p>
       </div>
     </AuthPage>
   );

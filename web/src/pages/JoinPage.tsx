@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, type Household } from '../api';
+import { useI18n } from '../i18n';
 import { useSession } from '../session';
 import AuthPage from '../components/AuthPage';
 
@@ -25,6 +26,7 @@ interface InvitePreview {
 export default function JoinPage() {
   const { token = '' } = useParams();
   const { user, refresh, switchHousehold } = useSession();
+  const { t, tx } = useI18n();
   const navigate = useNavigate();
 
   const [preview, setPreview] = useState<InvitePreview | null>(null);
@@ -49,7 +51,7 @@ export default function JoinPage() {
       await refresh();
       navigate('/', { replace: true });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not join the household');
+      setError(err instanceof Error ? err.message : t('join.failed'));
     } finally {
       setBusy(false);
     }
@@ -59,18 +61,19 @@ export default function JoinPage() {
     return (
       <AuthPage>
         <div className="card auth-card stack">
-          <h1>Invite not usable</h1>
+          <h1>{t('join.notUsable')}</h1>
           <div className="alert">{loadError}</div>
           <p className="small muted">
-            Ask whoever invited you to send a fresh link, or{' '}
-            <Link to="/households">go to your households</Link>.
+            {tx('join.notUsableHelp', {
+              households: <Link to="/households">{t('join.yourHouseholds')}</Link>,
+            })}
           </p>
         </div>
       </AuthPage>
     );
   }
 
-  if (!preview) return <div className="empty">Checking invite…</div>;
+  if (!preview) return <div className="empty">{t('join.checking')}</div>;
 
   /**
    * Already a member — the commonest way to see this is inviting yourself, or
@@ -83,8 +86,8 @@ export default function JoinPage() {
       <AuthPage>
         <div className="card auth-card stack">
           <div>
-            <h1>You are already in {preview.householdName}</h1>
-            <p className="muted">Nothing to accept — this invite is not needed for you.</p>
+            <h1>{t('join.alreadyIn', { household: preview.householdName })}</h1>
+            <p className="muted">{t('join.alreadyInBody')}</p>
           </div>
           <button
             type="button"
@@ -99,19 +102,21 @@ export default function JoinPage() {
                   if (preview.householdId) await switchHousehold(preview.householdId);
                   navigate('/', { replace: true });
                 } catch (err) {
-                  setError(err instanceof Error ? err.message : 'Could not open it');
+                  setError(err instanceof Error ? err.message : t('join.openFailed'));
                   setBusy(false);
                 }
               })();
             }}
           >
-            {busy ? 'Opening…' : `Open ${preview.householdName}`}
+            {busy
+              ? t('join.opening')
+              : t('join.open', { household: preview.householdName })}
           </button>
           {error && <div className="alert">{error}</div>}
           <p className="small muted">
-            Meant to invite somebody else? Send them their own link from the{' '}
-            <Link to="/household">Household page</Link> — this one still works for whoever it was
-            for.
+            {tx('join.wrongPerson', {
+              page: <Link to="/household">{t('join.householdPage')}</Link>,
+            })}
           </p>
         </div>
       </AuthPage>
@@ -125,35 +130,37 @@ export default function JoinPage() {
     <AuthPage>
       <form className="card auth-card stack" onSubmit={handleSubmit}>
         <div>
-          <h1>Join {preview.householdName}</h1>
-          <p className="muted">Signed in as {user?.email}.</p>
+          <h1>{t('join.title', { household: preview.householdName })}</h1>
+          <p className="muted">{t('join.signedInAs', { email: user?.email ?? '' })}</p>
         </div>
 
         {error && <div className="alert">{error}</div>}
 
         {wrongAccount && (
           <div className="alert">
-            This invite was issued for {preview.email}. Sign in with that account to use it.
+            {t('join.wrongAccount', { email: preview.email ?? '' })}
           </div>
         )}
 
         {!user?.emailVerified && (
           <div className="alert info">
-            Confirm your email address before joining. <Link to="/households">Get a new link</Link>.
+            {tx('join.confirmFirst', {
+              link: <Link to="/households">{t('join.getNewLink')}</Link>,
+            })}
           </div>
         )}
 
         <div>
-          <label htmlFor="displayName">Your name in this household</label>
+          <label htmlFor="displayName">{t('join.nameLabel')}</label>
           <input
             id="displayName"
             required
-            placeholder="Dana"
+            placeholder={t('common.examplePerson')}
             value={displayName}
             onChange={(event) => setDisplayName(event.target.value)}
           />
           <p className="small muted" style={{ margin: '0.3rem 0 0' }}>
-            What the rest of {preview.householdName} will see on expenses and shopping lists.
+            {t('join.nameHelp', { household: preview.householdName })}
           </p>
         </div>
 
@@ -162,7 +169,7 @@ export default function JoinPage() {
           className="button"
           disabled={busy || wrongAccount || !user?.emailVerified}
         >
-          {busy ? 'Joining…' : 'Join household'}
+          {t(busy ? 'join.submitting' : 'join.submit')}
         </button>
       </form>
     </AuthPage>
