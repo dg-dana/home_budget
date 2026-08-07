@@ -3,40 +3,27 @@
 The running state of this project. **Updated after every step** — see the
 "Working agreement" in `CLAUDE.md`.
 
-Last updated: 2026-08-07 · live: deploy run #29 (`4fd95e9`)
+Last updated: 2026-08-07 · live: deploy run #31 (`9c43fac`)
 
 ---
 
-## Next: deploy the invite fixes
+## Next: nothing
 
-**Built and tested, not deployed.** Merge, then run **Deploy to Lightsail**.
+The queue is empty. The invite fixes went out on runs #30 and #31, both green:
 
-Inviting yourself used to produce a page headed "Join <household>" asking what
-you wanted to be called, and the refusal only came back on submit. Both ends now
-answer earlier:
+- Following an invite to a household you are already in says so and offers to
+  **open** it, instead of asking what you want to be called and refusing on
+  submit (`alreadyIn` in the invite preview, behind `optionalAuth`).
+- An address already in the household **cannot be invited at all** (409), and
+  that refusal appears under the invite form rather than in the page-level alert
+  at the top — several screens away on a phone. The address stays in the box.
 
-- `GET /auth/invite/:token` runs behind `optionalAuth` and reports **`alreadyIn`**,
-  plus the household id *only in that case* — which is what lets the page offer
-  **"Open <household>"** instead of a form. Signed out, `alreadyIn` is false and
-  the id is null, so the household id still never leaves the server otherwise.
-- `POST /household/invites` **refuses an address already in the household**
-  (409, naming them). Redemption would refuse it anyway, so minting the link only
-  emails somebody a dead end. Only checked when the invite carries an address —
-  an open invite is a link to hand to whoever turns up.
+All of it came out of sending one real invite to a real inbox. The email was
+never the problem.
 
-The invite itself is untouched by being looked at: it is single-use, and being
-told "you are already in" is not a use.
-
-The refusal is shown **under the invite form**, not in the page-level alert at
-the top: the Household page is several screens long on a phone, so an error up
-there is an error nobody sees. The address stays in the box, since that message
-is answered by editing it rather than typing it again.
-
-Two new tests, both watched failing first. The preview skill now seeds an
-unredeemed invite so `/join/:token` can be screenshotted — which is how the new
-screen was checked rather than reasoned about.
-
-**After this, nothing is queued.**
+Worth two minutes when you are next on the site: invite yourself again and see
+the refusal land under the form, and open an old invite link to see the new
+screen. Neither can be checked from the sandbox.
 
 ## Needs your hands
 
@@ -79,9 +66,11 @@ live domain by policy, so anything about the real site is yours.
 ## Done
 
 - [x] **Nobody is asked to join a household they are already in** — `alreadyIn`
-      in the invite preview, so the page offers to open it; and an address
-      already in the household cannot be invited at all. (on the branch, not
-      deployed — see the top of this file)
+      in the invite preview, so the page offers to open it; an address already
+      in the household cannot be invited at all; and that refusal shows under
+      the invite form rather than at the top of a page several screens long.
+      (PRs #53 and #54, live on runs #30 and #31 — **not checked by hand on the
+      real site yet**)
 - [x] **Invite email confirmed arriving on the live site**, which was the last
       message type nobody had watched land. Every kind the app sends is now
       either proven end to end (confirmation, recovery, invite) or shares the
