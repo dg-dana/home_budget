@@ -10,10 +10,10 @@ Last updated: 2026-08-07 · live: deploy run #27 (`75141f5`)
 ## Next: your call
 
 Nothing is queued. Self-service "forgot password" went out on deploy run #27
-(PR #43, merged and deployed the same afternoon, every step green including
-"Verify the public URL works"). **It has not been used by a human yet** — that
-is the first item under "Needs your hands", and it is the only check that
-counts, since the send has to land in a real inbox.
+(PR #43, merged and deployed the same afternoon) and has been **used on the
+real site: the email arrived and the link worked**. That is also the first
+time any message has been watched landing in a real inbox, so email itself is
+now proven end to end rather than merely reported as sent.
 
 Two candidates for what comes next, neither started:
 
@@ -32,23 +32,14 @@ Two candidates for what comes next, neither started:
 None of these can be done from an agent sandbox: the egress proxy refuses the
 live domain by policy, so anything about the real site is yours.
 
-- [ ] **Send yourself a real invite and check it arrives.** Email is live (runs
-      #20–#24) but no message has been seen landing in a real inbox. Household
-      page → Create invite with your address. **Check spam** — a new sending
-      domain often lands there for the first few. If nothing comes, look at
-      **Resend → Emails**: a message listed as delivered is a mail problem, no
-      message listed at all is a key problem. Either way nothing breaks — with
-      no key the app logs `[notifications] not sent (...)` and falls back to
-      showing the link.
+- [ ] **Send yourself a real invite and check it arrives.** Lower stakes than it
+      was: the reset email from run #27 arrived, so the provider, `MAIL_FROM`
+      and `APP_URL` are all proven. What an invite would add is that the *other*
+      messages travel too. Household page → Create invite with your address.
+      **Check spam** — a new sending domain often lands there for the first few.
 - [ ] **Say if the notices are too much or too little.** Wording and who hears
       what are both easy to change; what is hard is noticing later that nobody
       reads them. `ARCHITECTURE.md` §4.1 has the table.
-- [ ] **Try "Forgotten your password?" on the live site.** Deployed on run #27
-      and never used by a person. The whole flow depends on a message actually
-      arriving, which no agent can check from here — same open question as the
-      invite above. Sign-in page → Forgotten your password? → your own address.
-      Expect the "Check your email" screen whatever you type, including an
-      address that has no account: that is the feature working, not a failure.
 - [ ] **Check the rest of the live site on a phone.** The Household page was
       checked on run #25 and leaving a household on run #26 — both look right.
       What runs #17–#24 shipped still has not been: the new sign-up flow, the
@@ -83,8 +74,16 @@ live domain by policy, so anything about the real site is yours.
       the link only ever in the email, 5 requests an hour per address, and a
       refusal rather than a fallback when nothing can send mail. Timing still
       separates the two cases and the per-address budget is the whole defence,
-      which is written down rather than implied. (PR #43, live on run #27 —
-      **nobody has used it on the real site yet**, `ARCHITECTURE.md` §4)
+      which is written down rather than implied. (PR #43, live on run #27,
+      **confirmed by hand on the real site** — the email arrived and the link
+      worked. `ARCHITECTURE.md` §4)
+- [x] **A real message has now landed in a real inbox.** The reset email above
+      is the first one anybody has seen arrive, which answers the open question
+      email sending has carried since run #24: Resend, `MAIL_FROM` and
+      `APP_URL` are all right on the live deployment, and the absolute link
+      built from `APP_URL` resolves. Invites and confirmations go through the
+      same `deliver()`, so the provider is proven for all of them — an invite
+      specifically still has not been watched arrive.
 - [x] Leave a household without deleting your account — "Leave this household"
       in the Danger zone, `DELETE /household/members/me`. Refused for the only
       owner with company and for the last person in the household; no password
@@ -114,9 +113,9 @@ live domain by policy, so anything about the real site is yours.
       and offers "send it again" instead, since printing a live credential
       beside "we emailed you" reads as a failed send; and an invitation is
       listed on `/households`, for whoever registered from the email and never
-      opened the link again. (live, runs #20–#24 — **no message has been seen
-      arriving in a real inbox yet**, which is the first item under "Needs
-      your hands")
+      opened the link again. (live, runs #20–#24 — and **proven to reach a real
+      inbox** by the reset email on run #27, which was the open question for
+      three runs)
 - [x] Delete an account / delete a household — "Danger zone" (live, run #16,
       confirmed on a phone)
 - [x] Accounts separate from households; several per account; per-household
