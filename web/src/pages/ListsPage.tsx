@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, type ShoppingList, type ShoppingListDetail } from '../api';
 import CopyListButton from '../components/CopyListButton';
+import { usePoll } from '../usePoll';
 
 export default function ListsPage() {
   const [lists, setLists] = useState<ShoppingList[]>([]);
@@ -9,15 +10,23 @@ export default function ListsPage() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
-  const load = () =>
-    api
-      .get<ShoppingList[]>('/lists')
-      .then(setLists)
-      .catch((err: Error) => setError(err.message));
+  const load = useCallback(
+    () =>
+      api
+        .get<ShoppingList[]>('/lists')
+        .then(setLists)
+        .catch((err: Error) => setError(err.message)),
+    [],
+  );
 
   useEffect(() => {
     void load();
-  }, []);
+  }, [load]);
+
+  // The counts on this page are the ones somebody reads before deciding
+  // whether a shop is needed at all, and a guest can be emptying a list while
+  // they look at it.
+  usePoll(load);
 
   const handleCreate = async (event: React.FormEvent) => {
     event.preventDefault();

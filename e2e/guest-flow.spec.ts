@@ -131,6 +131,51 @@ test.describe('guest shopping list', () => {
     await guest.context().close();
   });
 
+  test('a member watching a list keeps up with a guest, without touching anything', async ({
+    page,
+    browser,
+    request,
+    baseURL,
+  }) => {
+    // Two waits of up to a poll interval each, so this one test needs more
+    // than the suite's 30 s. It is the only place where waiting *is* the
+    // assertion: everything else here is a click and its consequence.
+    test.setTimeout(90_000);
+
+    // The gap this closes: the guest page has always refetched every 15 s, the
+    // member page never did — so the person at home could be reading a list
+    // that the person in the shop had already emptied.
+    const owner = await seedSharedList(request, baseURL!, { items: ['Milk'] });
+
+    await page.goto('/login');
+    await page.getByLabel('Email').fill(owner.email);
+    await page.getByLabel('Password').fill(PASSWORD);
+    await page.getByRole('button', { name: 'Sign in' }).click();
+    await page.waitForURL('/');
+    await page.getByRole('link', { name: 'Shopping' }).click();
+    await page.getByRole('link', { name: /Supermarket/ }).click();
+    await expect(page.getByText('Milk')).toBeVisible();
+
+    // From here the member's page is never touched again.
+    const guest = await openAsGuest(browser, owner.shareUrl);
+    await identifyAs(guest, 'Ruti next door');
+    await guest.getByLabel('Item', { exact: true }).fill('Bread');
+    await guest.getByRole('button', { name: 'Add', exact: true }).click();
+    await expect(guest.getByText('Bread')).toBeVisible();
+
+    // No reload and no click on the member's side. The timeout is the poll
+    // interval with room to spare; the assertion resolves the moment the item
+    // arrives, so a working page does not cost the full wait.
+    await expect(page.getByText('Bread')).toBeVisible({ timeout: 25_000 });
+
+    // And it works in the other direction too: what the guest ticks off shows
+    // up as bought without the member doing anything either.
+    await guest.getByRole('checkbox', { name: 'Mark Milk as bought' }).click();
+    await expect(page.getByText('1 to buy · 1 in the basket')).toBeVisible({ timeout: 25_000 });
+
+    await guest.context().close();
+  });
+
   test('copies the whole list as plain text, ready to paste into a chat', async ({
     page,
     browser,

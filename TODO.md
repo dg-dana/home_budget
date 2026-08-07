@@ -7,23 +7,34 @@ Last updated: 2026-08-07 · live: deploy run #28 (`96264c0`)
 
 ---
 
-## Next: your call
+## Next: deploy the shopping pages that keep up
 
-Nothing is queued. Owner-issued recovery went out retired on deploy run #28
-(PR #47) — on the live site the "Reset password" button is gone from the
-Household page and the route answers 403, because anybody locked out can help
-themselves now. It survives only where nothing can send email.
+**Built and tested, not deployed.** Merge, then run **Deploy to Lightsail**.
 
-One candidate, not started:
+The guest page has always refetched every 15 s and the member pages never did,
+so the person at home could be reading a list the person in the shop had
+already emptied. Now all three shopping screens share one `usePoll` hook — the
+lists index, a member's list, and the guest's.
 
-- **Make the member list page poll.** A member can sit reading a stale shopping
-  list while a guest shops the same one; the guest page already refetches every
-  15 s. The fix is either the same interval on the member page or moving both
-  to something pushed. (§14)
+Two things it does beyond calling a timer, both deliberate:
 
-Worth a look when someone has a phone: the Household page since run #28, to see
-that the members card reads sensibly without the button — the line replacing it
-says where to reset a password instead.
+- **A hidden tab does not poll.** A phone in a pocket with the list open would
+  otherwise spend the afternoon making requests nobody reads — battery there,
+  load on a 512 MB box here.
+- **Becoming visible refetches at once**, rather than waiting out the rest of
+  an interval. Taking the phone out is exactly when the list needs to be right.
+
+It is *not* on the expenses pages. Two people do not edit the same month in the
+same minute, and every open page costs a request.
+
+There is a browser test for it, and it is the only one in the suite where
+waiting **is** the assertion: a member leaves the page alone, a guest adds an
+item and ticks another off, and the member's page catches up on its own. It
+carries a 90-second timeout because two poll intervals do not fit in the
+suite's 30, which puts the e2e run at about 48 s. Worth it — removing the hook
+makes it fail, which was checked.
+
+**After this, nothing is queued.**
 
 ## Needs your hands
 
@@ -39,10 +50,11 @@ live domain by policy, so anything about the real site is yours.
       what are both easy to change; what is hard is noticing later that nobody
       reads them. `ARCHITECTURE.md` §4.1 has the table.
 - [ ] **Check the rest of the live site on a phone.** The Household page was
-      checked on run #25 and leaving a household on run #26 — both look right.
-      What runs #17–#24 shipped still has not been: the new sign-up flow, the
-      household switcher, "Make owner", and that your existing household looks
-      untouched. A green deploy proves the URL responds, nothing more.
+      checked on run #25, leaving a household on run #26, and password recovery
+      on runs #27–#28 — all look right. What runs #17–#24 shipped still has
+      not been: the new sign-up flow, the household switcher, "Make owner", and
+      that your existing household looks untouched. A green deploy proves the
+      URL responds, nothing more.
 
 ## Open work
 
@@ -55,8 +67,11 @@ live domain by policy, so anything about the real site is yours.
       an address with an account waits for the provider, one without answers
       at once. The per-address budget is what makes that useless in practice.
       (§14)
-- [ ] **Member list page does not poll**, the guest one does every 15 s — so a
-      member can read a stale list while a guest shops. (§14)
+- [ ] **Polling is 15-second HTTP, not a push.** Every shopping page keeps up
+      now, but a change still takes up to fifteen seconds to appear and each
+      open page costs a request. SSE or a WebSocket would be immediate and
+      cheaper at rest — and not worth a persistent connection on a 512 MB box
+      for a household of four. (§14)
 - [ ] **"Verification" means less on an unconfigured deployment.** With no
       `RESEND_API_KEY` the confirmation link is handed straight to whoever
       registered, so it is a step in the flow rather than a check. Right trade
@@ -65,12 +80,17 @@ live domain by policy, so anything about the real site is yours.
 
 ## Done
 
+- [x] **Every shopping page keeps itself current** — one `usePoll` hook on the
+      lists index, a member's list and the guest's, refetching every 15 s,
+      skipping a hidden tab and refetching the moment one becomes visible.
+      Closes the split where only the guest page kept up. (on the branch, not
+      deployed — see the top of this file)
 - [x] **Owner-issued recovery retired to a fallback** — refused (403) wherever
       email is configured, button hidden, `ownerRecovery` in the session
       payload telling the frontend which world it is in. Still working where
       nothing can send email, because there it is the only way back in. Both UI
       states were looked at in a browser rather than reasoned about. (PR #47,
-      live on run #28 — **not checked by hand on the real site yet**)
+      live on run #28, **confirmed by hand on the real site**)
 - [x] Self-service "forgot password" — `POST /auth/forgot` and the `/forgot`
       page, linked from sign-in. Same answer whether or not the address exists,
       the link only ever in the email, 5 requests an hour per address, and a

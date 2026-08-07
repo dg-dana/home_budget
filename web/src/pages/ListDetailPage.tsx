@@ -5,6 +5,7 @@ import CopyListButton from '../components/CopyListButton';
 import ItemComposer from '../components/ItemComposer';
 import ItemRow from '../components/ItemRow';
 import { memberItemApi } from '../shoppingApi';
+import { usePoll } from '../usePoll';
 
 export default function ListDetailPage() {
   const { id = '' } = useParams();
@@ -27,6 +28,11 @@ export default function ListDetailPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // The same list a guest may be standing in a shop with, and the household
+  // adds to it from the kitchen. Whoever gets here second was reading a page
+  // that stopped being true the moment the other one tapped something.
+  usePoll(load);
 
   const run = async (action: () => Promise<unknown>) => {
     setError('');

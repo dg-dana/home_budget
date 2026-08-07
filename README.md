@@ -34,6 +34,8 @@ Two kinds of people use it:
 **Shopping lists**
 - Any number of lists per household, each with items, quantities and notes
 - Tick items off; the list records who added each item and who picked it up
+- Open pages refresh themselves every 15 seconds, so somebody at home and
+  somebody in the shop see the same list without either of them reloading
 - "Clear bought" empties the basket and leaves what is still outstanding
 - Share any list by link — see below
 
@@ -105,7 +107,7 @@ to get started; seven default categories are created with it.
 
 ```bash
 npm test          # server integration suite (236 tests, Vitest)
-npm run test:e2e  # browser tests (20 tests, Playwright)
+npm run test:e2e  # browser tests (21 tests, Playwright)
 npm run test:all  # both
 ```
 
@@ -119,7 +121,8 @@ about email stub `fetch`.
 The Playwright suite builds the app and drives the production build in a browser,
 covering the guest flow end to end (sharing a list, a guest with no account adding
 and ticking off items, comments, "Copy list", view-only enforcement, instant
-revocation, theming), the statistics page, and the household switcher. The rest of
+revocation, theming, and a member's open page catching up with a guest on its
+own), the statistics page, and the household switcher. The rest of
 the frontend has no browser coverage — see `ARCHITECTURE.md` §10, and
 `.claude/skills/preview-ui` for looking at a page instead.
 
