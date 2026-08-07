@@ -6,9 +6,10 @@ description: Screenshot any page of this app in a real browser, in light and dar
 # Looking at a UI change
 
 Most of `web/` has no automated coverage: the guest flow, the sign-in page's
-theme toggle and the statistics page are tested, and nothing else is. For every
-other page — the expenses dashboard, recurring, lists, household — the only way
-to know what a change did is to look at it.
+theme toggle, the statistics page and the household switcher are tested, and
+nothing else is. For every other page — the expenses dashboard, recurring,
+lists, household, and the signed-out screens beyond sign-in — the only way to
+know what a change did is to look at it.
 
 This skill makes looking cheap. `preview.mjs` builds the app, runs the
 production build on a spare port against a throwaway database, seeds a
