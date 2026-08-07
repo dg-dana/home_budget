@@ -40,7 +40,10 @@ Two kinds of people use it:
 - Share any list by link — see below
 
 **Household**
-- Single-use invite links to add family members (expire after 14 days, revocable)
+- Single-use invite links to add family members (expire after 14 days, revocable).
+  An address already in the household cannot be invited, and following an invite
+  to a household you are already in offers to open it rather than asking you to
+  join twice
 - Change your own password; changing it signs out every other device
 - **Forgotten your password?** on the sign-in page emails a single-use recovery
   link. It says the same thing whether or not the address has an account, so it
@@ -106,7 +109,7 @@ to get started; seven default categories are created with it.
 ### Tests
 
 ```bash
-npm test          # server integration suite (236 tests, Vitest)
+npm test          # server integration suite (238 tests, Vitest)
 npm run test:e2e  # browser tests (21 tests, Playwright)
 npm run test:all  # both
 ```

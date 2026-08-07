@@ -311,9 +311,19 @@ async function seed(baseURL) {
   }
 
   const shared = await post(api, `/api/lists/${groceries.id}/share`, { canEdit: true });
+  // One invite left unredeemed, so `/join/:token` can be looked at. Opened as
+  // the owner it shows the "you are already in this household" screen, which
+  // is the state that has no browser test and the one somebody hits by
+  // inviting themselves.
+  const openInvite = await post(api, '/api/household/invites', { role: 'member' });
   await api.dispose();
 
-  return { email: ownerEmail, listId: groceries.id, shareToken: shared.shareToken };
+  return {
+    email: ownerEmail,
+    listId: groceries.id,
+    shareToken: shared.shareToken,
+    inviteToken: openInvite.token,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -501,7 +511,9 @@ async function main() {
     const routes = options.routes.map((requested) => ({
       requested,
       resolved: requested
-        .replace(/:token\b|\bTOKEN\b/, seeded.shareToken)
+        // `/join/:token` takes the invite; every other :token is the share
+        // link, which is the one people ask for by far the most often.
+        .replace(/:token\b|\bTOKEN\b/, requested.startsWith('/join/') ? seeded.inviteToken : seeded.shareToken)
         .replace(/:id\b|\bID\b/, seeded.listId),
     }));
 

@@ -9,10 +9,12 @@ import {
   householdAddresses,
   issuePasswordReset,
   issueSession,
+  membershipIn,
   membershipsOf,
   newId,
   newToken,
   nowIso,
+  optionalAuth,
   requireAuth,
   setPassword,
   toSessionAccount,
@@ -218,9 +220,18 @@ authRouter.post(
   }),
 );
 
-/** Public preview of an invite link, so the join page can name the household. */
+/**
+ * Public preview of an invite link, so the join page can name the household.
+ *
+ * `optionalAuth` rather than none: the page needs to know whether *this*
+ * visitor is already in the household, or it shows somebody a form asking what
+ * they want to be called and only refuses once they have filled it in. Signed
+ * out the answer is simply false — nobody is anybody yet — and the household id
+ * still never leaves the server.
+ */
 authRouter.get(
   '/invite/:token',
+  optionalAuth,
   asyncHandler((req, res) => {
     const invite = db
       .prepare('SELECT * FROM invites WHERE token = ?')
@@ -232,8 +243,20 @@ authRouter.get(
     const household = db
       .prepare('SELECT * FROM households WHERE id = ?')
       .get(invite.household_id) as HouseholdRow;
+    const account = req.user ?? null;
+    const alreadyIn = account ? Boolean(membershipIn(account.id, invite.household_id)) : false;
 
-    res.json({ householdName: household.name, email: invite.email, role: invite.role });
+    res.json({
+      householdName: household.name,
+      email: invite.email,
+      role: invite.role,
+      alreadyIn,
+      // Only to somebody already in it, so this tells them nothing they could
+      // not read off `/auth/me`. It is what lets the page offer to *open* the
+      // household rather than just naming it — switching needs the id, and the
+      // one they have open may be a different one entirely.
+      householdId: alreadyIn ? invite.household_id : null,
+    });
   }),
 );
 

@@ -32,13 +32,14 @@ node .claude/skills/preview-ui/preview.mjs /s/:token    # the guest share page
 Requires `npm install` to have been run. The first run builds; add
 `--skip-build` on later runs against the same code and it takes seconds.
 
-Routes are app paths. Two get substituted from the seed, so you never have to
-paste an id:
+Routes are app paths. Three get substituted from the seed, so you never have to
+paste an id or a token:
 
 | You write | It opens |
 | --- | --- |
 | `/lists/:id` | the seeded "Supermarket" list |
 | `/s/:token` | that list's share link, **in a context with no cookie** but with a guest name already chosen, so it opens on the list rather than the name prompt |
+| `/join/:token` | an invite the seed leaves unredeemed. Opened as the owner — who is already in that household — so it shows the "you are already in this household" screen rather than the join form |
 
 `/login`, `/register`, `/forgot`, `/reset/:token` and `/verify/:token` are also
 captured **with no session**. They have to be: the first three bounce a
@@ -80,9 +81,10 @@ Each line of the summary carries three things worth reading:
 
 Enough that no page is empty: a household of three (Dana the owner, Yossi,
 Noa), expenses over the current and previous two months across six categories,
-one active monthly recurring rule, and two shopping lists — one of them shared.
-One item on the shared list carries a comment, so that row is looked at the way
-it renders when it is full rather than bare.
+one active monthly recurring rule, two shopping lists — one of them shared —
+and one **unredeemed invite**, which is what `/join/:token` opens. One item on
+the shared list carries a comment, so that row is looked at the way it renders
+when it is full rather than bare.
 Built through the API, the same shape `e2e/helpers.ts` uses.
 
 If you need a different shape — an empty state, one person, a category past the
