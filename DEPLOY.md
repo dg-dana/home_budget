@@ -40,6 +40,8 @@ because it is confidential.
 - [x] **A record → `3.68.141.55`, DNS only** (step 4)
 - [x] `bootstrap.sh` run on the instance — `.env` written with `DOMAIN` and `JWT_SECRET` (step 3)
 - [x] First deploy — run #1, all steps green, health check passed (step 6)
+- [x] `RESEND_API_KEY` set in repository secrets — email live since run #24, and
+      **a real message confirmed arriving** in a real inbox on run #27 (step 5)
 
 Setup is complete; the app is live. What follows is the reference for doing it
 again elsewhere, plus the everyday deploy, backup and restore procedures.
@@ -252,12 +254,32 @@ add:
 | `LIGHTSAIL_HOST` | the static IP (here: `3.68.141.55`) |
 | `LIGHTSAIL_SSH_KEY` | the whole key text, including the `-----BEGIN` and `-----END` lines |
 | `LIGHTSAIL_USER` | *(optional)* login user, defaults to `ubuntu` |
+| `RESEND_API_KEY` | *(optional)* turns email on — see below |
 
 On an iPad, open the downloaded `.pem` in the Files app to copy its contents. If
 it will not preview, rename it to end in `.txt`.
 
 Never paste that key anywhere else — not into a chat, an issue, or a commit.
 The whole point is that only GitHub and the server ever hold it.
+
+#### The mail key
+
+**`RESEND_API_KEY` is the only secret the app itself needs**, and the deploy
+writes it into `/opt/home-budget/.env` on every run. Get one from
+[resend.com](https://resend.com) after verifying the domain there; nothing else
+is needed, because `MAIL_FROM` and `APP_URL` are derived from the `DOMAIN`
+already in that file.
+
+Without it the app still runs, and confirmation and invite links are shown on
+screen for whoever is signed in to pass on — the way it worked before email
+existed. **The one thing that stops working is "Forgotten your password?"**: it
+is an unauthenticated page, so it refuses (503, "ask a household owner") rather
+than printing a link anybody could use on any account they can name. If people
+report that, check this secret first.
+
+Turning it off again is deleting the repository secret and deploying: the step
+rewrites that line every run, and an empty secret writes an empty value, which
+the app reads as "no provider".
 
 ### 6. Deploy
 
@@ -498,6 +520,23 @@ else.
 Cloudflare in front, every visitor arrives from a handful of edge IPs, and the
 limiter cannot tell them apart. Turning the proxy off restores real client
 addresses.
+
+**"This site cannot send email, so it cannot reset a password by itself."**
+That is `POST /auth/forgot` refusing because no mail provider is configured —
+it will not print a recovery link on an unauthenticated page. Check the
+`RESEND_API_KEY` repository secret exists and re-deploy; the deploy writes it
+into `.env` every run. Confirm with
+`grep -c '^RESEND_API_KEY=.' /opt/home-budget/.env` — `1` means set, `0` means
+empty or absent. Until it is fixed, an owner can still issue a recovery link
+from the Household page.
+
+**Nothing is emailed but the app works fine.** Same cause, and everything
+except the route above degrades to showing the link on screen, deliberately.
+`sudo docker compose logs app | grep notifications` shows a
+`[notifications] not sent (...)` line with the reason — never the address or
+the link, which would be a credential sitting in the logs. A provider
+answering `401` there is an expired or wrong key; `403` is usually a domain
+that is not verified at Resend.
 
 **The app container restarts in a loop.** Usually a missing `JWT_SECRET` —
 production refuses to boot without one. Check `/opt/home-budget/.env` and

@@ -601,7 +601,7 @@ What it asserts: a member creates and shares a list through the UI; a guest with
 
 ### Both suites were verified by breaking the code
 
-Thirty deliberate regressions were introduced, and each was caught by a failing test:
+Thirty-four deliberate regressions were introduced, and each was caught by a failing test:
 
 1. Removing the `household_id` filter from the expenses list query → `isolation` failed.
 2. Adding `householdId` to the guest share response → `share` failed.
@@ -633,6 +633,10 @@ Thirty deliberate regressions were introduced, and each was caught by a failing 
 28. Gathering a household's recipients *after* deleting it rather than before → `notificationsSending` failed, nobody told it was gone.
 29. Dropping the address filter from `GET /households/invitations` → `accounts` failed, every account seeing every pending invite.
 30. Returning no invitations to the picker → the Playwright invitation test failed, the invited person left with nothing to join.
+31. Answering `POST /auth/forgot` with a 400 for an address that has no account → `forgotPassword` failed, the route become a way to ask whether somebody has one.
+32. Returning the reset token in that route's response → `forgotPassword` failed, an unauthenticated caller handed a way into any account it can name.
+33. Dropping the per-address key from the recovery limiter, leaving it per-IP → `forgotPassword` failed, a bystander's address refused because somebody else had used up the budget.
+34. Removing the `config.emailConfigured` guard → `password` failed, a deployment with no provider accepting reset requests it can never deliver.
 
 The statistics suite also earned its place on the way in: the one-month test failed against the unguarded fetch, which is how the stale-response race in §9.2 was found.
 

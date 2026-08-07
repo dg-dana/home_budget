@@ -18,6 +18,8 @@ Two kinds of people use it:
 - Month-by-month view with total spent, biggest category and daily average
 - Monthly budget per category, with a progress bar and an over-budget warning
 - Breakdown by category and by household member, plus a six-month trend
+- A **statistics page** over any range: who spent what, on what, and how a single
+  category moved month by month
 - Currency is a household setting (amounts are stored as integer cents, never floats)
 
 **Recurring expenses**
@@ -38,12 +40,24 @@ Two kinds of people use it:
 **Household**
 - Single-use invite links to add family members (expire after 14 days, revocable)
 - Change your own password; changing it signs out every other device
-- Owner can issue a single-use recovery link for anyone locked out of their account
+- **Forgotten your password?** on the sign-in page emails a single-use recovery
+  link. It says the same thing whether or not the address has an account, so it
+  cannot be used to find out who does
+- Owner can also issue a recovery link for anyone locked out — the fallback where
+  no email provider is configured
 - Owner can rename the household, change currency, manage categories, remove members
   and promote another member to owner
 - Members can record expenses and use lists; only the owner manages the household itself
 - Anyone can **leave a household** without deleting their account, and close their
   account from the households picker
+
+**Everything else**
+- **Light and dark**, following the device unless told otherwise — the toggle is on
+  every screen including the sign-in page
+- **Email** for anything needing a link, and for what has already happened: joins,
+  removals, role changes, renames, deletions, password changes. Routine edits send
+  nothing, deliberately — a household that emails on every grocery item trains
+  everyone to ignore it. Optional; see Configuration
 
 ## Sharing a list with someone outside the family
 
@@ -88,20 +102,24 @@ to get started; seven default categories are created with it.
 ### Tests
 
 ```bash
-npm test          # server integration suite (132 tests, Vitest)
-npm run test:e2e  # guest-flow browser smoke test (6 tests, Playwright)
+npm test          # server integration suite (233 tests, Vitest)
+npm run test:e2e  # browser tests (20 tests, Playwright)
 npm run test:all  # both
 ```
 
 The server suite runs the real app over HTTP against a real SQLite database — no
-mocks — covering cross-household isolation, guest share access, authentication and
-invites, expense arithmetic, recurrence dates and migrations, and owner/member
-permissions.
+mocks — covering cross-household isolation, guest share access, authentication,
+invites and email confirmation, both kinds of password recovery, what the app emails
+and to whom, expense arithmetic and statistics, recurrence dates and migrations, and
+owner/member permissions. Nothing in it ever reaches a mail provider: the two files
+about email stub `fetch`.
 
 The Playwright suite builds the app and drives the production build in a browser,
-covering the guest flow end to end: sharing a list, a guest with no account adding
-and ticking off items, view-only enforcement, and instant revocation. Other parts
-of the frontend have no browser coverage yet. See `ARCHITECTURE.md` §10.
+covering the guest flow end to end (sharing a list, a guest with no account adding
+and ticking off items, comments, "Copy list", view-only enforcement, instant
+revocation, theming), the statistics page, and the household switcher. The rest of
+the frontend has no browser coverage — see `ARCHITECTURE.md` §10, and
+`.claude/skills/preview-ui` for looking at a page instead.
 
 Every push runs typecheck and both suites in GitHub Actions
 (`.github/workflows/ci.yml`).
@@ -133,6 +151,16 @@ All optional except `JWT_SECRET` in production. See `.env.example`.
 | `JWT_SECRET`    | dev-only fallback         | Signs session cookies              |
 | `DATABASE_PATH` | `data/home-budget.sqlite` | SQLite file, relative to repo root |
 | `NODE_ENV`      | `development`             | Set to `production` when deploying |
+| `RESEND_API_KEY`| unset                     | Turns email sending on              |
+| `DOMAIN`        | unset                     | `MAIL_FROM` and `APP_URL` derive from it |
+| `MAIL_FROM`     | `Home Budget <noreply@$DOMAIN>` | Override the from address     |
+| `APP_URL`       | `https://$DOMAIN`         | Makes the links in emails absolute  |
+
+**With no `RESEND_API_KEY` nothing is emailed, and that is a supported state** —
+confirmation, invite and recovery links come back in the response and are shown on
+screen to whoever asked, which is how the app works out of the box and how the test
+suite runs. The one thing that needs a provider is **"Forgotten your password?"**: it
+is unauthenticated, so it refuses rather than showing a link (see Security notes).
 
 The database file is created on first boot and any pending migrations are applied
 automatically on every start, so there is no separate migration step to run. `data/`
@@ -154,6 +182,7 @@ session currently names.
 | GET    | `/auth/invite/:token`             | anyone         |
 | GET    | `/auth/me`                        | account        |
 | POST   | `/auth/password`                  | account        |
+| POST   | `/auth/forgot`                    | anyone         |
 | GET    | `/auth/reset/:token`              | anyone         |
 | POST   | `/auth/reset`                     | anyone         |
 | DELETE | `/auth/account`                   | account        |
@@ -195,10 +224,17 @@ household cannot be used to read or change another's data.
 ## Security notes
 
 - Passwords are bcrypt-hashed at 12 rounds; login returns the same error for an unknown
-  email and a wrong password
+  email and a wrong password, and `POST /auth/forgot` answers identically whether or not
+  the address has an account — neither can be used to enumerate who has one
 - Sessions are JWTs in an httpOnly, SameSite=Lax cookie — not readable from JavaScript
-- Invite and share tokens are 24 random bytes from `crypto.randomBytes`
-- Sign-in and the guest share endpoints are rate limited per IP
+- Invite, share and recovery tokens are 24 random bytes from `crypto.randomBytes`
+- A recovery link is only ever emailed, never returned to whoever asked for it. Where no
+  email provider is configured the route refuses outright rather than showing the link,
+  since an unauthenticated page printing one would open every account to anybody who
+  knows its address
+- Sign-in and the guest share endpoints are rate limited per IP; asking for a recovery
+  link is limited per **address** as well, because each request mails somebody who did
+  not ask
 - Changing a password invalidates that account's other sessions immediately
 - Guest mutations are rejected as soon as the owner switches a list to view-only or
   revokes the link
@@ -212,22 +248,32 @@ redirect that *does* affect `<Link>`/`useNavigate`, so the app stays on 7.18.1.
 
 ```
 server/src
-  index.ts          Express app, route mounting, static frontend in production
+  app.ts            Express app assembly — routes, limiters, static frontend
+  index.ts          The entry point; binds the port and nothing else
   config.ts         Environment configuration
   db.ts             SQLite connection and migration runner
   migrations.ts     Ordered, append-only schema migrations
   recurring.ts      Recurrence date maths and materialisation
-  auth.ts           Password hashing, session cookies, auth middleware
+  auth.ts           Password hashing, session cookies, auth middleware, membership
+                    resolution, recovery links
+  notifications.ts  The one place that decides how a message travels
   http.ts           HttpError, async wrapper, Zod body parsing, error middleware
-  rateLimit.ts      In-process fixed-window limiter
+  rateLimit.ts      In-process fixed-window limiter, keyed by IP or by anything
+  backup.ts         Consistent snapshots via SQLite's online backup API
   shoppingItems.ts  Item operations shared by the member and guest routes
-  routes/           auth, household, categories, expenses, recurring, lists, share
+  routes/           auth, households, household, categories, expenses, recurring,
+                    lists, share
 
 web/src
   api.ts            Typed fetch wrapper and response shapes
-  session.tsx       Session context
+  session.tsx       Session context — the account, its households, the one open
+  theme.ts          Theme preference, applied to <html>
   format.ts         Money and date formatting
-  components/       Layout
-  pages/            Login, Register, Join, Expenses, Recurring, Lists,
+  listText.ts       A list as plain text, for the clipboard
+  shoppingApi.ts    One item interface, implemented for members and for guests
+  components/       Layout, AuthPage, HouseholdSwitcher, ThemeToggle, NoticeCard,
+                    ItemComposer, ItemRow, CopyListButton
+  pages/            Login, Register, ForgotPassword, ResetPassword, VerifyEmail,
+                    Households, Join, Expenses, Stats, Recurring, Lists,
                     ListDetail, Household, SharedList (the guest view)
 ```
