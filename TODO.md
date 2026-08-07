@@ -21,9 +21,9 @@ The queue is empty. The invite fixes went out on runs #30 and #31, both green:
 All of it came out of sending one real invite to a real inbox. The email was
 never the problem.
 
-Worth two minutes when you are next on the site: invite yourself again and see
-the refusal land under the form, and open an old invite link to see the new
-screen. Neither can be checked from the sandbox.
+**Both checked by hand on the real site and working** — the refusal lands under
+the form, and an old invite link shows the "already in" screen with its Open
+button.
 
 ## Needs your hands
 
@@ -69,8 +69,8 @@ live domain by policy, so anything about the real site is yours.
       in the invite preview, so the page offers to open it; an address already
       in the household cannot be invited at all; and that refusal shows under
       the invite form rather than at the top of a page several screens long.
-      (PRs #53 and #54, live on runs #30 and #31 — **not checked by hand on the
-      real site yet**)
+      (PRs #53 and #54, live on runs #30 and #31, **confirmed by hand on the
+      real site**)
 - [x] **Invite email confirmed arriving on the live site**, which was the last
       message type nobody had watched land. Every kind the app sends is now
       either proven end to end (confirmation, recovery, invite) or shares the
