@@ -134,6 +134,31 @@ export default function HouseholdPage() {
     navigate('/households', { replace: true });
   };
 
+  /**
+   * Leaving, which is the only thing in here that takes no password: it
+   * destroys nothing and an invite undoes it, so the round trip would be
+   * friction for the person with the least power in the household. The two
+   * cases the server refuses are shown as text rather than tried — the
+   * conditions are already on screen in the member list.
+   */
+  const handleLeave = async () => {
+    setDangerError('');
+    if (
+      !window.confirm(
+        `Leave "${household?.name ?? 'this household'}"? You lose access to its expenses and lists. ` +
+          'What you spent stays in its history, listed without a payer. Getting back in needs a new invite.',
+      )
+    ) {
+      return;
+    }
+    try {
+      await api.delete('/household/members/me');
+      await returnToHouseholds();
+    } catch (err) {
+      setDangerError(err instanceof Error ? err.message : 'Could not leave the household');
+    }
+  };
+
   const handleDeleteAccount = async (event: React.FormEvent) => {
     event.preventDefault();
     setDangerError('');
@@ -648,6 +673,29 @@ export default function HouseholdPage() {
         {dangerError && <div className="alert">{dangerError}</div>}
 
         <div className="grid-2">
+          <div className="stack">
+            <div>
+              <h3 style={{ margin: 0 }}>Leave this household</h3>
+              <p className="small muted" style={{ margin: '0.25rem 0 0' }}>
+                {strandedOwner
+                  ? 'You are this household’s only owner. Make someone else an owner first.'
+                  : lastPerson
+                    ? 'You are the only person here, so there would be nobody left to reach it. Delete the household instead.'
+                    : 'Your account stays, and so does everything you spent — it is listed without a payer from then on. Getting back in needs a new invite.'}
+              </p>
+            </div>
+            <div>
+              <button
+                type="button"
+                className="button danger-outline"
+                disabled={strandedOwner || lastPerson}
+                onClick={handleLeave}
+              >
+                Leave household
+              </button>
+            </div>
+          </div>
+
           <form className="stack" onSubmit={handleDeleteAccount}>
             <div>
               <h3 style={{ margin: 0 }}>Delete your account</h3>
@@ -712,7 +760,8 @@ export default function HouseholdPage() {
         </div>
 
         <p className="small muted" style={{ margin: 0 }}>
-          There is no undo and no export. Nothing here can be recovered afterwards.
+          Leaving can be undone with a new invite. Deleting cannot be undone at all — there is no
+          export, and nothing it removes comes back.
         </p>
       </div>
     </div>

@@ -3,11 +3,38 @@
 The running state of this project. **Updated after every step** — see the
 "Working agreement" in `CLAUDE.md`.
 
-Last updated: 2026-08-06 · live: deploy run #24 (`51ae836`)
+Last updated: 2026-08-07 · live: deploy run #24 (`51ae836`)
 
 ---
 
-## Now: check a real message arrives
+## Waiting to be deployed
+
+**Leaving a household without deleting your account** is merged and unshipped.
+Nothing reaches the live site until somebody runs **Deploy to Lightsail** from
+the Actions tab.
+
+- `DELETE /household/members/me`, and "Leave this household" as the first thing
+  in the Danger zone on `/household`. The owners are emailed that you left; you
+  are not, since you did it.
+- **No password on it**, alone in that card: a new invite undoes leaving, so
+  asking for one would be friction aimed at the person with the least power in
+  the household. Both deletions still ask.
+- Refused in two cases, both of which would strand something — you are the
+  **only owner** with other people still here (make someone else an owner
+  first), or you are the **last person in it** (delete the household instead).
+  Both are shown as disabled buttons with the reason underneath, rather than as
+  a round trip that only produces an error.
+- Leaving retires any recovery link an owner had outstanding for your account,
+  exactly as being removed does.
+- Ten new tests. Four deliberate breaks were watched to fail, the route
+  ordering among them: `/members/me` has to be matched before `/members/:id`,
+  which is owner-only — reversed, the route 403s every member it exists for.
+- The page was looked at in a browser as a member and as an owner, in both
+  themes and at both widths, and the leave itself was driven through a real
+  click: the confirm, the redirect to the picker, and the household gone from
+  it.
+
+## Also now: check a real message arrives
 
 Email is **live** — PR #32 shipped it (run #20), and PRs #33 and #34 sorted
 out the confirmation screen (runs #21 and #22), all green through "Verify the
@@ -97,9 +124,6 @@ agent sandbox cannot reach the site, so that check is yours.
 
 ## Open work
 
-- [ ] **Leave a household without deleting your account.** An owner can remove
-      anyone but themselves, so a member who wants out has to ask.
-      `DELETE /household/members/me`. (§14)
 - [ ] **Owner-issued recovery still grants a whole account**, which may span
       households. Removing someone retires their links, which closes the
       obvious abuse, but a self-service "forgot password" would remove the need
@@ -109,6 +133,9 @@ agent sandbox cannot reach the site, so that check is yours.
 
 ## Done
 
+- [x] Leave a household without deleting your account — "Leave this household"
+      in the Danger zone, `DELETE /household/members/me`. (merged, **not
+      deployed**)
 - [x] Email sends through Resend, and the app also emails what has happened —
       joins, removals, role changes, renames, both deletions, password
       changes. Plus "Delete account" on `/households`, and invitations listed

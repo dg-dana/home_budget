@@ -319,6 +319,16 @@ input[type='checkbox'] {
 }
 .button.danger-solid:hover:not(:disabled) { filter: brightness(0.93); }
 
+/* Between the two, for "Leave household": a new invite undoes it, so it has no
+   business wearing the same fill as the two deletions — but standing next to
+   them, the ghost has no edges and stops reading as a button at all. */
+.button.danger-outline {
+  background: transparent;
+  color: var(--danger);
+  border-color: var(--danger);
+}
+.button.danger-outline:hover:not(:disabled) { background: var(--danger-soft); }
+
 .button.small {
   padding: 0.3rem 0.6rem;
   font-size: 0.85rem;

@@ -65,11 +65,34 @@ Reference for how this app is put together and why. Read this before extending i
 - Delete a **category** → its expenses survive and show as "Uncategorised".
 - Delete a **recurring rule** → the expenses it already generated survive and lose their `recurring_id`. They record money that really was spent.
 
-### Closing an account or a household
+### Leaving, and closing an account or a household
 
-Two routes end things for good: `DELETE /auth/account` (your own account, and
-every membership it holds) and `DELETE /household` (owner only, the household
-currently open). Both take the caller's password in the body.
+Three ways out, in increasing order of how much they end. `DELETE
+/household/members/me` leaves the household currently open and nothing else.
+`DELETE /auth/account` closes your own account and every membership it holds,
+and `DELETE /household` (owner only) closes the household currently open —
+those two take the caller's password in the body.
+
+- **Leaving takes no password, and it is the only thing here that does not.**
+  The password guards what cannot be undone; a new invite undoes leaving, so
+  demanding one would be friction aimed squarely at the person with the least
+  power in the household. It is also exactly the removal an owner could already
+  perform on them without a password of their own.
+- **`/members/me` is registered before `/members/:id`.** Express answers with
+  the first route that matches, and `/members/:id` sits behind `requireOwner` —
+  so with the order reversed the route would 403 every ordinary member, which
+  is the entire group it exists for. There is a test that asserts nothing but
+  that.
+- **Leaving refuses two cases**, both because going would strand something: the
+  **only owner while anyone else is still here** (the rule below), and the
+  **last person in it** — nobody would ever reach those rows again. Deleting an
+  account takes an empty household with it; leaving deliberately does not,
+  because it does not ask for a password and that is the one reading of the
+  button that destroys data. "Delete this household" sits beside it and does
+  ask.
+- **Leaving retires any outstanding recovery link for that account**, the same
+  as being removed does and for the same reason: an owner who minted one an
+  hour ago must not still hold a key to an account that has walked out.
 
 - **Closing an account is reachable from two screens, deliberately.** The
   Household page's "Danger zone" needs a household open, so `/households` — the
@@ -176,6 +199,7 @@ they are simply dropped.
 | `POST /households` | the new owner |
 | `POST /households/join` | the household's **other owners** — not the joiner, who is looking at it |
 | `DELETE /household/members/:id` | the person removed, and the **other** owners |
+| `DELETE /household/members/me` | the household's **owners** — not the person leaving, who did it |
 | `PUT /household/members/:id/role` | the member whose role changed, and only if it actually changed |
 | `PUT /household` | the **other** members, and only naming what actually changed |
 | `DELETE /household` | **everyone in it**, the owner who did it included |
@@ -410,6 +434,14 @@ different questions. Keep them apart rather than merging them.
   control on the page. **The sole owner's "Delete my account" is disabled with
   the reason printed underneath**, since the server refuses it anyway (§3) and
   saying so beats a round trip that only produces an error.
+- **"Leave this household" is the first thing in that card**, and the only one
+  with no password field (§3). It takes a third button style, `.button
+  .danger-outline`: the fills belong to what cannot be undone, and the ghost —
+  tried first — has no edges and simply stopped reading as a button beside
+  them. It is disabled with the reason underneath in the two cases the server
+  refuses, both already visible in the member list above it. A member sees two
+  cards here and an owner three, which is why the card's closing line talks
+  about "deleting" rather than "the two deletions".
 - A row's trailing controls are wrapped in `.item-actions` so that on a phone
   they wrap **as a group**, instead of peeling off one at a time under the
   checkbox.
@@ -506,7 +538,7 @@ Two suites, run together with `npm run test:all`.
 
 ### Server integration suite — Vitest, `server/test/`
 
-- 182 tests, run with `npm test` from the repo root.
+- 223 tests, run with `npm test` from the repo root.
 - They are **integration tests over real HTTP**, not unit tests: each file boots the actual app on an ephemeral port and drives it with a cookie-aware client. There is no mocking of the database, the router or the session.
 - `test/setup.ts` runs before any application module is imported and points `DATABASE_PATH` at a unique temp file. Vitest gives each test file its own module registry, so **every test file gets its own SQLite database** and files can run in parallel.
 - `resetDatabase()` truncates every table in `beforeEach`.
@@ -522,10 +554,10 @@ Two suites, run together with `npm run test:all`.
 - `accounts.test.ts` — the two-step sign-up and multi-household behaviour: invitations waiting for an address (listed, hidden once redeemed, never another account's and never an open one, dropped when expired or revoked); that registering creates an account with no household and no household name is accepted there; that an unconfirmed address cannot create or join one; the confirmation link being single-use, expiring, and retired when a new one is issued; one account owning several households with their data provably apart and their categories seeded separately; a different display name in each; switching, and refusing to switch into one you are not in; where a returning sign-in lands.
 - `itemComments.test.ts` — the comment on a shopping item: set on add, edited, cleared, and the length cap.
 - `expenses.test.ts` — cents arithmetic, month-boundary maths, summary aggregation, and what survives a category or member deletion. Also the statistics endpoint: the per-member and per-category splits, the member/category cross-tab adding up to the same money as the totals, months with no spending, the name ordering that pins each member's colour, and the range validation.
-- `household.test.ts` — owner vs member permissions, list mechanics, and the two irreversible deletions (§3): the cascade taking the memberships and share links but **leaving the accounts standing**, the password confirmation, the refusal of a sole owner with company, the last owner taking the household with them, and a member leaving without moving anybody's totals.
+- `household.test.ts` — owner vs member permissions, list mechanics, and the two irreversible deletions (§3): the cascade taking the memberships and share links but **leaving the accounts standing**, the password confirmation, the refusal of a sole owner with company, the last owner taking the household with them, and a member leaving without moving anybody's totals. Also leaving on your own (§3): the money staying put, the two refusals, an owner going once somebody else owns the place, the route not being owners-only despite living next to one that is, and an invite bringing you back.
 - `recurring.test.ts` — recurrence date maths as a pure function (month-end clamping, leap years, rollovers), then catch-up, idempotency, pause/resume.
 - `migrations.test.ts` — fresh builds, repeat runs being no-ops, and the pre-migration-system adoption path.
-- `password.test.ts` — self-service change, owner-issued recovery, and that both evict other devices.
+- `password.test.ts` — self-service change, owner-issued recovery, that both evict other devices, and that an outstanding link is retired when the member goes — whether an owner removed them or they left of their own accord.
 - `compression.test.ts` — measures **raw wire bytes** with `node:http`, because `fetch` transparently decompresses and would compare a number with itself.
 - `notificationsSending.test.ts` — the other half: a provider **is** configured, and every route that changes a household has to reach the right people and nobody else — joins, removals, role changes, renames, both deletions, password changes and invites. Only calls to the provider are intercepted; requests to the app are real HTTP. The environment is set before `config.ts` loads, which is what the file's top-level `await import` is for.
 - `notifications.test.ts` — email (§4.1) with `fetch` stubbed, so the suite never touches a provider: nothing sent and nothing claimed when no key is configured, the exact request made when one is, the address and link base derived from `DOMAIN`, a relative link refusing to go out without `APP_URL`, and a refusal, a network failure and an addressless invite all degrading to the link rather than throwing. `config.ts` reads the environment once at import, so each case sets its variables behind `vi.resetModules()`.
@@ -661,9 +693,6 @@ Alongside each screenshot it reports the body colour — the cheap proof a theme
 Honest list — these are real, and none is currently blocking.
 
 - **Frontend coverage is the guest flow, the statistics page and the household switcher.** The expenses dashboard, budgets, recurring, invites and household settings have no browser tests — changes there still need checking by hand, against the built app rather than by reading the CSS.
-- **There is no way to leave a household without deleting your account.** An
-  owner can remove anyone but themselves, so a member who simply wants out has
-  to ask. `DELETE /household/members/me` is the missing route.
 - **Recovery is still owner-issued, not self-service.** Email now sends (§4.1), so a "forgot password" flow has become possible — but it does not exist yet, and until it does a locked-out member has to ask an owner. The link is emailed to them, which was the part that could not work before.
 - **Nothing proves an address on an unconfigured deployment.** Without `RESEND_API_KEY` the confirmation link is handed straight to whoever registered, so it is a step in the flow rather than a check. That is the right trade for the suite and for local work, but it means "confirmed" only means "verified" where a provider is actually configured.
 - **An owner-issued recovery link grants the whole account, which may span households.** It is now emailed to the member as well as shown to the owner, which does not change who can issue one. Removing someone now retires their outstanding links (§3), which closes the obvious abuse, but an owner can still reset the password of an account that belongs to other households while that person is a member. That was contained when an account *was* a household; it is not any more. A self-service "forgot password" would remove the need for the feature altogether.

@@ -165,6 +165,89 @@ householdRouter.get(
 );
 
 /**
+ * Leaving under your own steam — the way out that did not exist, and the
+ * reason a member who simply wanted out had to ask an owner to remove them.
+ *
+ * Registered **before** `/members/:id` deliberately. Express takes the first
+ * route that matches, so with the order reversed `me` would be read as an id
+ * and the handler behind `requireOwner` would answer — turning this into an
+ * owners-only route, for the one group of people it is not for.
+ *
+ * Two cases are refused, both because going would strand something:
+ *
+ * - **The only owner while anyone else is still here.** The same rule that
+ *   stops the only owner deleting their account (§3): nobody would be left
+ *   able to invite, rename or remove, and promoting somebody on their way out
+ *   is not this app's decision to make. "Make owner" first.
+ * - **The last person in it.** Nobody would ever reach those rows again.
+ *   Deleting an account takes an empty household with it; leaving must not,
+ *   because leaving is not password-confirmed and this is the one reading of
+ *   the button that destroys data. "Delete this household" sits beside it and
+ *   does ask for a password.
+ *
+ * Otherwise it is precisely the removal an owner could already perform, so it
+ * does the same thing: the membership goes, the account and the expenses stay
+ * (§3), and any recovery link an owner minted for this account is retired on
+ * the way out — an owner's reach has to stop at the door whichever side
+ * opens it.
+ */
+householdRouter.delete(
+  '/members/me',
+  asyncHandler(async (req, res) => {
+    const user = currentUser(req);
+    const others = db
+      .prepare(
+        `SELECT COUNT(*) AS total, COUNT(CASE WHEN role = 'owner' THEN 1 END) AS owners
+         FROM memberships WHERE household_id = ? AND user_id != ?`,
+      )
+      .get(user.householdId, user.id) as { total: number; owners: number };
+
+    const household = db
+      .prepare('SELECT name FROM households WHERE id = ?')
+      .get(user.householdId) as Pick<HouseholdRow, 'name'>;
+
+    if (others.total === 0) {
+      throw badRequest(
+        `You are the only person in "${household.name}", so there would be nobody left to reach it. ` +
+          'Delete the household instead, from the Danger zone below.',
+      );
+    }
+    if (user.role === 'owner' && others.owners === 0) {
+      throw badRequest(
+        `You are the only owner of "${household.name}". Make someone else an owner first.`,
+      );
+    }
+
+    const membership = db
+      .prepare('SELECT * FROM memberships WHERE user_id = ? AND household_id = ?')
+      .get(user.id, user.householdId) as MembershipRow;
+    // Gathered while the membership still exists, sent once it does not.
+    const owners = householdAddresses(user.householdId, { ownersOnly: true, except: user.id });
+
+    db.transaction(() => {
+      db.prepare('DELETE FROM memberships WHERE id = ?').run(membership.id);
+      db.prepare('UPDATE password_resets SET used_at = ? WHERE user_id = ? AND used_at IS NULL').run(
+        nowIso(),
+        user.id,
+      );
+    })();
+
+    // The owners hear it; the person who left does not need telling. It is the
+    // same notice as a removal, because the household hears the same fact.
+    await notifyAll(owners, (to) =>
+      memberRemovedNotice(to, household.name, membership.display_name),
+    );
+
+    // Their cookie still names the household they have just left. It would be
+    // ignored anyway — the membership behind it is re-read on every request —
+    // but re-issuing it pointing at nothing is what lands an account holding
+    // others on the picker rather than on a household it did not choose.
+    issueSession(res, db.prepare('SELECT * FROM users WHERE id = ?').get(user.id) as UserRow, null);
+    res.status(204).end();
+  }),
+);
+
+/**
  * Removes someone from this household. Their account survives — they may be in
  * other households, and it was never this household's to delete. Their
  * expenses stay too: `paid_by` / `created_by` are ON DELETE SET NULL, and
