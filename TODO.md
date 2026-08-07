@@ -3,22 +3,22 @@
 The running state of this project. **Updated after every step** — see the
 "Working agreement" in `CLAUDE.md`.
 
-Last updated: 2026-08-07 · live: deploy run #31 (`9c43fac`)
-
-Two changes are merged and waiting for a deploy: the language switch, and the
-copy-list change below.
+Last updated: 2026-08-07 · live: deploy run #33 (`5cd346e`)
 
 ---
 
-## Next: deploy German, and the copy-list change
+## Live: German, and the copy-list change
 
-**Merged but not deployed.** The whole interface now reads in **English or
-German**, switched from a picker sitting beside the theme toggle — so it is on
-both headers, on every signed-out screen and on the guest share page, and needs
-no account. The choice is per device (`localStorage`), exactly like the theme
-and for the same reasons: a guest has nowhere to store a setting, and one
-person's phone is not another's laptop. With nothing chosen, a German phone
-gets German on its own.
+**Both are deployed.** Deploy run #33 shipped the language switch on top of run
+#32's copy-list change; every step passed, "Verify the public URL works"
+included.
+
+The whole interface now reads in **English or German**, switched from a picker
+beside the theme toggle — so it is on both headers, on every signed-out screen
+and on the guest share page, and needs no account. The choice is per device
+(`localStorage`), exactly like the theme and for the same reasons: a guest has
+nowhere to store a setting, and one person's phone is not another's laptop.
+With nothing chosen, a German phone gets German on its own.
 
 Three decisions worth knowing before touching it (`ARCHITECTURE.md` §9.1a):
 
@@ -45,36 +45,8 @@ language stored per account rather than per device; the errors would need the
 API to return codes instead of sentences. Say if either matters and they are
 the next thing.
 
-Also still merged-but-not-deployed:
-
-## The copy-list change
-
-**Merged but not deployed.** "Copy list" now carries **only the items still to
-buy**. The ticked-off ones used to follow under "Already in the basket:", which
-is a shopping list naming things the reader is already carrying — so that
-section is gone entirely, not reworded. With everything ticked the text reads
-`Nothing left to buy.`, kept distinct from the empty list's `Nothing on the list
-yet.` so a shopper can tell "done" from "nobody wrote anything down".
-
-Covered by the existing browser test, which was broken once and watched fail.
-Nothing to check by hand beyond pasting a real list into a chat and seeing that
-what you have already picked up is not in it.
-
-Before that, the invite fixes went out on runs #30 and #31, both green:
-
-- Following an invite to a household you are already in says so and offers to
-  **open** it, instead of asking what you want to be called and refusing on
-  submit (`alreadyIn` in the invite preview, behind `optionalAuth`).
-- An address already in the household **cannot be invited at all** (409), and
-  that refusal appears under the invite form rather than in the page-level alert
-  at the top — several screens away on a phone. The address stays in the box.
-
-All of it came out of sending one real invite to a real inbox. The email was
-never the problem.
-
-**Both checked by hand on the real site and working** — the refusal lands under
-the form, and an old invite link shows the "already in" screen with its Open
-button.
+**Nothing has been looked at on a real phone yet** — see below. That is the
+only check that counts, since an agent sandbox cannot load the site.
 
 ## Needs your hands
 
@@ -84,10 +56,11 @@ live domain by policy, so anything about the real site is yours.
 - [ ] **Say if the notices are too much or too little.** Wording and who hears
       what are both easy to change; what is hard is noticing later that nobody
       reads them. `ARCHITECTURE.md` §4.1 has the table.
-- [ ] **Look at German on a real phone.** It has been screenshotted at 390px
-      in both themes and every page fits, but that is a picture, not a thumb.
-      The header carries one more control than it did, and German words are
-      longer than English ones — the nav and the danger zone are where to look.
+- [ ] **Look at German on the live site, on a real phone** (live since run
+      #33). It has been screenshotted at 390px in both themes and every page
+      fits, but that is a picture, not a thumb. The header carries one more
+      control than it did, and German words are longer than English ones — the
+      nav and the Danger zone are where to look.
 - [ ] **Say whether the emails should be German too.** They are the one part of
       the app that stays English, because the language lives on the device and
       the server has no idea which device is reading. Making them follow would
@@ -139,7 +112,11 @@ live domain by policy, so anything about the real site is yours.
       entry per string with both languages; whole sentences rather than glued
       fragments; money and dates following the choice as well as the words;
       `<html lang>` set before first paint. Three browser tests, each watched
-      failing against a deliberate break. (merged, **not yet deployed**)
+      failing against a deliberate break. (PR #60, live on run #33, **not yet
+      looked at on a phone**)
+- [x] **"Copy list" carries only what is still to buy** — the ticked-off items
+      are gone from the text entirely, since a list naming what the reader is
+      already carrying is worse than no list. (PR #58, live on run #32)
 - [x] **Nobody is asked to join a household they are already in** — `alreadyIn`
       in the invite preview, so the page offers to open it; an address already
       in the household cannot be invited at all; and that refusal shows under
