@@ -3,15 +3,15 @@
 The running state of this project. **Updated after every step** — see the
 "Working agreement" in `CLAUDE.md`.
 
-Last updated: 2026-08-07 · live: deploy run #25 (`660551a`)
+Last updated: 2026-08-07 · live: deploy run #26 (`977724d`)
 
 ---
 
-## Waiting to be deployed
+## Shipped and confirmed: leaving a household
 
-**Leaving a household without deleting your account** is merged and unshipped.
-Nothing reaches the live site until somebody runs **Deploy to Lightsail** from
-the Actions tab.
+**Leaving a household without deleting your account** went live on deploy run
+#26 (`977724d`) and was **checked by hand on a phone** the same day — the only
+check that counts, since an agent sandbox cannot load the site.
 
 - `DELETE /household/members/me`, and "Leave this household" as the first thing
   in the Danger zone on `/household`. The owners are emailed that you left; you
@@ -115,10 +115,11 @@ agent sandbox cannot reach the site, so that check is yours.
 ## Also needs your hands
 
 - [ ] **Check the rest of the live site on a phone.** The Household page was
-      checked on run #25 and looks right. The rest of what runs #17–#25
-      shipped has not been: the new sign-up flow, the household switcher,
-      "Make owner", and that your existing household looks untouched. A green
-      deploy proves the URL responds, nothing more.
+      checked on run #25, and leaving a household on run #26 — both look
+      right. What runs #17–#24 shipped still has not been looked at: the new
+      sign-up flow, the household switcher, "Make owner", and that your
+      existing household looks untouched. A green deploy proves the URL
+      responds, nothing more.
 
 ## Open work
 
@@ -132,16 +133,17 @@ agent sandbox cannot reach the site, so that check is yours.
 ## Done
 
 - [x] Leave a household without deleting your account — "Leave this household"
-      in the Danger zone, `DELETE /household/members/me`. (merged, **not
-      deployed**)
+      in the Danger zone, `DELETE /household/members/me`. (PR #37, live on run
+      #26, **confirmed by hand**)
 - [x] **"Delete my account" is gone from the Household page** — it lives on
       `/households` only (live, run #25). It ends the account and every
       membership it holds, so sitting beside "Delete this household" made it
       read as something scoped to the household you happened to have open. The
-      foot of `/household` keeps the household deletion alone and is now
-      **owner-only**, with a link across to Your households. The server was
-      untouched: `DELETE /auth/account` still exists and `/households` still
-      calls it. (PRs #38, #39 — live on run #25 and **confirmed by hand**.)
+      foot of `/household` keeps the household deletion, with a link across to
+      Your households. The server was untouched: `DELETE /auth/account` still
+      exists and `/households` still calls it. (PRs #38, #39 — live on run #25
+      and **confirmed by hand**.) It was briefly an owner-only card; run #26
+      put leaving in it, so only the delete form is owner-only now.
 - [x] **CI is creating runs again.** Pushes after 15:27 UTC on 2026-08-06
       produced no Actions run at all, which cost PR #35 its safety net. Runs
       #156–#163 fired normally on 2026-08-07, push and `pull_request` alike,

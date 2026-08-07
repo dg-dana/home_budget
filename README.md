@@ -4,8 +4,9 @@ A web application for tracking domestic expenses and running shared shopping lis
 
 Two kinds of people use it:
 
-- **Family members** have accounts and belong to a household. They share expenses,
-  budgets, categories and shopping lists.
+- **Family members** have accounts. An account belongs to one or more households
+  and shares each one's expenses, budgets, categories and shopping lists, under a
+  name it chooses per household.
 - **Guests** have no account at all. They open a shopping list through a share link
   and can tick items off or add to it. They never see expenses, budgets, members,
   or any other list.
@@ -38,8 +39,11 @@ Two kinds of people use it:
 - Single-use invite links to add family members (expire after 14 days, revocable)
 - Change your own password; changing it signs out every other device
 - Owner can issue a single-use recovery link for anyone locked out of their account
-- Owner can rename the household, change currency, manage categories and remove members
+- Owner can rename the household, change currency, manage categories, remove members
+  and promote another member to owner
 - Members can record expenses and use lists; only the owner manages the household itself
+- Anyone can **leave a household** without deleting their account, and close their
+  account from the households picker
 
 ## Sharing a list with someone outside the family
 
@@ -78,8 +82,8 @@ npm run dev
 
 `npm run dev` starts the API on port 4000 and the Vite dev server on port 5173.
 Open http://localhost:5173 — Vite proxies `/api` to the backend so cookies stay
-same-origin. Create a household from the sign-up page to get started; seven default
-categories are created with it.
+same-origin. Sign up, confirm the address, then create a household from the picker
+to get started; seven default categories are created with it.
 
 ### Tests
 
@@ -137,31 +141,46 @@ is gitignored — back that directory up and you have backed up everything.
 ## API
 
 Everything is under `/api`. Routes below `/api/share` are deliberately unauthenticated;
-everything else requires the session cookie.
+everything else requires the session cookie. **account** means any signed-in account,
+**member** and **owner** additionally require a household to be open — the one the
+session currently names.
 
 | Method | Path                              | Who            |
 | ------ | --------------------------------- | -------------- |
 | POST   | `/auth/register`                  | anyone         |
 | POST   | `/auth/login`, `/auth/logout`     | anyone         |
+| GET    | `/auth/verify/:token`, `POST /auth/verify` | anyone |
+| POST   | `/auth/verify/resend`             | account        |
 | GET    | `/auth/invite/:token`             | anyone         |
-| POST   | `/auth/join`                      | anyone         |
-| GET    | `/auth/me`                        | member         |
+| GET    | `/auth/me`                        | account        |
+| POST   | `/auth/password`                  | account        |
+| GET    | `/auth/reset/:token`              | anyone         |
+| POST   | `/auth/reset`                     | anyone         |
+| DELETE | `/auth/account`                   | account        |
+| GET    | `/households`                     | account        |
+| POST   | `/households`                     | account        |
+| GET    | `/households/invitations`         | account        |
+| POST   | `/households/join`                | account        |
+| POST   | `/households/:id/switch`          | account        |
 | GET    | `/household`, `/household/members`| member         |
+| PUT    | `/household/me`                   | member         |
+| DELETE | `/household/members/me`           | member         |
 | PUT    | `/household`                      | owner          |
+| DELETE | `/household`                      | owner          |
 | GET    | `/household/invites`              | owner          |
 | POST   | `/household/invites`              | owner          |
 | DELETE | `/household/invites/:token`       | owner          |
 | DELETE | `/household/members/:id`          | owner          |
+| PUT    | `/household/members/:id/role`     | owner          |
 | POST   | `/household/members/:id/reset-password` | owner    |
-| POST   | `/auth/password`                  | member         |
-| GET    | `/auth/reset/:token`              | anyone         |
-| POST   | `/auth/reset`                     | anyone         |
 | CRUD   | `/categories`                     | member         |
 | CRUD   | `/expenses`                       | member         |
 | GET    | `/expenses/summary?month=YYYY-MM` | member         |
+| GET    | `/expenses/stats`                 | member         |
 | CRUD   | `/recurring`                      | member         |
 | POST   | `/recurring/:id/active`           | member         |
 | CRUD   | `/lists`, `/lists/:id/items`      | member         |
+| POST   | `/lists/:id/items/clear-checked`  | member         |
 | POST   | `/lists/:id/share`                | member         |
 | DELETE | `/lists/:id/share`                | member         |
 | GET    | `/share/:token`                   | **guest**      |
