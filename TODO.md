@@ -3,15 +3,16 @@
 The running state of this project. **Updated after every step** — see the
 "Working agreement" in `CLAUDE.md`.
 
-Last updated: 2026-08-07 · live: deploy run #25 (`660551a`)
+Last updated: 2026-08-07 · live: deploy run #26 (`977724d`)
 
 ---
 
-## Waiting to be deployed
+## Just shipped: leaving a household
 
-**Leaving a household without deleting your account** is merged and unshipped.
-Nothing reaches the live site until somebody runs **Deploy to Lightsail** from
-the Actions tab.
+**Leaving a household without deleting your account** is live as of deploy run
+#26 (`977724d`), every step green including "Verify the public URL works".
+**Nobody has looked at it on a phone yet** — that check is below, and it is the
+only one that counts.
 
 - `DELETE /household/members/me`, and "Leave this household" as the first thing
   in the Danger zone on `/household`. The owners are emailed that you left; you
@@ -115,8 +116,10 @@ agent sandbox cannot reach the site, so that check is yours.
 ## Also needs your hands
 
 - [ ] **Check the rest of the live site on a phone.** The Household page was
-      checked on run #25 and looks right. The rest of what runs #17–#25
-      shipped has not been: the new sign-up flow, the household switcher,
+      checked on run #25 and looks right. The rest of what runs #17–#26
+      shipped has not been: **"Leave this household"** at the foot of the
+      Household page (run #26 — worth pressing as an ordinary member, since
+      that is who it is for), the new sign-up flow, the household switcher,
       "Make owner", and that your existing household looks untouched. A green
       deploy proves the URL responds, nothing more.
 
@@ -132,8 +135,8 @@ agent sandbox cannot reach the site, so that check is yours.
 ## Done
 
 - [x] Leave a household without deleting your account — "Leave this household"
-      in the Danger zone, `DELETE /household/members/me`. (merged, **not
-      deployed**)
+      in the Danger zone, `DELETE /household/members/me`. (PR #37, live on run
+      #26, **not yet confirmed by hand**)
 - [x] **"Delete my account" is gone from the Household page** — it lives on
       `/households` only (live, run #25). It ends the account and every
       membership it holds, so sitting beside "Delete this household" made it
