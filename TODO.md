@@ -3,38 +3,23 @@
 The running state of this project. **Updated after every step** — see the
 "Working agreement" in `CLAUDE.md`.
 
-Last updated: 2026-08-07 · live: deploy run #28 (`96264c0`)
+Last updated: 2026-08-07 · live: deploy run #29 (`4fd95e9`)
 
 ---
 
-## Next: deploy the shopping pages that keep up
+## Next: nothing
 
-**Built and tested, not deployed.** Merge, then run **Deploy to Lightsail**.
+The queue is empty. Shopping-page polling went out on deploy run #29 (PR #49),
+every step green — so on the live site the lists index, a member's list and the
+guest's all refetch every 15 s, skip a hidden tab, and catch up the moment the
+phone comes back out.
 
-The guest page has always refetched every 15 s and the member pages never did,
-so the person at home could be reading a list the person in the shop had
-already emptied. Now all three shopping screens share one `usePoll` hook — the
-lists index, a member's list, and the guest's.
+Worth a look when two of you are free: open the same list on two phones, add
+something on one, and watch it appear on the other without a reload. It is the
+only claim here that no test in the sandbox can make about the real site.
 
-Two things it does beyond calling a timer, both deliberate:
-
-- **A hidden tab does not poll.** A phone in a pocket with the list open would
-  otherwise spend the afternoon making requests nobody reads — battery there,
-  load on a 512 MB box here.
-- **Becoming visible refetches at once**, rather than waiting out the rest of
-  an interval. Taking the phone out is exactly when the list needs to be right.
-
-It is *not* on the expenses pages. Two people do not edit the same month in the
-same minute, and every open page costs a request.
-
-There is a browser test for it, and it is the only one in the suite where
-waiting **is** the assertion: a member leaves the page alone, a guest adds an
-item and ticks another off, and the member's page catches up on its own. It
-carries a 90-second timeout because two poll intervals do not fit in the
-suite's 30, which puts the e2e run at about 48 s. Worth it — removing the hook
-makes it fail, which was checked.
-
-**After this, nothing is queued.**
+What is left is in "Needs your hands" and "Open work" below — none of it is
+started, and none of it is urgent.
 
 ## Needs your hands
 
@@ -83,8 +68,9 @@ live domain by policy, so anything about the real site is yours.
 - [x] **Every shopping page keeps itself current** — one `usePoll` hook on the
       lists index, a member's list and the guest's, refetching every 15 s,
       skipping a hidden tab and refetching the moment one becomes visible.
-      Closes the split where only the guest page kept up. (on the branch, not
-      deployed — see the top of this file)
+      Closes the split where only the guest page kept up. The browser test for
+      it is the only one where waiting *is* the assertion. (PR #49, live on run
+      #29 — **not watched on two real phones yet**)
 - [x] **Owner-issued recovery retired to a fallback** — refused (403) wherever
       email is configured, button hidden, `ownerRecovery` in the session
       payload telling the frontend which world it is in. Still working where
