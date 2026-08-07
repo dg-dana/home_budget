@@ -7,134 +7,103 @@ Last updated: 2026-08-07 · live: deploy run #26 (`977724d`)
 
 ---
 
-## Shipped and confirmed: leaving a household
+## Next: self-service "forgot password"
 
-**Leaving a household without deleting your account** went live on deploy run
-#26 (`977724d`) and was **checked by hand on a phone** the same day — the only
-check that counts, since an agent sandbox cannot load the site.
+The next thing to build, and the last real gap email sending opened up.
+Recovery today is **owner-issued only**: a locked-out member has to ask an
+owner to mint them a link (`POST /household/members/:id/reset-password`). That
+is fine until the person locked out *is* the owner, or the household has one
+owner who is on a plane.
 
-- `DELETE /household/members/me`, and "Leave this household" as the first thing
-  in the Danger zone on `/household`. The owners are emailed that you left; you
-  are not, since you did it.
-- **No password on it**, alone in that card: a new invite undoes leaving, so
-  asking for one would be friction aimed at the person with the least power in
-  the household. Deleting the household still asks.
-- **The Danger zone on `/household` is no longer owner-only.** Run #25 made it
-  so, rightly, when deleting the household was the only thing left in it — but
-  leaving is for ordinary members above all, so the card is back for everyone
-  and the delete form inside it is the owner-only half. Caught while merging
-  the two changes together, not by a test.
-- Refused in two cases, both of which would strand something — you are the
-  **only owner** with other people still here (make someone else an owner
-  first), or you are the **last person in it** (delete the household instead).
-  Both are shown as disabled buttons with the reason underneath, rather than as
-  a round trip that only produces an error.
-- Leaving retires any recovery link an owner had outstanding for your account,
-  exactly as being removed does.
-- Ten new tests. Four deliberate breaks were watched to fail, the route
-  ordering among them: `/members/me` has to be matched before `/members/:id`,
-  which is owner-only — reversed, the route 403s every member it exists for.
-- The page was looked at in a browser as a member and as an owner, in both
-  themes and at both widths, and the leave itself was driven through a real
-  click: the confirm, the redirect to the picker, and the household gone from
-  it.
+### What already exists
 
-## Also now: check a real message arrives
+Half the flow is built and live — only the *request* half is missing.
 
-Email is **live** — PR #32 shipped it (run #20), and PRs #33 and #34 sorted
-out the confirmation screen (runs #21 and #22), all green through "Verify the
-public URL works". A real invite arriving in a real inbox is still unconfirmed, and an
-agent sandbox cannot reach the site, so that check is yours.
+- `password_resets` — token, `user_id`, `expires_at`, `used_at`, and
+  **`created_by` which is already nullable**, so a link nobody issued needs no
+  migration. Single-use, 24 hours (`config.passwordResetMaxAgeMs`).
+- `GET /auth/reset/:token` — public preview, returns the address so the page
+  can greet the right person and nothing else.
+- `POST /auth/reset` — public redemption. Sets the password, burns the token,
+  signs the person in, emails them that it happened, and bumps
+  `session_generation` so every older session dies (§4).
+- `/reset/:token` on the frontend, and `deliver()` in `notifications.ts` with
+  `passwordResetNotice` already written.
 
-### Your part
+### What is missing
 
-1. **Send yourself an invite to a real address and confirm it arrives.**
-   Household page → Email → Create invite. **Check the spam folder** — a brand
-   new sending domain often lands there for the first few messages.
-2. **Say if any of the notices are too much or too little.** Wording and who
-   hears what are both easy to change; what is hard is noticing later that
-   nobody reads them.
-3. If nothing arrives, look at **Resend → Emails**: a message listed as
-   delivered is a mail problem, no message listed at all is a key problem
-   (the app logs `[notifications] not sent (...)` and falls back to showing
-   the link, so nothing breaks either way).
+One unauthenticated route — roughly `POST /auth/forgot` taking an address —
+plus a link to it from the sign-in page. Four decisions to make before writing
+it, none of them settled:
 
-### What was built
+1. **Never say whether the address exists.** The same 202 and the same on-screen
+   wording either way, or the endpoint becomes a way to enumerate who has an
+   account. This is the one that is easy to get wrong and impossible to
+   un-ship.
+2. **Rate limiting.** `/api/auth` is already behind 60 requests / 15 min per IP
+   (`app.ts`), which is generous for this route — a tighter per-address limit
+   is worth considering, given each request sends mail.
+3. **What an unconfigured deployment does.** With no `RESEND_API_KEY` a send is
+   dropped, so a self-service link would go nowhere and the person would be
+   stuck with no feedback. Options: refuse the route when no provider is
+   configured and say so, or keep owner-issued recovery as the documented
+   fallback. Do not print the link on screen — that would hand anybody a way
+   into any account by typing its address.
+4. **Whether it retires outstanding links**, the way issuing a new one already
+   does. Probably yes, same one-liner.
 
-- `notifications.ts` posts to Resend over one `fetch` — no SDK. Every message
-  in the app goes through it: confirmation, invites, recovery.
-- **No key configured behaves exactly as before**, link on screen. That is
-  what lets the suite and local development run, and stops an expired key
-  locking anyone out. A send never throws.
-- `MAIL_FROM` and `APP_URL` default off `DOMAIN`, so production needed one
-  secret and nothing else. Both can be pinned in `.env` to override.
-- Twenty-one new tests across `notifications.test.ts` (no provider) and
-  `notificationsSending.test.ts` (provider configured, only the provider
-  intercepted) — the suite never makes a real request. Four deliberate breaks
-  were watched to fail.
-- Invites and recovery now travel through `notifications.ts` as well, so
-  there is finally *one* place deciding how a message is sent.
-- **The app now emails what has happened, not only what needs a link**:
-  somebody joining, being removed, a role change, a household renamed, a
-  household or an account deleted, a password changed. `ARCHITECTURE.md` §4.1
-  has the full table of who hears what. The person who did it is not told,
-  except for closing a household or their own account; routine edits —
-  expenses, lists, categories — send nothing on purpose.
+Then the usual: cases in `auth.test.ts` and `notificationsSending.test.ts`
+(the address that does not exist must produce *no* mail and the same
+response), break it once and watch it fail, and `ARCHITECTURE.md` §4 + §14 —
+where "recovery is still owner-issued" is currently listed as a rough edge.
 
-### Fixed alongside it
+## Needs your hands
 
-- **An account with no household can now delete itself**, from `/households`.
-  The "Danger zone" lived on the Household page, which needs a household open,
-  so an account that had left its only household — or never joined one — was
-  stuck with an account it could not close. Covered by a browser test.
-  (`/households` is since the only place it lives — see Done, run #25.)
+None of these can be done from an agent sandbox: the egress proxy refuses the
+live domain by policy, so anything about the real site is yours.
 
-### Follow-ups since it went live
-
-- **The confirmation screen no longer shows the link when the email went out**
-  (live, run #21).
-  It said "Sent to you" *and* printed the link, which reads as a failure and
-  leaves a working credential on screen. Now it is a plain "we have emailed
-  you", and a message that never arrives is answered by **"send the
-  confirmation link again"** rather than by showing the link.
-
-- **An invitation now shows on `/households`** and can be joined there (live,
-  run #24). Found
-  on the live site: the invited person registered from the invite email,
-  landed on the picker, and had no way to reach the invite except finding the
-  message again. Open invites (no address on them) stay link-only.
-
-### Still open on email
-
-- **Self-service "forgot password"** is now possible and does not exist yet.
-  Recovery is still owner-issued (§14).
-- The word **"verification"** is fair on the live deployment now, but not on
-  an unconfigured one — anywhere without a key, the link is handed straight
-  to whoever registered.
-
-## Also needs your hands
-
+- [ ] **Send yourself a real invite and check it arrives.** Email is live (runs
+      #20–#24) but no message has been seen landing in a real inbox. Household
+      page → Create invite with your address. **Check spam** — a new sending
+      domain often lands there for the first few. If nothing comes, look at
+      **Resend → Emails**: a message listed as delivered is a mail problem, no
+      message listed at all is a key problem. Either way nothing breaks — with
+      no key the app logs `[notifications] not sent (...)` and falls back to
+      showing the link.
+- [ ] **Say if the notices are too much or too little.** Wording and who hears
+      what are both easy to change; what is hard is noticing later that nobody
+      reads them. `ARCHITECTURE.md` §4.1 has the table.
 - [ ] **Check the rest of the live site on a phone.** The Household page was
-      checked on run #25, and leaving a household on run #26 — both look
-      right. What runs #17–#24 shipped still has not been looked at: the new
-      sign-up flow, the household switcher, "Make owner", and that your
-      existing household looks untouched. A green deploy proves the URL
-      responds, nothing more.
+      checked on run #25 and leaving a household on run #26 — both look right.
+      What runs #17–#24 shipped still has not been: the new sign-up flow, the
+      household switcher, "Make owner", and that your existing household looks
+      untouched. A green deploy proves the URL responds, nothing more.
 
 ## Open work
 
-- [ ] **Owner-issued recovery still grants a whole account**, which may span
-      households. Removing someone retires their links, which closes the
-      obvious abuse, but a self-service "forgot password" would remove the need
-      for the feature — and email sending has now unblocked it. (§14)
+- [ ] **Owner-issued recovery grants a whole account**, which may span
+      households — the reason "Next" above is worth doing. Removing someone
+      retires their links, which closes the obvious abuse, but an owner can
+      still reset the password of an account that belongs to households they
+      have never heard of. Self-service would remove the need for the feature
+      altogether. (§14)
 - [ ] **Member list page does not poll**, the guest one does every 15 s — so a
       member can read a stale list while a guest shops. (§14)
+- [ ] **"Verification" means less on an unconfigured deployment.** With no
+      `RESEND_API_KEY` the confirmation link is handed straight to whoever
+      registered, so it is a step in the flow rather than a check. Right trade
+      for the suite and local work; worth remembering before relying on
+      "confirmed" as proof of anything. (§14)
 
 ## Done
 
 - [x] Leave a household without deleting your account — "Leave this household"
-      in the Danger zone, `DELETE /household/members/me`. (PR #37, live on run
-      #26, **confirmed by hand**)
+      in the Danger zone, `DELETE /household/members/me`. Refused for the only
+      owner with company and for the last person in the household; no password
+      on it, because a new invite undoes leaving. The route is registered
+      before `/members/:id` so `requireOwner` cannot swallow it, and the
+      Danger zone card went back to rendering for everyone with only the
+      delete form owner-only. (PR #37, live on run #26, **confirmed by hand**)
 - [x] **"Delete my account" is gone from the Household page** — it lives on
       `/households` only (live, run #25). It ends the account and every
       membership it holds, so sitting beside "Delete this household" made it
@@ -152,8 +121,14 @@ agent sandbox cannot reach the site, so that check is yours.
       happens again, check the Actions tab before assuming a push failed.
 - [x] Email sends through Resend, and the app also emails what has happened —
       joins, removals, role changes, renames, both deletions, password
-      changes. Plus "Delete account" on `/households`, and invitations listed
-      on the picker. (live, runs #20–#24, not yet confirmed by hand)
+      changes (`ARCHITECTURE.md` §4.1 has the table of who hears what). Two
+      follow-ups came with it: a delivered notice **stops showing its link**
+      and offers "send it again" instead, since printing a live credential
+      beside "we emailed you" reads as a failed send; and an invitation is
+      listed on `/households`, for whoever registered from the email and never
+      opened the link again. (live, runs #20–#24 — **no message has been seen
+      arriving in a real inbox yet**, which is the first item under "Needs
+      your hands")
 - [x] Delete an account / delete a household — "Danger zone" (live, run #16,
       confirmed on a phone)
 - [x] Accounts separate from households; several per account; per-household
