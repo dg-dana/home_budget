@@ -3,41 +3,27 @@
 The running state of this project. **Updated after every step** — see the
 "Working agreement" in `CLAUDE.md`.
 
-Last updated: 2026-08-07 · live: deploy run #27 (`75141f5`)
+Last updated: 2026-08-07 · live: deploy run #28 (`96264c0`)
 
 ---
 
-## Next: deploy the retirement of owner-issued recovery
+## Next: your call
 
-**Built and tested, not deployed.** Merge, then run **Deploy to Lightsail**.
+Nothing is queued. Owner-issued recovery went out retired on deploy run #28
+(PR #47) — on the live site the "Reset password" button is gone from the
+Household page and the route answers 403, because anybody locked out can help
+themselves now. It survives only where nothing can send email.
 
-An owner could mint a recovery link for anyone in the household, and that link
-grants a **whole account** — which, since one account can hold several
-households, may reach households the owner has never heard of. Self-service
-recovery removed the reason to keep it, so:
+One candidate, not started:
 
-- `POST /household/members/:id/reset-password` answers **403** wherever email
-  is configured, naming "Forgotten your password?" as the replacement. Not even
-  for the owner's own account: one door left open keeps the route, its tests
-  and its button alive for nothing.
-- **It still works where nothing can send email.** Refusing there too would
-  leave a locked-out member with no way back in at all, which is a worse
-  failure than the one being closed. Production has a key, so on the live site
-  the feature is gone.
-- The Household page hides the button and tells owners where recovery lives
-  now. It reads a new **`ownerRecovery`** field in the session payload — the
-  effect rather than the cause, so the page never has to know what the mail
-  configuration is.
-- Both states were looked at in a browser, not reasoned about: the button is
-  absent with a key configured and present without one.
+- **Make the member list page poll.** A member can sit reading a stale shopping
+  list while a guest shops the same one; the guest page already refetches every
+  15 s. The fix is either the same interval on the member page or moving both
+  to something pushed. (§14)
 
-Worth knowing: the two kinds of link can only meet on a deployment that turns
-email on while owner-issued links are still outstanding. The first self-service
-request retires them, and there is a test for exactly that.
-
-**After this, nothing is queued.** The remaining candidate is making the member
-list page poll, so a member cannot sit reading a stale list while a guest shops
-the same one — the guest page already does, every 15 s.
+Worth a look when someone has a phone: the Household page since run #28, to see
+that the members card reads sensibly without the button — the line replacing it
+says where to reset a password instead.
 
 ## Needs your hands
 
@@ -82,8 +68,9 @@ live domain by policy, so anything about the real site is yours.
 - [x] **Owner-issued recovery retired to a fallback** — refused (403) wherever
       email is configured, button hidden, `ownerRecovery` in the session
       payload telling the frontend which world it is in. Still working where
-      nothing can send email, because there it is the only way back in. (on the
-      branch, not deployed — see the top of this file)
+      nothing can send email, because there it is the only way back in. Both UI
+      states were looked at in a browser rather than reasoned about. (PR #47,
+      live on run #28 — **not checked by hand on the real site yet**)
 - [x] Self-service "forgot password" — `POST /auth/forgot` and the `/forgot`
       page, linked from sign-in. Same answer whether or not the address exists,
       the link only ever in the email, 5 requests an hour per address, and a
