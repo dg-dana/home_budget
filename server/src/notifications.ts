@@ -282,7 +282,7 @@ export function roleChangedNotice(
         : `You are no longer an owner of "${householdName}"`,
     body:
       role === 'owner'
-        ? `An owner made you an owner of "${householdName}". You can now invite and remove people, rename it, issue recovery links, and delete it.`
+        ? `An owner made you an owner of "${householdName}". You can now invite and remove people, rename it, and delete it.`
         : `An owner changed your role in "${householdName}" back to member. You keep full access to the money and the lists; what goes is inviting, removing, renaming and deleting.`,
   });
 }

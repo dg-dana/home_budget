@@ -7,25 +7,37 @@ Last updated: 2026-08-07 · live: deploy run #27 (`75141f5`)
 
 ---
 
-## Next: your call
+## Next: deploy the retirement of owner-issued recovery
 
-Nothing is queued. Self-service "forgot password" went out on deploy run #27
-(PR #43, merged and deployed the same afternoon) and has been **used on the
-real site: the email arrived and the link worked**. That is also the first
-time any message has been watched landing in a real inbox, so email itself is
-now proven end to end rather than merely reported as sent.
+**Built and tested, not deployed.** Merge, then run **Deploy to Lightsail**.
 
-Two candidates for what comes next, neither started:
+An owner could mint a recovery link for anyone in the household, and that link
+grants a **whole account** — which, since one account can hold several
+households, may reach households the owner has never heard of. Self-service
+recovery removed the reason to keep it, so:
 
-- **Retire owner-issued recovery.** It has lost its reason to exist: an owner
-  can reset the password of an account that belongs to households they have
-  never heard of, and anybody locked out can now help themselves. What stops it
-  being a straight deletion is that it is still the *only* recovery a
-  deployment with no `RESEND_API_KEY` has — so it becomes "hide it unless
-  email is unconfigured", not "delete it". Say the word.
-- **Make the member list page poll**, so a member cannot sit reading a stale
-  list while a guest shops the same one. The guest page already does, every
-  15 s.
+- `POST /household/members/:id/reset-password` answers **403** wherever email
+  is configured, naming "Forgotten your password?" as the replacement. Not even
+  for the owner's own account: one door left open keeps the route, its tests
+  and its button alive for nothing.
+- **It still works where nothing can send email.** Refusing there too would
+  leave a locked-out member with no way back in at all, which is a worse
+  failure than the one being closed. Production has a key, so on the live site
+  the feature is gone.
+- The Household page hides the button and tells owners where recovery lives
+  now. It reads a new **`ownerRecovery`** field in the session payload — the
+  effect rather than the cause, so the page never has to know what the mail
+  configuration is.
+- Both states were looked at in a browser, not reasoned about: the button is
+  absent with a key configured and present without one.
+
+Worth knowing: the two kinds of link can only meet on a deployment that turns
+email on while owner-issued links are still outstanding. The first self-service
+request retires them, and there is a test for exactly that.
+
+**After this, nothing is queued.** The remaining candidate is making the member
+list page poll, so a member cannot sit reading a stale list while a guest shops
+the same one — the guest page already does, every 15 s.
 
 ## Needs your hands
 
@@ -48,13 +60,11 @@ live domain by policy, so anything about the real site is yours.
 
 ## Open work
 
-- [ ] **Owner-issued recovery grants a whole account**, which may span
-      households. Removing someone retires their links, which closes the
-      obvious abuse, but an owner can still reset the password of an account
-      that belongs to households they have never heard of. Self-service now
-      exists, so the feature has lost its reason — except on a deployment with
-      no mail provider, where it is the only recovery there is. Retiring it is
-      a decision, not a task. (§14)
+- [ ] **An owner still reaches any account in their household where email is
+      unconfigured.** What was the general case is now the exception: with a
+      mail provider the route is refused. Without one it stays, because the
+      alternative is a locked-out member with no way back in. The fix is
+      configuring email, which is one secret. (§14)
 - [ ] **`POST /auth/forgot` is quiet about existence but not about timing** —
       an address with an account waits for the provider, one without answers
       at once. The per-address budget is what makes that useless in practice.
@@ -69,6 +79,11 @@ live domain by policy, so anything about the real site is yours.
 
 ## Done
 
+- [x] **Owner-issued recovery retired to a fallback** — refused (403) wherever
+      email is configured, button hidden, `ownerRecovery` in the session
+      payload telling the frontend which world it is in. Still working where
+      nothing can send email, because there it is the only way back in. (on the
+      branch, not deployed — see the top of this file)
 - [x] Self-service "forgot password" — `POST /auth/forgot` and the `/forgot`
       page, linked from sign-in. Same answer whether or not the address exists,
       the link only ever in the email, 5 requests an hour per address, and a

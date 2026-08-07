@@ -14,7 +14,7 @@ import {
   requireOwner,
 } from '../auth.js';
 import { db } from '../db.js';
-import { asyncHandler, badRequest, notFound, parseBody } from '../http.js';
+import { asyncHandler, badRequest, forbidden, notFound, parseBody } from '../http.js';
 import {
   householdChangedNotice,
   householdDeletedNotice,
@@ -368,16 +368,30 @@ householdRouter.put(
 );
 
 /**
- * Issues a recovery link for a member who is locked out. It is emailed when a
- * provider is configured, and the link comes back either way — an owner may
- * still want to hand it over themselves, and with no provider that is the only
- * way it travels. They can do this for anyone in the household, themselves
- * included.
+ * Issues a recovery link for a member who is locked out — **only where the app
+ * cannot send email**.
+ *
+ * This was the only recovery there was, and it granted rather a lot: an owner
+ * could reset the password of an account that may belong to households they
+ * have never heard of, which was contained when an account *was* a household
+ * and stopped being so when one account could hold several. `POST /auth/forgot`
+ * removed the need for it, so on any deployment that can send mail the owner is
+ * refused and pointed at the sign-in page (`ARCHITECTURE.md` §4).
+ *
+ * It survives for the deployment with no provider, where refusing here as well
+ * would leave a locked-out member with no way back in at all. There the link is
+ * returned to the owner to hand over, which is the only way it travels.
  */
 householdRouter.post(
   '/members/:id/reset-password',
   requireOwner,
   asyncHandler(async (req, res) => {
+    if (config.emailConfigured) {
+      throw forbidden(
+        'Anyone locked out can reset their own password from the sign-in page — "Forgotten your password?". Owner-issued links are only used where this site cannot send email.',
+      );
+    }
+
     const user = currentUser(req);
     const member = db
       .prepare(

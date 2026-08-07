@@ -113,7 +113,7 @@ describe('changing your own password', () => {
   });
 });
 
-describe('owner-issued password recovery', () => {
+describe('owner-issued password recovery, where nothing can send email', () => {
   beforeAll(async () => {
     await startServer({ enableRateLimits: false });
   });
@@ -292,6 +292,16 @@ describe('owner-issued password recovery', () => {
         password: NEW_PASSWORD,
       })).status,
     ).toBe(400);
+  });
+
+  it('survives here precisely because nothing else can get anybody back in', async () => {
+    // The route is refused on a deployment that can email (see
+    // `forgotPassword.test.ts`). This file configures no provider, which is the
+    // one case where refusing here too would leave a locked-out member with no
+    // way back in at all — so it works, and the frontend is told to render the
+    // button.
+    expect((await owner.client.get('/api/auth/me')).body.ownerRecovery).toBe(true);
+    expect((await issueReset(member.userId)).status).toBe(201);
   });
 
   it('is the only recovery there is when nothing can send email', async () => {

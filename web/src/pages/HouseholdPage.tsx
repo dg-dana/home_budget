@@ -7,7 +7,7 @@ import { useSession } from '../session';
 const CURRENCIES = ['USD', 'EUR', 'GBP', 'ILS', 'CAD', 'AUD', 'CHF', 'SEK', 'PLN', 'INR'];
 
 export default function HouseholdPage() {
-  const { user, household, refresh } = useSession();
+  const { user, household, ownerRecovery, refresh } = useSession();
   const navigate = useNavigate();
   const isOwner = user?.role === 'owner';
   const currency = household?.currency ?? 'USD';
@@ -229,6 +229,15 @@ export default function HouseholdPage() {
             <span className="muted small">{members.length}</span>
           </div>
 
+          {/* The answer an owner needs when somebody says "I am locked out"
+              and there is no longer a button here for it. */}
+          {isOwner && !ownerRecovery && (
+            <p className="small muted" style={{ margin: 0 }}>
+              Locked out? Anyone can reset their own password from the sign-in page —
+              "Forgotten your password?" emails them a link.
+            </p>
+          )}
+
           <ul className="item-list">
             {members.map((member) => (
               <li className="item" key={member.id}>
@@ -242,7 +251,10 @@ export default function HouseholdPage() {
                     <span className="tag">{member.role}</span>
                   </div>
                 </div>
-                {isOwner && (
+                {/* Only where the app cannot email: everywhere else people
+                    help themselves from the sign-in page, and an owner is not
+                    given a key to an account that may span other households. */}
+                {isOwner && ownerRecovery && (
                   <button
                     type="button"
                     className="button secondary small"

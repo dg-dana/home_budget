@@ -9,6 +9,8 @@ interface SessionState {
   household: Household | null;
   /** Every household this account belongs to. */
   households: Household[];
+  /** Whether an owner can mint a recovery link — only where email is off. */
+  ownerRecovery: boolean;
   loading: boolean;
   refresh: () => Promise<void>;
   setSession: (value: SessionPayload) => void;
@@ -22,12 +24,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [household, setHousehold] = useState<Household | null>(null);
   const [households, setHouseholds] = useState<Household[]>([]);
+  // Defaults to false so a page rendered before /auth/me lands does not flash a
+  // control that is about to disappear. The signed-out case never reads it.
+  const [ownerRecovery, setOwnerRecovery] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const apply = useCallback((data: SessionPayload) => {
     setUser(data.user);
     setHousehold(data.household);
     setHouseholds(data.households);
+    setOwnerRecovery(data.ownerRecovery);
   }, []);
 
   const refresh = useCallback(async () => {
@@ -81,13 +87,24 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       user,
       household,
       households,
+      ownerRecovery,
       loading,
       refresh,
       setSession,
       switchHousehold,
       signOut,
     }),
-    [user, household, households, loading, refresh, setSession, switchHousehold, signOut],
+    [
+      user,
+      household,
+      households,
+      ownerRecovery,
+      loading,
+      refresh,
+      setSession,
+      switchHousehold,
+      signOut,
+    ],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
