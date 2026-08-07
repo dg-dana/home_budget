@@ -7,18 +7,31 @@ Last updated: 2026-08-07 · live: deploy run #29 (`4fd95e9`)
 
 ---
 
-## Next: nothing
+## Next: deploy the invite fixes
 
-The queue is empty. Shopping-page polling went out on deploy run #29 (PR #49),
-every step green — so on the live site the lists index, a member's list and the
-guest's all refetch every 15 s, skip a hidden tab, and catch up the moment the
-phone comes back out.
+**Built and tested, not deployed.** Merge, then run **Deploy to Lightsail**.
 
-**Watched on two real phones and it keeps up** — the one claim about this that
-no sandbox test could make.
+Inviting yourself used to produce a page headed "Join <household>" asking what
+you wanted to be called, and the refusal only came back on submit. Both ends now
+answer earlier:
 
-What is left is in "Needs your hands" and "Open work" below — none of it is
-started, and none of it is urgent.
+- `GET /auth/invite/:token` runs behind `optionalAuth` and reports **`alreadyIn`**,
+  plus the household id *only in that case* — which is what lets the page offer
+  **"Open <household>"** instead of a form. Signed out, `alreadyIn` is false and
+  the id is null, so the household id still never leaves the server otherwise.
+- `POST /household/invites` **refuses an address already in the household**
+  (409, naming them). Redemption would refuse it anyway, so minting the link only
+  emails somebody a dead end. Only checked when the invite carries an address —
+  an open invite is a link to hand to whoever turns up.
+
+The invite itself is untouched by being looked at: it is single-use, and being
+told "you are already in" is not a use.
+
+Two new tests, both watched failing first. The preview skill now seeds an
+unredeemed invite so `/join/:token` can be screenshotted — which is how the new
+screen was checked rather than reasoned about.
+
+**After this, nothing is queued.**
 
 ## Needs your hands
 
@@ -37,16 +50,6 @@ live domain by policy, so anything about the real site is yours.
 
 ## Open work
 
-- [ ] **The join page only says "you are already in that household" after you
-      have filled the form in.** Found by inviting yourself: the email arrives,
-      the link opens a page headed "Join <household>" asking what you want to be
-      called, and the refusal comes from the server on submit. The check is
-      right — `POST /households/join` must refuse a second membership — but it
-      happens at the wrong moment. Two fixes, either or both: have
-      `GET /auth/invite/:token` say whether the caller is already in it (it can
-      read the session through `optionalAuth`) so the page offers "Open it"
-      instead of a form; and refuse at **creation**, since an owner inviting an
-      address that is already a member is almost always a mistake.
 
 - [ ] **An owner still reaches any account in their household where email is
       unconfigured.** What was the general case is now the exception: with a
@@ -70,6 +73,10 @@ live domain by policy, so anything about the real site is yours.
 
 ## Done
 
+- [x] **Nobody is asked to join a household they are already in** — `alreadyIn`
+      in the invite preview, so the page offers to open it; and an address
+      already in the household cannot be invited at all. (on the branch, not
+      deployed — see the top of this file)
 - [x] **Invite email confirmed arriving on the live site**, which was the last
       message type nobody had watched land. Every kind the app sends is now
       either proven end to end (confirmation, recovery, invite) or shares the

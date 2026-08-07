@@ -48,7 +48,7 @@ Reference for how this app is put together and why. Read this before extending i
 - `users` — an **account**: email (globally unique), password hash, `email_verified_at`. Deliberately says nothing about households. `last_household_id` is a convenience only — where a fresh sign-in lands — and is never an access decision.
 - `memberships` — one account's place in one household: its `role` (`owner`/`member`) and its `display_name` *there*. Unique on (user, household). This table is what replaced `users.household_id`.
 - `email_verifications` — single-use address-confirmation tokens. Cascades with the user.
-- `invites` — single-use tokens for adding members. Carries `used_at`/`used_by`, `expires_at`, optional pinned `email`. Redeeming one now adds a membership to an **existing** account rather than creating one.
+- `invites` — single-use tokens for adding members. Carries `used_at`/`used_by`, `expires_at`, optional pinned `email`. Redeeming one now adds a membership to an **existing** account rather than creating one. An address **already in the household** is refused at creation, and `GET /auth/invite/:token` reports `alreadyIn` so the join page can say so before asking anything (§4).
 - `categories` — per household, unique name, colour, optional `monthly_budget_cents`.
 - `expenses` — per household. FKs to category and to the paying user.
 - `recurring_expenses` — per household. A rule (amount, frequency, start/end) plus `last_generated_on`, the marker that makes generation idempotent.
@@ -226,6 +226,17 @@ It was the only recovery there was, and it grants **a whole account** — which,
 - **Where it cannot**, the route works exactly as before. Refusing there too would leave a locked-out member with no way back in at all, which is a worse failure than the one being closed.
 - The frontend learns which world it is in from **`ownerRecovery` in the session payload** — the effect, not the cause. `config.emailConfigured` stays on the server; what a page needs to know is whether the control exists.
 - The two therefore never coexist. A deployment that turns email on later may still hold outstanding owner-issued links, and the first self-service request retires them — the one case where the two kinds meet, and there is a test for it.
+
+#### Nobody joins a household twice
+
+`POST /households/join` refuses a second membership, and always did. What was wrong was **when** the person found out: the join page named the household, asked what they wanted to be called, and only then let the server say no. Inviting yourself is the ordinary way to hit it, and that is exactly what a first real test of the invite email did.
+
+Both ends now answer earlier:
+
+- **`GET /auth/invite/:token` runs behind `optionalAuth`** and returns `alreadyIn`, plus the household id **only in that case** — which tells a member nothing they could not read off `/auth/me`, and is what lets the page offer to *open* the household rather than merely name it. Signed out, `alreadyIn` is false and the id is null; the household id never leaves the server otherwise.
+- **`POST /household/invites` refuses an address that is already a member** (409, naming them). Redemption would refuse it anyway, so minting the link only emails somebody a dead end. Checked **only when the invite carries an address**: an open invite is a link to hand to whoever turns up, and there is no way to know yet who that will be.
+
+The invite itself is untouched by any of this — it is single-use, and being told "you are already in" is not a use.
 
 #### Asking for your own link (`POST /auth/forgot`)
 
@@ -566,7 +577,7 @@ Two suites, run together with `npm run test:all`.
 
 ### Server integration suite — Vitest, `server/test/`
 
-- 236 tests, run with `npm test` from the repo root.
+- 238 tests, run with `npm test` from the repo root.
 - They are **integration tests over real HTTP**, not unit tests: each file boots the actual app on an ephemeral port and drives it with a cookie-aware client. There is no mocking of the database, the router or the session.
 - `test/setup.ts` runs before any application module is imported and points `DATABASE_PATH` at a unique temp file. Vitest gives each test file its own module registry, so **every test file gets its own SQLite database** and files can run in parallel.
 - `resetDatabase()` truncates every table in `beforeEach`.
@@ -578,7 +589,7 @@ Two suites, run together with `npm run test:all`.
 
 - `isolation.test.ts` — **the most important file.** Two households, and every route checked to confirm one cannot see or touch the other's rows.
 - `share.test.ts` — guest access: what a guest can do, what the link must never expose, view-only enforcement, revocation, token reuse.
-- `auth.test.ts` — registration, login, forged/expired/tampered cookies, and the full invite lifecycle.
+- `auth.test.ts` — registration, login, forged/expired/tampered cookies, and the full invite lifecycle: including that the preview tells a member they are already in before the page asks them anything, that the id it carries appears only for them, and that an address already in the household cannot be invited at all.
 - `accounts.test.ts` — the two-step sign-up and multi-household behaviour: invitations waiting for an address (listed, hidden once redeemed, never another account's and never an open one, dropped when expired or revoked); that registering creates an account with no household and no household name is accepted there; that an unconfirmed address cannot create or join one; the confirmation link being single-use, expiring, and retired when a new one is issued; one account owning several households with their data provably apart and their categories seeded separately; a different display name in each; switching, and refusing to switch into one you are not in; where a returning sign-in lands.
 - `itemComments.test.ts` — the comment on a shopping item: set on add, edited, cleared, and the length cap.
 - `expenses.test.ts` — cents arithmetic, month-boundary maths, summary aggregation, and what survives a category or member deletion. Also the statistics endpoint: the per-member and per-category splits, the member/category cross-tab adding up to the same money as the totals, months with no spending, the name ordering that pins each member's colour, and the range validation.
@@ -611,7 +622,7 @@ What it asserts: a member creates and shares a list through the UI; a guest with
 
 ### Both suites were verified by breaking the code
 
-Thirty-seven deliberate regressions were introduced, and each was caught by a failing test:
+Thirty-nine deliberate regressions were introduced, and each was caught by a failing test:
 
 1. Removing the `household_id` filter from the expenses list query → `isolation` failed.
 2. Adding `householdId` to the guest share response → `share` failed.
@@ -650,6 +661,8 @@ Thirty-seven deliberate regressions were introduced, and each was caught by a fa
 35. Letting the owner-issued route run on a deployment that can email → `forgotPassword` failed, an owner still holding a key to accounts that may span other households.
 36. Reporting `ownerRecovery: true` regardless → `forgotPassword` failed, the Household page about to render a button whose route answers 403.
 37. Dropping `usePoll` from the member list page → the Playwright waiting test failed, a member left reading a list a guest had already changed.
+38. Hard-coding `alreadyIn: false` in the invite preview → `auth` failed, the join page back to asking a member for a display name it could never use.
+39. Skipping the already-a-member check when creating an invite → `auth` failed, an owner able to email somebody a link that can only be refused.
 
 The statistics suite also earned its place on the way in: the one-month test failed against the unguarded fetch, which is how the stale-response race in §9.2 was found.
 

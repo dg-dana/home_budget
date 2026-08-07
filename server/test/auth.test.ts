@@ -2,6 +2,7 @@ import jwt from 'jsonwebtoken';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { db } from '../src/db.js';
 import {
+  addMember,
   createClient,
   getBaseUrl,
   joinHousehold,
@@ -184,6 +185,59 @@ describe('invites', () => {
     const expenses = await joiner.client.get('/api/expenses?month=2026-05');
     expect(expenses.body).toHaveLength(1);
     expect(expenses.body[0].description).toBe('Shared');
+  });
+
+  it('tells somebody already in the household before they fill anything in', async () => {
+    const owner = await registerHousehold({ householdName: 'The Cohens' });
+    const invite = await owner.client.post('/api/household/invites', { role: 'member' });
+
+    // What the join page renders on. Found by inviting yourself on the real
+    // site: without this the page asks what you want to be called and only
+    // refuses on submit.
+    const asOwner = await owner.client.get(`/api/auth/invite/${invite.body.token}`);
+    expect(asOwner.body.alreadyIn).toBe(true);
+    // The id comes back only in this case, and only to a member of it — it is
+    // what lets the page switch into the household rather than merely name it.
+    expect(asOwner.body.householdId).toBe(owner.householdId);
+
+    // Anybody else sees the invite exactly as before, id included out.
+    const stranger = await registerAccount({ email: uniqueEmail('stranger') });
+    const asStranger = await stranger.client.get(`/api/auth/invite/${invite.body.token}`);
+    expect(asStranger.body.alreadyIn).toBe(false);
+    expect(asStranger.body.householdId).toBeNull();
+
+    // And signed out, where there is nobody to be already in it.
+    const guest = await createClient().get(`/api/auth/invite/${invite.body.token}`);
+    expect(guest.status).toBe(200);
+    expect(guest.body.alreadyIn).toBe(false);
+    expect(guest.body.householdId).toBeNull();
+
+    // The server still refuses, of course; the page just no longer waits to
+    // find out. And the invite is untouched — this was not a use of it.
+    const refused = await joinHousehold(owner, invite.body.token, 'Dana again');
+    expect(refused.status).toBe(409);
+    expect((await owner.client.get('/api/household/invites')).body).toHaveLength(1);
+  });
+
+  it('refuses to invite an address that is already in the household', async () => {
+    const owner = await registerHousehold({ householdName: 'The Cohens' });
+    const member = await addMember(owner, 'Yossi');
+
+    // Redemption would refuse it anyway, so minting the link would only send
+    // somebody an email leading to a dead end.
+    for (const address of [owner.email, member.email]) {
+      const refused = await owner.client.post('/api/household/invites', { email: address });
+      expect(refused.status).toBe(409);
+      expect(refused.body.error).toMatch(/already in this household/i);
+    }
+    expect((await owner.client.get('/api/household/invites')).body).toHaveLength(0);
+
+    // An address nobody here uses is still fine, and so is an open invite —
+    // there is no way to know yet who will redeem one of those.
+    expect(
+      (await owner.client.post('/api/household/invites', { email: uniqueEmail('new') })).status,
+    ).toBe(201);
+    expect((await owner.client.post('/api/household/invites', { role: 'member' })).status).toBe(201);
   });
 
   it('burns the invite after one use', async () => {

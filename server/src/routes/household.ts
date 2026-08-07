@@ -14,7 +14,7 @@ import {
   requireOwner,
 } from '../auth.js';
 import { db } from '../db.js';
-import { asyncHandler, badRequest, forbidden, notFound, parseBody } from '../http.js';
+import { asyncHandler, badRequest, conflict, forbidden, notFound, parseBody } from '../http.js';
 import {
   householdChangedNotice,
   householdDeletedNotice,
@@ -439,6 +439,12 @@ householdRouter.get(
  * An address is optional, and that is what decides whether anything can be
  * sent: with one, the invite is emailed; without, there is nobody to email and
  * the owner passes the link on. The link is in the response regardless.
+ *
+ * An address already in the household is refused. Redemption would refuse it
+ * anyway — nobody holds two memberships in one household — so minting the link
+ * only sends somebody an email that leads to a dead end. Only checked when
+ * there **is** an address: an open invite is a link to hand to whoever turns
+ * up, and there is no way to know yet who that will be.
  */
 householdRouter.post(
   '/invites',
@@ -446,6 +452,20 @@ householdRouter.post(
   asyncHandler(async (req, res) => {
     const user = currentUser(req);
     const input = parseBody(inviteSchema, req.body);
+
+    if (input.email) {
+      const existing = db
+        .prepare(
+          `SELECT m.display_name AS name
+           FROM memberships m JOIN users u ON u.id = m.user_id
+           WHERE m.household_id = ? AND u.email = ?`,
+        )
+        .get(user.householdId, input.email) as { name: string } | undefined;
+      if (existing) {
+        throw conflict(`${existing.name} is already in this household — no invite needed.`);
+      }
+    }
+
     const token = newToken();
     const expiresAt = new Date(Date.now() + config.inviteMaxAgeMs).toISOString();
 

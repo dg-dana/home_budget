@@ -8,6 +8,10 @@ interface InvitePreview {
   householdName: string;
   email: string | null;
   role: 'owner' | 'member';
+  /** Whether whoever is signed in is already a member of this household. */
+  alreadyIn: boolean;
+  /** The household's id — present only when `alreadyIn`, to switch into it. */
+  householdId: string | null;
 }
 
 /**
@@ -20,7 +24,7 @@ interface InvitePreview {
  */
 export default function JoinPage() {
   const { token = '' } = useParams();
-  const { user, refresh } = useSession();
+  const { user, refresh, switchHousehold } = useSession();
   const navigate = useNavigate();
 
   const [preview, setPreview] = useState<InvitePreview | null>(null);
@@ -67,6 +71,52 @@ export default function JoinPage() {
   }
 
   if (!preview) return <div className="empty">Checking invite…</div>;
+
+  /**
+   * Already a member — the commonest way to see this is inviting yourself, or
+   * opening the same link twice. Nothing to do here, and asking what they want
+   * to be called before saying so would be a form that could only ever be
+   * refused. The invite is left alone: it is single-use, and this is not a use.
+   */
+  if (preview.alreadyIn) {
+    return (
+      <AuthPage>
+        <div className="card auth-card stack">
+          <div>
+            <h1>You are already in {preview.householdName}</h1>
+            <p className="muted">Nothing to accept — this invite is not needed for you.</p>
+          </div>
+          <button
+            type="button"
+            className="button"
+            disabled={busy}
+            onClick={() => {
+              // Switching, not just navigating: the household this invite is
+              // for may not be the one the session currently has open.
+              setBusy(true);
+              void (async () => {
+                try {
+                  if (preview.householdId) await switchHousehold(preview.householdId);
+                  navigate('/', { replace: true });
+                } catch (err) {
+                  setError(err instanceof Error ? err.message : 'Could not open it');
+                  setBusy(false);
+                }
+              })();
+            }}
+          >
+            {busy ? 'Opening…' : `Open ${preview.householdName}`}
+          </button>
+          {error && <div className="alert">{error}</div>}
+          <p className="small muted">
+            Meant to invite somebody else? Send them their own link from the{' '}
+            <Link to="/household">Household page</Link> — this one still works for whoever it was
+            for.
+          </p>
+        </div>
+      </AuthPage>
+    );
+  }
 
   // An invite addressed to one person is not transferable to another account.
   const wrongAccount = preview.email !== null && user !== null && preview.email !== user.email;
