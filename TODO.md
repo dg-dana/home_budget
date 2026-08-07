@@ -7,9 +7,20 @@ Last updated: 2026-08-07 · live: deploy run #31 (`9c43fac`)
 
 ---
 
-## Next: nothing
+## Next: deploy the copy-list change
 
-The queue is empty. The invite fixes went out on runs #30 and #31, both green:
+**Merged but not deployed.** "Copy list" now carries **only the items still to
+buy**. The ticked-off ones used to follow under "Already in the basket:", which
+is a shopping list naming things the reader is already carrying — so that
+section is gone entirely, not reworded. With everything ticked the text reads
+`Nothing left to buy.`, kept distinct from the empty list's `Nothing on the list
+yet.` so a shopper can tell "done" from "nobody wrote anything down".
+
+Covered by the existing browser test, which was broken once and watched fail.
+Nothing to check by hand beyond pasting a real list into a chat and seeing that
+what you have already picked up is not in it.
+
+Before that, the invite fixes went out on runs #30 and #31, both green:
 
 - Following an invite to a household you are already in says so and offers to
   **open** it, instead of asking what you want to be called and refusing on

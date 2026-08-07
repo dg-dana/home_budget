@@ -3,8 +3,12 @@ import type { ShoppingItem } from './api';
 /**
  * Turns a shopping list into plain text for pasting into a chat.
  *
- * Two decisions worth keeping:
+ * Three decisions worth keeping:
  *
+ * - **Only what is still to buy.** A ticked item is one somebody has already
+ *   put in the basket; repeating it under a second heading is a shopping list
+ *   that tells you to buy things you are carrying. The text exists to be read
+ *   in a shop, so it says what is left.
  * - **Plain ASCII, no emoji and no box-drawing.** A text message written in the
  *   7-bit GSM alphabet fits 160 characters; one stray Unicode character
  *   switches the whole thing to UCS-2 and halves that to 70. Ticks and arrows
@@ -20,28 +24,19 @@ export function listAsText(name: string, items: ShoppingItem[]): string {
   const lines = [name];
 
   const open = items.filter((item) => item.is_checked === 0);
-  const done = items.filter((item) => item.is_checked === 1);
 
-  if (items.length === 0) {
-    lines.push('Nothing on the list yet.');
+  if (open.length === 0) {
+    // Two different pieces of news, and a shopper needs to be able to tell them
+    // apart: nobody has written anything down, versus it is all bought.
+    lines.push(items.length === 0 ? 'Nothing on the list yet.' : 'Nothing left to buy.');
     return lines.join('\n');
   }
 
   /**
-   * The name runs straight into the first heading — a blank line there just
-   * pushes the shopping further down a phone screen. Blank lines earn their
-   * place *between* sections, where they separate two groups.
+   * The name runs straight into the heading — a blank line there just pushes
+   * the shopping further down a phone screen.
    */
-  const section = (heading: string, rows: ShoppingItem[]) => {
-    if (lines.length > 1) lines.push('');
-    lines.push(heading, ...rows.flatMap(itemLines));
-  };
-
-  if (open.length > 0) section('To buy:', open);
-  // Only worth its own heading when there is something outstanding to tell it
-  // apart from; a fully bought list reads better as a plain list of what was
-  // bought.
-  if (done.length > 0) section(open.length > 0 ? 'Already in the basket:' : 'All bought:', done);
+  lines.push('To buy:', ...open.flatMap(itemLines));
 
   return lines.join('\n');
 }
