@@ -53,7 +53,7 @@ export default function ResetPasswordPage() {
           <h1>Link not usable</h1>
           <div className="alert">{loadError}</div>
           <p className="small muted">
-            Ask the household owner for a fresh link, or <Link to="/login">sign in</Link>.
+            <Link to="/forgot">Ask for a fresh link</Link>, or <Link to="/login">sign in</Link>.
           </p>
         </div>
       </AuthPage>

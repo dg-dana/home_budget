@@ -7,55 +7,50 @@ Last updated: 2026-08-07 · live: deploy run #26 (`977724d`)
 
 ---
 
-## Next: self-service "forgot password"
+## Next: deploy self-service "forgot password"
 
-The next thing to build, and the last real gap email sending opened up.
-Recovery today is **owner-issued only**: a locked-out member has to ask an
-owner to mint them a link (`POST /household/members/:id/reset-password`). That
-is fine until the person locked out *is* the owner, or the household has one
-owner who is on a plane.
+**Built, tested and on the branch — not deployed.** Nothing more to write; the
+next step is yours, and it is two clicks: merge, then run **Deploy to
+Lightsail** from the Actions tab. Merging alone changes nothing on the live
+site.
 
-### What already exists
+What shipped in the code:
 
-Half the flow is built and live — only the *request* half is missing.
+- `POST /auth/forgot` — unauthenticated, takes an address, emails a recovery
+  link if that address has an account. Answers `202 {"ok":true}` either way.
+- `/forgot` on the frontend, linked from the sign-in page where the sentence
+  telling people to ask an owner used to be. Also linked from the "link not
+  usable" state of `/reset/:token`.
+- `issuePasswordReset()` moved into `auth.ts`, so owner-issued and self-service
+  links are minted by one function and retire each other. No migration —
+  `created_by` was nullable already.
 
-- `password_resets` — token, `user_id`, `expires_at`, `used_at`, and
-  **`created_by` which is already nullable**, so a link nobody issued needs no
-  migration. Single-use, 24 hours (`config.passwordResetMaxAgeMs`).
-- `GET /auth/reset/:token` — public preview, returns the address so the page
-  can greet the right person and nothing else.
-- `POST /auth/reset` — public redemption. Sets the password, burns the token,
-  signs the person in, emails them that it happened, and bumps
-  `session_generation` so every older session dies (§4).
-- `/reset/:token` on the frontend, and `deliver()` in `notifications.ts` with
-  `passwordResetNotice` already written.
+The four decisions, as settled:
 
-### What is missing
+1. **It never reveals whether an address has an account.** Same status, same
+   body, same wording. A test asserts the two responses are equal rather than
+   asserting each separately, because that is the property that matters.
+2. **Five requests per hour per address**, on top of the existing 60 / 15 min
+   per IP. The limiter grew a `key` option to do it; a bystander's address in
+   the test proves the bucket is the address, not the IP.
+3. **No mail provider means the route refuses** — 503, "ask a household owner
+   to send you a reset link". Showing the link the way every other flow does
+   would let anybody into any account by typing its address. So on a laptop or
+   in the suite this route is off unless `RESEND_API_KEY` is set.
+4. **It retires outstanding links**, owner-issued ones included.
 
-One unauthenticated route — roughly `POST /auth/forgot` taking an address —
-plus a link to it from the sign-in page. Four decisions to make before writing
-it, none of them settled:
+One thing knowingly left open: an address with an account takes as long as the
+provider does to answer and one without answers immediately, so the *timing*
+still distinguishes them. Closing it means replying before sending, which costs
+the suite its only way to check what was sent. The per-address budget is the
+defence. It is written down in `ARCHITECTURE.md` §14 rather than quietly
+ignored.
 
-1. **Never say whether the address exists.** The same 202 and the same on-screen
-   wording either way, or the endpoint becomes a way to enumerate who has an
-   account. This is the one that is easy to get wrong and impossible to
-   un-ship.
-2. **Rate limiting.** `/api/auth` is already behind 60 requests / 15 min per IP
-   (`app.ts`), which is generous for this route — a tighter per-address limit
-   is worth considering, given each request sends mail.
-3. **What an unconfigured deployment does.** With no `RESEND_API_KEY` a send is
-   dropped, so a self-service link would go nowhere and the person would be
-   stuck with no feedback. Options: refuse the route when no provider is
-   configured and say so, or keep owner-issued recovery as the documented
-   fallback. Do not print the link on screen — that would hand anybody a way
-   into any account by typing its address.
-4. **Whether it retires outstanding links**, the way issuing a new one already
-   does. Probably yes, same one-liner.
-
-Then the usual: cases in `auth.test.ts` and `notificationsSending.test.ts`
-(the address that does not exist must produce *no* mail and the same
-response), break it once and watch it fail, and `ARCHITECTURE.md` §4 + §14 —
-where "recovery is still owner-issued" is currently listed as a rough edge.
+**Worth doing next, and now merely a decision:** owner-issued recovery has lost
+its reason to exist (an owner can reset the password of an account that belongs
+to households they have never heard of). It is still the only recovery an
+unconfigured deployment has, so it cannot simply be deleted — say the word and
+it goes.
 
 ## Needs your hands
 
@@ -73,6 +68,12 @@ live domain by policy, so anything about the real site is yours.
 - [ ] **Say if the notices are too much or too little.** Wording and who hears
       what are both easy to change; what is hard is noticing later that nobody
       reads them. `ARCHITECTURE.md` §4.1 has the table.
+- [ ] **Try "Forgotten your password?" on the live site once it is deployed.**
+      The whole flow depends on a message actually arriving, which no agent can
+      check from here — and it is the same open question as the invite above.
+      Sign-in page → Forgotten your password? → your own address. Expect the
+      "Check your email" screen whatever you type, including an address that
+      has no account: that is the feature working, not a failure.
 - [ ] **Check the rest of the live site on a phone.** The Household page was
       checked on run #25 and leaving a household on run #26 — both look right.
       What runs #17–#24 shipped still has not been: the new sign-up flow, the
@@ -82,11 +83,16 @@ live domain by policy, so anything about the real site is yours.
 ## Open work
 
 - [ ] **Owner-issued recovery grants a whole account**, which may span
-      households — the reason "Next" above is worth doing. Removing someone
-      retires their links, which closes the obvious abuse, but an owner can
-      still reset the password of an account that belongs to households they
-      have never heard of. Self-service would remove the need for the feature
-      altogether. (§14)
+      households. Removing someone retires their links, which closes the
+      obvious abuse, but an owner can still reset the password of an account
+      that belongs to households they have never heard of. Self-service now
+      exists, so the feature has lost its reason — except on a deployment with
+      no mail provider, where it is the only recovery there is. Retiring it is
+      a decision, not a task. (§14)
+- [ ] **`POST /auth/forgot` is quiet about existence but not about timing** —
+      an address with an account waits for the provider, one without answers
+      at once. The per-address budget is what makes that useless in practice.
+      (§14)
 - [ ] **Member list page does not poll**, the guest one does every 15 s — so a
       member can read a stale list while a guest shops. (§14)
 - [ ] **"Verification" means less on an unconfigured deployment.** With no
@@ -97,6 +103,11 @@ live domain by policy, so anything about the real site is yours.
 
 ## Done
 
+- [x] Self-service "forgot password" — `POST /auth/forgot` and the `/forgot`
+      page, linked from sign-in. Same answer whether or not the address exists,
+      the link only ever in the email, 5 requests an hour per address, and a
+      refusal rather than a fallback when nothing can send mail. **On the
+      branch, not deployed** — see the top of this file. (`ARCHITECTURE.md` §4)
 - [x] Leave a household without deleting your account — "Leave this household"
       in the Danger zone, `DELETE /household/members/me`. Refused for the only
       owner with company and for the last person in the household; no password

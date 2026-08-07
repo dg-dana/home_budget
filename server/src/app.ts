@@ -54,6 +54,23 @@ export function createApp({ enableRateLimits = true }: CreateAppOptions = {}): E
   const shareLimiter = enableRateLimits
     ? [rateLimit({ windowMs: 60_000, max: 120, message: 'Too many requests, please wait a moment' })]
     : [];
+  // Asking for a recovery link is the one unauthenticated route that sends mail
+  // to somebody who did not ask for it, so it is counted per address as well —
+  // the per-IP budget above does nothing about a mailbox being flooded from a
+  // dozen addresses of a dozen IPs. Mounted ahead of the router rather than
+  // inside it so it stays with the other limiters and off with them in tests.
+  if (enableRateLimits) {
+    app.use(
+      '/api/auth/forgot',
+      rateLimit({
+        windowMs: 60 * 60_000,
+        max: 5,
+        key: (req) =>
+          typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '',
+        message: 'Too many reset requests for that address, please try again later',
+      }),
+    );
+  }
 
   app.use('/api/auth', ...authLimiter, authRouter);
   // Plural: the households an account belongs to, and which one is open.

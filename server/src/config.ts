@@ -46,9 +46,22 @@ const appUrl = (process.env.APP_URL?.trim() || (domain ? `https://${domain}` : '
   '',
 );
 
+/**
+ * Whether a notice carrying a link can actually reach an inbox. All three parts
+ * are needed: a key and a from address to send at all, and a base URL to turn a
+ * relative link into one an inbox can follow (`notifications.ts`).
+ *
+ * Most of the app treats an unconfigured deployment as normal and shows the
+ * link on screen instead. Self-service recovery cannot — printing the link
+ * would hand anybody a way into any account by typing its address — so it is
+ * the one route that refuses to work without this.
+ */
+const emailConfigured = Boolean(resendApiKey && mailFrom && appUrl);
+
 export const config = {
   isProduction,
   rateLimitsDisabled,
+  emailConfigured,
   port: Number(process.env.PORT ?? 4000),
   jwtSecret: jwtSecret || 'dev-only-insecure-secret',
   appUrl,

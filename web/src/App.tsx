@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import Layout from './components/Layout';
 import ExpensesPage from './pages/ExpensesPage';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import HouseholdPage from './pages/HouseholdPage';
 import HouseholdsPage from './pages/HouseholdsPage';
 import JoinPage from './pages/JoinPage';
@@ -69,6 +70,16 @@ export default function App() {
       {/* Confirming an address needs no session: the link is the proof. */}
       <Route path="/verify/:token" element={<VerifyEmailPage />} />
       <Route path="/reset/:token" element={<ResetPasswordPage />} />
+      {/* Asking for a recovery link. Signed out by definition — somebody who
+          is signed in changes their password from the Household page. */}
+      <Route
+        path="/forgot"
+        element={
+          <RedirectIfSignedIn>
+            <ForgotPasswordPage />
+          </RedirectIfSignedIn>
+        }
+      />
 
       {/* Joining is now something an account does, so this sits behind auth
           rather than being a second way to create one. */}
