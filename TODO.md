@@ -9,11 +9,13 @@ German emails are live and **confirmed arriving**.
 
 ---
 
-## Next: deploy preferences that stick
+## Live: preferences that stick
 
-**Merged but not deployed.** Reported from the live site: choose German and
-light, sign out, sign back in, and the app is English and dark again — the
-phone's own defaults.
+**Deployed on run #35** (`ea6dc70`) — all 17 steps green, "Verify the public URL
+works" included, and migration `006` ran as the container came up.
+
+Reported from the live site: choose German and light, sign out, sign back in,
+and the app is English and dark again — the phone's own defaults.
 
 Nothing in the app was clearing anything. Both settings lived in
 `localStorage` and only there, and **a browser is entitled to throw that away**:
@@ -40,10 +42,10 @@ to a browser clearing house is the thing that actually happens. **The accepted
 cost is that a phone and a laptop can no longer disagree**: whichever device
 last changed something wins everywhere.
 
-Deploying it changes nothing under anybody. `preferences_saved_at` is NULL for
-every account that predates migration `006`, and there the **device** wins once
-and is written up — so the first sign-in after the deploy keeps exactly what is
-on screen today, and it sticks from then on.
+The deploy changed nothing under anybody. `preferences_saved_at` is NULL for
+every account that predates migration `006`, so the **device** won once and was
+written up — the first sign-in after the deploy keeps exactly what was on
+screen, and it sticks from then on.
 
 Four deliberate breaks were watched failing, including the subtle one: reverting
 `useTheme()` to a hook holding its own state, where the toggle and the adopter
@@ -58,10 +60,10 @@ live domain by policy, so anything about the real site is yours.
 - [ ] **Say if the notices are too much or too little.** Wording and who hears
       what are both easy to change; what is hard is noticing later that nobody
       reads them. `ARCHITECTURE.md` §4.1 has the table.
-- [ ] **Check the settings stick, on the phone that lost them.** Choose German
-      and light, sign out, sign back in — both should be waiting. Worth doing
-      from a second browser too, since that is the case `localStorage` could
-      never have covered.
+- [ ] **Check the settings stick, on the phone that lost them** (live since run
+      #35). Choose German and light, sign out, sign back in — both should be
+      waiting. Worth doing from a second browser too, since that is the case
+      `localStorage` could never have covered.
 - [ ] **Check the rest of the live site on a phone.** The Household page was
       checked on run #25, leaving a household on run #26, and password recovery
       on runs #27–#28 — all look right. What runs #17–#24 shipped still has
@@ -109,9 +111,10 @@ live domain by policy, so anything about the real site is yours.
 - [x] **Language and theme stick to the account** — adopted on sign-in, written
       back on every change, so a browser losing its `localStorage` no longer
       loses the choice with it. Signed-out and guest screens are unchanged.
-      Migration `006` ships without moving anything under anybody, because an
+      Migration `006` shipped without moving anything under anybody, because an
       account that has never saved a pair lets the device win once. Four
-      deliberate breaks watched failing. (merged, **not yet deployed**)
+      deliberate breaks watched failing. (PR #65, live on run #35, **not yet
+      checked on the phone that lost them**)
 - [x] **Emails go out in German too** — per recipient, not per request, so one
       household with two languages gets two versions of the same message.
       `users.language` (migration `005`), set at registration and followed by
