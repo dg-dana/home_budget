@@ -57,10 +57,17 @@ const password = z.string().min(8, 'Password must be at least 8 characters');
  * since reading is per device and post is per person.
  */
 const language = z.enum(['en', 'de']);
+const theme = z.enum(['light', 'dark', 'system']);
 
-const registerSchema = z.object({ email, password, language: language.default('en') });
+const registerSchema = z.object({
+  email,
+  password,
+  language: language.default('en'),
+  theme: theme.default('system'),
+});
 
-const languageSchema = z.object({ language });
+/** Both together: they are saved by one action and read back by one screen. */
+const preferencesSchema = z.object({ language, theme });
 
 const loginSchema = z.object({ email, password: z.string().min(1) });
 
@@ -126,7 +133,14 @@ function sessionPayload(user: UserRow, currentHouseholdId: string | null) {
   const membership = memberships.find((m) => m.household_id === current?.id) ?? null;
 
   return {
-    user: { ...toSessionAccount(user, membership), language: user.language },
+    user: {
+      ...toSessionAccount(user, membership),
+      language: user.language,
+      theme: user.theme,
+      // Whether the account has ever saved a pair. False means the device it
+      // is signing in on decides, and that choice is written up (§9.1b).
+      preferencesSaved: user.preferences_saved_at !== null,
+    },
     household: current,
     households,
     // Deployment-wide rather than per-account, but this is the channel the
@@ -156,9 +170,19 @@ authRouter.post(
     // still "that address is taken" — not a 500.
     try {
       db.prepare(
-        `INSERT INTO users (id, email, password_hash, language, created_at)
-         VALUES (?, ?, ?, ?, ?)`,
-      ).run(userId, input.email, passwordHash, input.language, nowIso());
+        `INSERT INTO users (id, email, password_hash, language, theme, preferences_saved_at, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        userId,
+        input.email,
+        passwordHash,
+        input.language,
+        input.theme,
+        // Signing up is a save: whatever they were looking at while they typed
+        // their address is what they get on the next device they sign in on.
+        nowIso(),
+        nowIso(),
+      );
     } catch (err) {
       if (isUniqueViolation(err)) throw conflict('An account with that email already exists');
       throw err;
@@ -219,26 +243,27 @@ authRouter.post(
 );
 
 /**
- * What language to write to this account in.
+ * The language and theme this account gets, wherever it signs in.
  *
- * The interface language is a **per-device** choice and stays one — it lives in
- * `localStorage`, works signed out, and works for a guest with no account at
- * all (`ARCHITECTURE.md` §9.1a). This route is the one place the two meet: when
- * somebody signed in flips the picker, the language their post arrives in
- * follows what they are reading.
+ * Saved together rather than one route each, because they are one decision as
+ * far as anybody using the app is concerned: "this is how I like it". They are
+ * still applied separately — a guest and every signed-out screen read them off
+ * the device, which is the only place they can (`ARCHITECTURE.md` §9.1b).
  *
- * That is deliberately a **follow**, not a binding. A second device left in
- * English does not drag the emails back; whichever device most recently made a
- * choice while signed in is the one that set it. Anything cleverer would need
- * the app to rank devices, which nobody asked it to do.
+ * Writing here is what stamps `preferences_saved_at`, and that stamp is the
+ * whole migration story: until an account has saved once, the device it signs
+ * in on decides and is written up, so nothing moves under anybody the day this
+ * ships.
  */
 authRouter.put(
-  '/language',
+  '/preferences',
   requireAuth,
   asyncHandler((req, res) => {
     const account = currentAccount(req);
-    const input = parseBody(languageSchema, req.body);
-    db.prepare('UPDATE users SET language = ? WHERE id = ?').run(input.language, account.id);
+    const input = parseBody(preferencesSchema, req.body);
+    db.prepare(
+      'UPDATE users SET language = ?, theme = ?, preferences_saved_at = ? WHERE id = ?',
+    ).run(input.language, input.theme, nowIso(), account.id);
     res.status(204).end();
   }),
 );

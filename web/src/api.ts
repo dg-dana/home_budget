@@ -1,4 +1,5 @@
 import type { Language } from './language';
+import type { Theme } from './theme';
 
 export class ApiError extends Error {
   constructor(
@@ -60,12 +61,16 @@ export interface SessionUser {
   householdId: string | null;
   name: string | null;
   role: Role | null;
-  /**
-   * What language this account is **emailed** in — not what this browser
-   * renders in, which is a per-device choice that never reaches the server
-   * (`language.ts`). The two are kept in step by `useEmailLanguage()`.
-   */
+  /** The language this account reads and is written to in. */
   language: Language;
+  /** The theme this account gets, on whatever it signs in to. */
+  theme: Theme;
+  /**
+   * Whether this account has ever saved a pair. False means it has not, so the
+   * device signing in decides and its choice is written up — which is what let
+   * this ship without moving anything under anybody (`ARCHITECTURE.md` §9.1b).
+   */
+  preferencesSaved: boolean;
 }
 
 /** One of the households an account belongs to. */

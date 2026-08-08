@@ -112,7 +112,7 @@ describe('what language it goes out in', () => {
     const owner = await registerHousehold();
     const member = await addMember(owner, 'Noa');
 
-    const changed = await member.client.put('/api/auth/language', { language: 'de' });
+    const changed = await member.client.put('/api/auth/preferences', { language: 'de', theme: 'system' });
     expect(changed.status).toBe(204);
     sent = [];
 
@@ -123,7 +123,7 @@ describe('what language it goes out in', () => {
 
   it('writes an invite in the inviting owner\'s language when the address is a stranger', async () => {
     const owner = await registerHousehold({ householdName: 'Die Wohnung' });
-    await owner.client.put('/api/auth/language', { language: 'de' });
+    await owner.client.put('/api/auth/preferences', { language: 'de', theme: 'system' });
     sent = [];
 
     const stranger = uniqueEmail('fremd');
@@ -140,7 +140,7 @@ describe('what language it goes out in', () => {
 
   it("prefers an existing account's own choice over the inviter's", async () => {
     const owner = await registerHousehold({ householdName: 'Die Wohnung' });
-    await owner.client.put('/api/auth/language', { language: 'de' });
+    await owner.client.put('/api/auth/preferences', { language: 'de', theme: 'system' });
     // Already has an account, and reads English. Their choice, not the owner's.
     const existing = await registerAccount({ email: uniqueEmail('english') });
     sent = [];

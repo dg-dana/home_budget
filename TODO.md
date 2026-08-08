@@ -5,54 +5,50 @@ The running state of this project. **Updated after every step** — see the
 
 Last updated: 2026-08-08 · live: deploy run #34 (`1dd719f`)
 
+German emails are live and **confirmed arriving**.
+
 ---
 
-## Live: German emails
+## Next: deploy preferences that stick
 
-**Deployed on run #34** (`1dd719f`) — all 17 steps green, "Verify the public
-URL works" included, and migration `005` ran as the container came up. The app
-now writes to people in German as well as showing them German.
+**Merged but not deployed.** Reported from the live site: choose German and
+light, sign out, sign back in, and the app is English and dark again — the
+phone's own defaults.
 
-The thing to understand about it: **reading and writing are two settings, and
-they had to be.** What the browser renders in is per device — it works signed
-out, it works for a guest, it never touches the API. But most of the messages
-the server sends go to people who are *not* making the request: an owner
-hearing somebody joined, everyone hearing a household was deleted. There is
-nobody to ask. So `users.language` (migration `005`) stores what an account's
-post arrives in, and the two meet in exactly one place — flipping the picker
-while signed in tells the server to follow.
+Nothing in the app was clearing anything. Both settings lived in
+`localStorage` and only there, and **a browser is entitled to throw that away**:
+iOS evicts it, a Home Screen shortcut keeps a copy separate from Safari's, a
+reinstall wipes it, a second browser never had it. The choice went with it and
+there was no way back except making it again. A setting you have to keep
+re-making is not a setting.
 
-That means one household can now hold an English member and a German one, and
-a single rename sends two differently worded emails. `householdAddresses()`
-returns the language alongside the address, which is what makes that fall out
-rather than needing arranging.
+So language and theme now belong to the **account**. Two rules, and the order
+between them is the whole design:
 
-Two rules worth keeping:
+1. **On sign-in the account wins** — its saved pair is adopted and written into
+   `localStorage`, so the pre-paint script has it right next load.
+2. **After that the device wins and is written up** — changing either control
+   saves both, and the next device to sign in adopts them.
 
-- **A route hands the notice values, never a phrase.** `PUT /household` used to
-  build `the name from "X" to "Y"` and pass it in, which made that message
-  untranslatable by construction. It now passes the four values and the notice
-  builder picks one of three whole sentences.
-- **An invited address usually has no account yet.** Where one exists its own
-  choice wins; otherwise the invite goes out in the **inviting owner's**
-  language, since they are the only person who knows who they are writing to.
+**Signed out, and for a guest, nothing changed at all.** `localStorage` is the
+only store they have and it still works exactly as before.
 
-Every account that predates this defaults to English — exactly what they have
-been receiving all along. Nobody has started getting German they did not pick.
+This reverses something `ARCHITECTURE.md` had argued for deliberately — that
+the two should be per device, because one person may want dark on a phone and
+light on a laptop. That is true and almost nobody does it; losing your settings
+to a browser clearing house is the thing that actually happens. **The accepted
+cost is that a phone and a laptop can no longer disagree**: whichever device
+last changed something wins everywhere.
 
-Five browser and server regressions were introduced and watched fail:
-recipients all reported as English, registration ignoring the language it was
-given, an invite overruling an existing account's choice, the route accepting
-any string, and the frontend never posting the change at all.
+Deploying it changes nothing under anybody. `preferences_saved_at` is NULL for
+every account that predates migration `006`, and there the **device** wins once
+and is written up — so the first sign-in after the deploy keeps exactly what is
+on screen today, and it sticks from then on.
 
-**Nobody has watched a German message land in a real inbox yet** — see below.
-
-**Still English in both languages: API error messages.** The UI prints what the
-server returns verbatim, so a German page can answer a bad password with an
-English sentence. Fixing it means the API returning *codes* the frontend
-translates rather than sentences it prints — a change to every `badRequest()`
-in the codebase and to how the frontend renders a failure. Not a dictionary
-entry, and worth doing only if it actually grates.
+Four deliberate breaks were watched failing, including the subtle one: reverting
+`useTheme()` to a hook holding its own state, where the toggle and the adopter
+each move a private copy and neither sees the other. That was invisible while
+the toggle was the only caller.
 
 ## Needs your hands
 
@@ -62,10 +58,10 @@ live domain by policy, so anything about the real site is yours.
 - [ ] **Say if the notices are too much or too little.** Wording and who hears
       what are both easy to change; what is hard is noticing later that nobody
       reads them. `ARCHITECTURE.md` §4.1 has the table.
-- [ ] **Send yourself one German email and check it reads right** — switch the
-      picker to DE while signed in, then use "Forgotten your password?" on the
-      sign-in page. That is the quickest round trip, and nobody has watched a
-      German message actually land in an inbox. (Live since run #34.)
+- [ ] **Check the settings stick, on the phone that lost them.** Choose German
+      and light, sign out, sign back in — both should be waiting. Worth doing
+      from a second browser too, since that is the case `localStorage` could
+      never have covered.
 - [ ] **Check the rest of the live site on a phone.** The Household page was
       checked on run #25, leaving a household on run #26, and password recovery
       on runs #27–#28 — all look right. What runs #17–#24 shipped still has
@@ -76,14 +72,14 @@ live domain by policy, so anything about the real site is yours.
 ## Open work
 
 
+- [ ] **One account, one pair of preferences.** A phone and a laptop can no
+      longer disagree about language or theme — whichever was changed last wins
+      everywhere. Deliberate: keeping both would mean the app ranking devices.
+      Say if it grates. (§9.1b)
 - [ ] **API error messages are English in both languages.** They land in a
       German page's alert boxes as English sentences. Fixing it means the API
       returning codes the frontend translates rather than sentences it prints —
       a change to every `badRequest()` and to how a failure is rendered. (§14)
-- [ ] **An account has one email language: the last one chosen on any signed-in
-      device.** German on the phone and English on the shared laptop means
-      whichever was touched last wins. Ranking devices is the only fix and
-      nobody has asked for one. (§14)
 - [ ] **Native date and month pickers ignore the page's language.** Chrome
       renders `<input type="date">` in the *browser's* UI language, so a German
       page on an English browser still shows `08/07/2026`. Only replacing the
@@ -110,6 +106,12 @@ live domain by policy, so anything about the real site is yours.
 
 ## Done
 
+- [x] **Language and theme stick to the account** — adopted on sign-in, written
+      back on every change, so a browser losing its `localStorage` no longer
+      loses the choice with it. Signed-out and guest screens are unchanged.
+      Migration `006` ships without moving anything under anybody, because an
+      account that has never saved a pair lets the device win once. Four
+      deliberate breaks watched failing. (merged, **not yet deployed**)
 - [x] **Emails go out in German too** — per recipient, not per request, so one
       household with two languages gets two versions of the same message.
       `users.language` (migration `005`), set at registration and followed by

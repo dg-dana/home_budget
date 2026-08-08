@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { api, type Notice, type SessionPayload } from '../api';
 import { useI18n } from '../i18n';
+import { useTheme } from '../theme';
 import { useSession } from '../session';
 import AuthPage from '../components/AuthPage';
 import NoticeCard from '../components/NoticeCard';
@@ -17,6 +18,7 @@ import NoticeCard from '../components/NoticeCard';
 export default function RegisterPage() {
   const { refresh } = useSession();
   const { t, tx, language } = useI18n();
+  const [theme] = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
   // Someone who followed an invite link lands here via the sign-in page; keep
@@ -46,12 +48,12 @@ export default function RegisterPage() {
     setBusy(true);
     setError('');
     try {
-      // The language goes with the sign-up so the confirmation email — the
-      // very first thing this account receives — is already in the language
-      // they were reading when they typed their address.
+      // Both go with the sign-up: the confirmation email — the very first
+      // thing this account receives — is already in the right language, and
+      // the next device they sign in on looks like the one they signed up on.
       const created = await api.post<SessionPayload & { verification: Notice }>(
         '/auth/register',
-        { ...form, language },
+        { ...form, language, theme },
       );
       // Deliberately *not* setSession yet. The cookie is already set server
       // side, but telling the app it is signed in would let RedirectIfSignedIn

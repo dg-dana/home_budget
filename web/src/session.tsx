@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { ReactNode } from 'react';
 import { ApiError, api, type Household, type SessionPayload, type SessionUser } from './api';
 import { useI18n } from './i18n';
+import { useTheme } from './theme';
 
 interface SessionState {
   user: SessionUser | null;
@@ -118,41 +119,78 @@ export function useSession(): SessionState {
 }
 
 /**
- * Keeps the language an account is **emailed** in level with the language the
- * person is reading.
+ * Makes the language and theme belong to the **account**, not the browser.
  *
- * These are two different settings on purpose. Reading is per device: it works
- * signed out, it works for a guest with no account, and it never touches the
- * API (`ARCHITECTURE.md` §9.1a). Writing has to be per account, because half
- * the messages the server sends go to people who are not making the request —
- * an owner hearing that somebody joined is not holding a browser.
+ * They were per device to begin with, on the reasoning that one person may
+ * want different answers on a phone and a laptop (`ARCHITECTURE.md` §9.1).
+ * That reasoning was wrong about the case that actually happens: a browser
+ * loses its `localStorage` — iOS evicts it, a Home Screen shortcut keeps a
+ * separate copy, a reinstall wipes it — and the choice is gone with no way
+ * back except making it again. A setting you have to keep re-making is not a
+ * setting.
  *
- * So this is the one place they meet, and it is a **follow rather than a
- * binding**: flipping the picker while signed in tells the server "write to me
- * in this from now on". A second device left in English does not drag it back;
- * whichever device last made a choice while signed in is the one that set it.
+ * So there are two rules, and the order between them is the whole design:
  *
- * The ref is what stops the effect firing twice before the refetch lands.
- * Called once, from `App`, so the dependency on `I18nProvider` wrapping
- * `SessionProvider` is visible at a call site rather than buried in one.
+ * 1. **On sign-in, the account wins.** Its saved pair is adopted and written
+ *    into `localStorage`, so the pre-paint script gets it right next time.
+ * 2. **After that, the device wins and is written up.** Changing either
+ *    control saves both, and the next device to sign in adopts them.
+ *
+ * The exception is an account that has **never saved a pair** — every account
+ * that existed before this shipped. There, rule 1 is skipped and the device's
+ * current settings are written up instead, so nobody's app changed appearance
+ * the day this deployed; it simply started sticking.
+ *
+ * Signed out, and for a guest, none of this runs: `localStorage` is the only
+ * store there is, and it is unchanged.
  */
-export function useEmailLanguage(): void {
+export function useAccountPreferences(): void {
   const { user, refresh } = useSession();
-  const { language } = useI18n();
-  const sent = useRef<string | null>(null);
+  const { language, setLanguage } = useI18n();
+  const [theme, setTheme] = useTheme();
+  /** The account these settings have already been adopted for. */
+  const adopted = useRef<string | null>(null);
+  const saving = useRef(false);
 
   useEffect(() => {
-    if (!user || user.language === language || sent.current === language) return;
-    sent.current = language;
-    api
-      .put('/auth/language', { language })
-      .then(refresh)
-      .catch(() => {
-        // Not worth an alert: the app is still in the right language, and the
-        // next flip — or the next sign-in on this device — tries again.
-        sent.current = null;
-      });
-  }, [user, language, refresh]);
+    if (!user) {
+      // Signing out means the next account gets its own adoption rather than
+      // inheriting whatever the last one left on screen.
+      adopted.current = null;
+      return;
+    }
+
+    if (adopted.current !== user.id) {
+      adopted.current = user.id;
+      if (user.preferencesSaved) {
+        // Rule 1. Both setters write `localStorage` on the way through, which
+        // is what the pre-paint script reads on the next load.
+        if (user.language !== language) setLanguage(user.language);
+        if (user.theme !== theme) setTheme(user.theme);
+      } else {
+        save();
+      }
+      return;
+    }
+
+    // Rule 2.
+    if (user.language !== language || user.theme !== theme) save();
+
+    function save() {
+      if (saving.current) return;
+      saving.current = true;
+      api
+        .put('/auth/preferences', { language, theme })
+        .then(refresh)
+        .catch(() => {
+          // Not worth an alert: the app already looks the way they asked. The
+          // next change, or the next sign-in on this device, tries again.
+        })
+        .finally(() => {
+          saving.current = false;
+        });
+    }
+  }, [user, language, theme, setLanguage, setTheme, refresh]);
 }
 
 /** Convenience hook for pages that only render behind the household guard. */

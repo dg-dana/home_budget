@@ -15,7 +15,7 @@ import SharedListPage from './pages/SharedListPage';
 import StatsPage from './pages/StatsPage';
 import VerifyEmailPage from './pages/VerifyEmailPage';
 import { useI18n } from './i18n';
-import { useEmailLanguage, useSession } from './session';
+import { useAccountPreferences, useSession } from './session';
 
 /** The one-line placeholder all three guards show while `/auth/me` is in flight. */
 function Loading() {
@@ -53,10 +53,11 @@ function RedirectIfSignedIn({ children }: { children: JSX.Element }) {
 }
 
 export default function App() {
-  // The account's email language follows the picker whenever somebody signed in
-  // uses it. Here rather than inside `SessionProvider` so the dependency on
-  // `I18nProvider` sitting outside it is visible (`session.tsx`).
-  useEmailLanguage();
+  // Language and theme belong to the account once somebody is signed in: its
+  // saved pair is adopted here, and every change is written back. Called from
+  // here rather than inside `SessionProvider` so the dependency on
+  // `I18nProvider` and `ThemeProvider` sitting outside it stays visible.
+  useAccountPreferences();
 
   return (
     <Routes>
