@@ -9,10 +9,21 @@ German emails are live and **confirmed arriving**.
 
 ---
 
+## The German work is finished
+
+Interface, money and dates, emails and refusals from the API — all of it reads
+in whichever language the person is in, and the choice follows their account
+rather than their browser. Runs #33 to #36, every one of them confirmed by hand
+on the real site.
+
+The one thing still English in both languages is **Zod schema failures**, and
+that is deliberate: they name a field, which beats a translated generality, and
+no form can reach them.
+
 ## Live: translated refusals
 
-**Deployed on run #36** (`9644a62`) — all 17 steps green, "Verify the public
-URL works" included.
+**Deployed on run #36** (`9644a62`) and **confirmed by hand** — a wrong password
+on a German page answers in German.
 
 The last thing in the app that spoke English
 regardless of who was reading: when the API refused something, the page printed
@@ -57,10 +68,6 @@ live domain by policy, so anything about the real site is yours.
 - [ ] **Say if the notices are too much or too little.** Wording and who hears
       what are both easy to change; what is hard is noticing later that nobody
       reads them. `ARCHITECTURE.md` §4.1 has the table.
-- [ ] **Glance at a German refusal on the live site** (live since run #36).
-      Signing in with the wrong password on a German page is the quickest one.
-      Everything the API refuses is translated now except Zod schema failures,
-      which are deliberate.
 - [ ] **Check the rest of the live site on a phone.** The Household page was
       checked on run #25, leaving a household on run #26, and password recovery
       on runs #27–#28 — all look right. What runs #17–#24 shipped still has
@@ -70,7 +77,18 @@ live domain by policy, so anything about the real site is yours.
 
 ## Open work
 
+Everything below except the first is an **accepted trade-off** rather than
+queued work: it is written down so nobody rediscovers it as a surprise, and
+each says why it stays. The first one is a real gap.
 
+- [ ] **Most of the frontend has no browser tests.** Covered: the guest flow,
+      the statistics page, the household switcher, and language and theme.
+      **Not covered: the expenses dashboard, budgets, recurring rules, invites,
+      and the Household page** — which is where the money is entered and where
+      the irreversible buttons live. Changes there are checked by looking at a
+      screenshot, and a screenshot proves today, not tomorrow. Two bugs in this
+      project's history were invisible to every test *and* to a careful reading
+      of the diff. This is the one item here that would repay doing. (§14)
 - [ ] **One account, one pair of preferences.** A phone and a laptop can no
       longer disagree about language or theme — whichever was changed last wins
       everywhere. Deliberate: keeping both would mean the app ranking devices.
@@ -110,21 +128,22 @@ live domain by policy, so anything about the real site is yours.
       its English sentence, the page renders whichever it can, and a test that
       reads the web dictionary from the server suite fails if the two ever drift
       apart. Values travel as `vars` rather than baked into the sentence. Four
-      deliberate breaks watched failing. (PR #67, live on run #36)
+      deliberate breaks watched failing. (PR #67, live on run #36, **confirmed
+      by hand**)
 - [x] **Language and theme stick to the account** — adopted on sign-in, written
       back on every change, so a browser losing its `localStorage` no longer
       loses the choice with it. Signed-out and guest screens are unchanged.
       Migration `006` shipped without moving anything under anybody, because an
       account that has never saved a pair lets the device win once. Four
-      deliberate breaks watched failing. (PR #65, live on run #35, **not yet
-      checked on the phone that lost them**)
+      deliberate breaks watched failing. (PR #65, live on run #35, **confirmed
+      by hand, including across machines**)
 - [x] **Emails go out in German too** — per recipient, not per request, so one
       household with two languages gets two versions of the same message.
       `users.language` (migration `005`), set at registration and followed by
-      `PUT /auth/language`; `notificationStrings.ts` as the server's dictionary;
-      routes handing notices values rather than phrases. Five deliberate breaks
-      watched failing. (PR #63, live on run #34, **no German message watched
-      arriving yet**)
+      `PUT /auth/preferences`; `notificationStrings.ts` as the server's
+      dictionary; routes handing notices values rather than phrases. Five
+      deliberate breaks watched failing. (PR #63, live on run #34, **confirmed
+      arriving**)
 - [x] **English and German across the whole interface**, per device, on every
       screen including the guest's — dictionary in `web/src/strings.ts`, one
       entry per string with both languages; whole sentences rather than glued

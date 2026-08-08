@@ -59,12 +59,20 @@ Two kinds of people use it:
   account from the households picker
 
 **Everything else**
+- **English or German**, switched from a picker on every screen — including the
+  sign-in page and the guest share link, so it needs no account. Choosing German
+  moves the money and the dates too, not only the words
 - **Light and dark**, following the device unless told otherwise — the toggle is on
   every screen including the sign-in page
+- **Both settings belong to your account**, so signing in on a new phone, or on a
+  browser that has forgotten everything, brings them back. Signed out, and for a
+  guest, they live on the device — which is the only place they can
 - **Email** for anything needing a link, and for what has already happened: joins,
   removals, role changes, renames, deletions, password changes. Routine edits send
   nothing, deliberately — a household that emails on every grocery item trains
   everyone to ignore it. Optional; see Configuration
+- **Emails are written per recipient**, so one household with an English member
+  and a German one gets two versions of the same message
 
 ## Sharing a list with someone outside the family
 
@@ -109,8 +117,8 @@ to get started; seven default categories are created with it.
 ### Tests
 
 ```bash
-npm test          # server integration suite (238 tests, Vitest)
-npm run test:e2e  # browser tests (21 tests, Playwright)
+npm test          # server integration suite (255 tests, Vitest)
+npm run test:e2e  # browser tests (27 tests, Playwright)
 npm run test:all  # both
 ```
 
@@ -190,6 +198,7 @@ session currently names.
 | GET    | `/auth/invite/:token`             | anyone         |
 | GET    | `/auth/me`                        | account        |
 | POST   | `/auth/password`                  | account        |
+| PUT    | `/auth/preferences`               | account        |
 | POST   | `/auth/forgot`                    | anyone         |
 | GET    | `/auth/reset/:token`              | anyone         |
 | POST   | `/auth/reset`                     | anyone         |
