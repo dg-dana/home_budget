@@ -10,7 +10,7 @@ import { usePoll } from '../usePoll';
 
 export default function ListDetailPage() {
   const { id = '' } = useParams();
-  const { t } = useI18n();
+  const { t, message } = useI18n();
   const navigate = useNavigate();
 
   const [list, setList] = useState<ShoppingListDetail | null>(null);
@@ -23,7 +23,7 @@ export default function ListDetailPage() {
       api
         .get<ShoppingListDetail>(`/lists/${id}`)
         .then(setList)
-        .catch((err: Error) => setError(err.message)),
+        .catch((err: unknown) => setError(message(err, 'common.somethingWrong'))),
     [id],
   );
 
@@ -42,7 +42,7 @@ export default function ListDetailPage() {
       await action();
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('common.somethingWrong'));
+      setError(message(err, 'common.somethingWrong'));
     }
   };
 
@@ -72,7 +72,7 @@ export default function ListDetailPage() {
       await api.delete(`/lists/${id}`);
       navigate('/lists', { replace: true });
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('list.deleteFailed'));
+      setError(message(err, 'list.deleteFailed'));
     }
   };
 

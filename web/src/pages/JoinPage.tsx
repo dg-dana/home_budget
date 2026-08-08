@@ -26,7 +26,7 @@ interface InvitePreview {
 export default function JoinPage() {
   const { token = '' } = useParams();
   const { user, refresh, switchHousehold } = useSession();
-  const { t, tx } = useI18n();
+  const { t, tx, message } = useI18n();
   const navigate = useNavigate();
 
   const [preview, setPreview] = useState<InvitePreview | null>(null);
@@ -39,7 +39,7 @@ export default function JoinPage() {
     api
       .get<InvitePreview>(`/auth/invite/${encodeURIComponent(token)}`)
       .then(setPreview)
-      .catch((err: Error) => setLoadError(err.message));
+      .catch((err: unknown) => setLoadError(message(err, 'join.failed')));
   }, [token]);
 
   const handleSubmit = async (event: React.FormEvent) => {
@@ -51,7 +51,7 @@ export default function JoinPage() {
       await refresh();
       navigate('/', { replace: true });
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('join.failed'));
+      setError(message(err, 'join.failed'));
     } finally {
       setBusy(false);
     }
@@ -102,7 +102,7 @@ export default function JoinPage() {
                   if (preview.householdId) await switchHousehold(preview.householdId);
                   navigate('/', { replace: true });
                 } catch (err) {
-                  setError(err instanceof Error ? err.message : t('join.openFailed'));
+                  setError(message(err, 'join.openFailed'));
                   setBusy(false);
                 }
               })();

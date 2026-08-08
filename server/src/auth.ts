@@ -213,7 +213,7 @@ export async function assertPassword(userId: string, plain: string): Promise<voi
     | Pick<UserRow, 'password_hash'>
     | undefined;
   if (!row || !(await verifyPassword(plain, row.password_hash))) {
-    throw badRequest('That is not your password');
+    throw badRequest('That is not your password', 'error.wrongPassword');
   }
 }
 
@@ -250,7 +250,7 @@ export const requireHousehold: RequestHandler = (req, _res, next) => {
     return;
   }
   if (!req.user.householdId) {
-    next(forbidden('Choose a household first'));
+    next(forbidden('Choose a household first', 'error.chooseHousehold'));
     return;
   }
   next();
@@ -259,7 +259,7 @@ export const requireHousehold: RequestHandler = (req, _res, next) => {
 /** Must run after `requireAuth`. Restricts a route to the household owner. */
 export const requireOwner: RequestHandler = (req, _res, next) => {
   if (req.user?.role !== 'owner') {
-    next(forbidden('Only the household owner can do this'));
+    next(forbidden('Only the household owner can do this', 'error.ownerOnly'));
     return;
   }
   next();
@@ -276,7 +276,7 @@ export const requireVerifiedEmail: RequestHandler = (req, _res, next) => {
     return;
   }
   if (!req.user.emailVerified) {
-    next(forbidden('Confirm your email address first'));
+    next(forbidden('Confirm your email address first', 'error.confirmFirst'));
     return;
   }
   next();
@@ -296,7 +296,7 @@ export function currentAccount(req: { user?: SessionAccount }): SessionAccount {
 export function currentUser(req: { user?: SessionAccount }): SessionUser {
   const account = currentAccount(req);
   if (!account.householdId || !account.name || !account.role) {
-    throw forbidden('Choose a household first');
+    throw forbidden('Choose a household first', 'error.chooseHousehold');
   }
   return {
     id: account.id,

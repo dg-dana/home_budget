@@ -46,7 +46,7 @@ function monthlyEquivalent(rule: RecurringExpense): number {
 
 export default function RecurringPage() {
   const { user, household } = useSession();
-  const { t } = useI18n();
+  const { t, message } = useI18n();
   const currency = household?.currency ?? 'USD';
 
   const [rules, setRules] = useState<RecurringExpense[]>([]);
@@ -69,7 +69,7 @@ export default function RecurringPage() {
   }, []);
 
   useEffect(() => {
-    load().catch((err: Error) => setError(err.message));
+    load().catch((err: unknown) => setError(message(err, 'common.somethingWrong')));
   }, [load]);
 
   const run = async (action: () => Promise<unknown>) => {
@@ -78,7 +78,7 @@ export default function RecurringPage() {
       await action();
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('common.somethingWrong'));
+      setError(message(err, 'common.somethingWrong'));
     }
   };
 

@@ -170,7 +170,7 @@ function CategoryTrend({
 
 export default function StatsPage() {
   const { household } = useSession();
-  const { t, plural } = useI18n();
+  const { t, plural, message } = useI18n();
   const currency = household?.currency ?? 'USD';
 
   const [to, setTo] = useState(currentMonth());
@@ -196,8 +196,8 @@ export default function StatsPage() {
       .then((data) => {
         if (current) setStats(data);
       })
-      .catch((err: Error) => {
-        if (current) setError(err.message);
+      .catch((err: unknown) => {
+        if (current) setError(message(err, 'common.somethingWrong'));
       });
     return () => {
       current = false;

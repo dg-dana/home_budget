@@ -683,6 +683,146 @@ export const STRINGS = {
   'notice.resending': ['sending…', 'wird gesendet…'],
   'notice.resendFailed': ['Could not send it again', 'Erneutes Senden nicht möglich'],
 
+  /*
+   * What the API says when it refuses.
+   *
+   * The server still sends an English sentence and always will — it is what a
+   * `curl` and a log line have to go on — but it now sends a **code** beside
+   * it, and this is where that becomes a sentence in the reader's language
+   * (`server/src/errorCodes.ts`). A code with no entry here falls back to the
+   * English, so this list may lag without anything breaking; a server test
+   * fails if it does.
+   */
+  'error.notSignedIn': ['Not signed in', 'Nicht angemeldet'],
+  'error.notAllowed': ['Not allowed', 'Nicht erlaubt'],
+  'error.notFound': ['Not found', 'Nicht gefunden'],
+  'error.serverError': [
+    'Something went wrong on the server',
+    'Auf dem Server ist etwas schiefgelaufen',
+  ],
+  'error.unknownEndpoint': ['Unknown API endpoint', 'Unbekannter API-Endpunkt'],
+
+  'error.wrongPassword': ['That is not your password', 'Das ist nicht dein Passwort'],
+  'error.chooseHousehold': ['Choose a household first', 'Wähle zuerst einen Haushalt'],
+  'error.ownerOnly': [
+    'Only the household owner can do this',
+    'Das kann nur der Eigentümer des Haushalts',
+  ],
+  'error.confirmFirst': [
+    'Confirm your email address first',
+    'Bestätige zuerst deine E-Mail-Adresse',
+  ],
+
+  'error.signInFailed': [
+    'Incorrect email or password',
+    'E-Mail-Adresse oder Passwort stimmt nicht',
+  ],
+  'error.emailTaken': [
+    'An account with that email already exists',
+    'Mit dieser E-Mail-Adresse gibt es bereits ein Konto',
+  ],
+  'error.wrongCurrentPassword': [
+    'That is not your current password',
+    'Das ist nicht dein aktuelles Passwort',
+  ],
+  'error.verifyLinkBad': [
+    'This confirmation link is invalid or has expired',
+    'Dieser Bestätigungslink ist ungültig oder abgelaufen',
+  ],
+  'error.alreadyConfirmed': [
+    'That address is already confirmed',
+    'Diese Adresse ist bereits bestätigt',
+  ],
+  'error.resetLinkBad': [
+    'This reset link is invalid or has expired',
+    'Dieser Link zum Zurücksetzen ist ungültig oder abgelaufen',
+  ],
+  'error.cannotSendEmail': [
+    'This site cannot send email, so it cannot reset a password by itself. Ask a household owner to send you a reset link.',
+    'Diese Seite kann keine E-Mails versenden und daher kein Passwort selbst zurücksetzen. Bitte einen Eigentümer des Haushalts, dir einen Link zum Zurücksetzen zu schicken.',
+  ],
+
+  'error.inviteLinkBad': [
+    'This invite link is invalid or has expired',
+    'Dieser Einladungslink ist ungültig oder abgelaufen',
+  ],
+  'error.inviteForOther': [
+    'This invite was issued for {email}',
+    'Diese Einladung wurde für {email} ausgestellt',
+  ],
+  'error.inviteNotFound': ['That invite does not exist', 'Diese Einladung gibt es nicht'],
+  'error.alreadyMember': [
+    '{name} is already in this household — no invite needed.',
+    '{name} ist bereits in diesem Haushalt — es braucht keine Einladung.',
+  ],
+  'error.alreadyInHousehold': [
+    'You are already in that household',
+    'Du bist bereits in diesem Haushalt',
+  ],
+
+  'error.householdNotFound': ['That household does not exist', 'Diesen Haushalt gibt es nicht'],
+  'error.memberNotFound': ['That member does not exist', 'Dieses Mitglied gibt es nicht'],
+  'error.removeSelf': [
+    'You cannot remove yourself from the household',
+    'Du kannst dich nicht selbst aus dem Haushalt entfernen',
+  ],
+  'error.ownRole': [
+    'You cannot change your own role — ask another owner',
+    'Du kannst deine eigene Rolle nicht ändern — bitte einen anderen Eigentümer darum',
+  ],
+  'error.leaveLastPerson': [
+    'You are the only person in "{household}", so there would be nobody left to reach it. Delete the household instead, from the Danger zone below.',
+    'Du bist die einzige Person in „{household}“ — danach käme niemand mehr an den Haushalt heran. Lösche ihn stattdessen unten in der Gefahrenzone.',
+  ],
+  'error.leaveSoleOwner': [
+    'You are the only owner of "{household}". Make someone else an owner first.',
+    'Du bist der einzige Eigentümer von „{household}“. Mach zuerst jemand anderen zum Eigentümer.',
+  ],
+  'error.strandedOwner': [
+    'You are the only owner of {households}. Make someone else an owner there first, or delete the household itself.',
+    'Du bist der einzige Eigentümer von {households}. Mach dort zuerst jemand anderen zum Eigentümer, oder lösche den Haushalt selbst.',
+  ],
+  'error.ownerRecoveryOff': [
+    'Anyone locked out can reset their own password from the sign-in page — "Forgotten your password?". Owner-issued links are only used where this site cannot send email.',
+    'Wer ausgesperrt ist, kann das Passwort selbst über die Anmeldeseite zurücksetzen — „Passwort vergessen?“. Von Eigentümern ausgestellte Links gibt es nur dort, wo diese Seite keine E-Mails versenden kann.',
+  ],
+
+  'error.expenseNotFound': ['That expense does not exist', 'Diese Ausgabe gibt es nicht'],
+  'error.recurringNotFound': [
+    'That recurring expense does not exist',
+    'Diese wiederkehrende Ausgabe gibt es nicht',
+  ],
+  'error.categoryNotFound': ['That category does not exist', 'Diese Kategorie gibt es nicht'],
+  'error.categoryNameTaken': [
+    'A category with that name already exists',
+    'Eine Kategorie mit diesem Namen gibt es schon',
+  ],
+  'error.unknownCategory': ['Unknown category', 'Unbekannte Kategorie'],
+  'error.unknownMember': ['Unknown household member', 'Unbekanntes Haushaltsmitglied'],
+  'error.monthFormat': [
+    'month must be in YYYY-MM format',
+    'Der Monat muss im Format JJJJ-MM angegeben werden',
+  ],
+  'error.rangeOrder': [
+    'from must not be after to',
+    'Der Anfang darf nicht nach dem Ende liegen',
+  ],
+  'error.rangeTooLong': [
+    'Range must be {months} months or fewer',
+    'Der Zeitraum darf höchstens {months} Monate umfassen',
+  ],
+
+  'error.listNotFound': ['That shopping list does not exist', 'Diese Einkaufsliste gibt es nicht'],
+  'error.itemNotFound': ['That item does not exist', 'Diesen Eintrag gibt es nicht'],
+  'error.shareInactive': [
+    'This shopping list link is no longer active',
+    'Dieser Link zur Einkaufsliste ist nicht mehr aktiv',
+  ],
+  'error.shareViewOnly': [
+    'This list is shared as view-only',
+    'Diese Liste ist nur zum Ansehen freigegeben',
+  ],
+
   // ----------------------------------------------------------- statistics
   'stats.title': ['Statistics', 'Statistik'],
   'stats.count_one': ['{count} expense · {range}', '{count} Ausgabe · {range}'],

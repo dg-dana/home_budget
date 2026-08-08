@@ -50,7 +50,7 @@ categoriesRouter.post(
          VALUES (?, ?, ?, ?, ?, ?)`,
       ).run(id, user.householdId, input.name, input.color, toCents(input.monthlyBudget), nowIso());
     } catch (err) {
-      if (isUniqueViolation(err)) throw conflict('A category with that name already exists');
+      if (isUniqueViolation(err)) throw conflict('A category with that name already exists', 'error.categoryNameTaken');
       throw err;
     }
     res.status(201).json(db.prepare('SELECT * FROM categories WHERE id = ?').get(id));
@@ -69,9 +69,9 @@ categoriesRouter.put(
            WHERE id = ? AND household_id = ?`,
         )
         .run(input.name, input.color, toCents(input.monthlyBudget), req.params.id, user.householdId);
-      if (result.changes === 0) throw notFound('That category does not exist');
+      if (result.changes === 0) throw notFound('That category does not exist', 'error.categoryNotFound');
     } catch (err) {
-      if (isUniqueViolation(err)) throw conflict('A category with that name already exists');
+      if (isUniqueViolation(err)) throw conflict('A category with that name already exists', 'error.categoryNameTaken');
       throw err;
     }
     res.json(db.prepare('SELECT * FROM categories WHERE id = ?').get(req.params.id));
@@ -86,7 +86,7 @@ categoriesRouter.delete(
     const result = db
       .prepare('DELETE FROM categories WHERE id = ? AND household_id = ?')
       .run(req.params.id, user.householdId);
-    if (result.changes === 0) throw notFound('That category does not exist');
+    if (result.changes === 0) throw notFound('That category does not exist', 'error.categoryNotFound');
     res.status(204).end();
   }),
 );

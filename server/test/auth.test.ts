@@ -297,3 +297,53 @@ describe('invites', () => {
     expect((await createClient().get('/api/auth/invite/nope')).status).toBe(400);
   });
 });
+
+describe('refusals carry a code the frontend can translate', () => {
+  beforeAll(async () => {
+    await startServer({ enableRateLimits: false });
+  });
+  afterAll(stopServer);
+  beforeEach(() => resetDatabase());
+
+  it('names the reason, alongside the English sentence', async () => {
+    const client = createClient();
+    const refused = await client.post('/api/auth/login', {
+      email: 'nobody@example.test',
+      password: 'password123',
+    });
+
+    expect(refused.status).toBe(401);
+    // The sentence is the contract and stays English — it is what a curl and a
+    // log line have to go on. The code is what the page translates.
+    expect(refused.body.error).toBe('Incorrect email or password');
+    expect(refused.body.code).toBe('error.signInFailed');
+  });
+
+  it('sends the values a message interpolates, rather than a built sentence', async () => {
+    const owner = await registerHousehold({ householdName: 'The Flat' });
+    const refused = await owner.client.post('/api/household/invites', {
+      email: owner.email,
+      role: 'member',
+    });
+
+    expect(refused.status).toBe(409);
+    expect(refused.body.code).toBe('error.alreadyMember');
+    // A sentence assembled on the server could only ever have been English.
+    expect(refused.body.vars).toEqual({ name: 'Owner' });
+  });
+
+  it('leaves schema failures uncoded, so the field detail survives', async () => {
+    // Unreachable through the interface — the forms carry the same rules the
+    // schemas do — and the field name is worth more there than a translation
+    // of "check that form".
+    const client = createClient();
+    const refused = await client.post('/api/auth/register', {
+      email: 'not-an-email',
+      password: 'x',
+    });
+
+    expect(refused.status).toBe(400);
+    expect(refused.body.code).toBeUndefined();
+    expect(refused.body.error).toContain('email');
+  });
+});

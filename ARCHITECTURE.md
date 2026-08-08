@@ -381,6 +381,7 @@ so the UI can badge them.
 - `notifications.ts` — the one place that decides how a message travels: Resend when configured, the on-screen link when not (§4.1). Every caller is ignorant of both. It is also where a notice is **composed in the recipient's language** (§4.2), from `notificationStrings.ts`.
 - `notificationStrings.ts` — every word the app sends, in both languages, one entry per string (§4.2).
 - `http.ts` — `HttpError` + status helpers, `asyncHandler`, `parseBody`, error middleware.
+- `errorCodes.ts` — the catalogue of refusals the API can return, as codes the frontend translates (§8, "Refusals").
 - `rateLimit.ts` — in-process fixed-window limiter, keyed by client IP unless the caller supplies a `key` (recovery is counted per address, §13).
 - `backup.ts` — consistent snapshots via SQLite's online backup API.
 - `shoppingItems.ts` — **item operations shared by both the member and guest routes.** Both paths call the same functions with a different `actorName`, so guest and member edits can never diverge in behaviour.
@@ -439,9 +440,35 @@ different questions. Keep them apart rather than merging them.
 - It needed no migration and no new table: it is a different question asked of
   the rows that were already there.
 
+### Refusals
+
+A refusal is UI text, and the UI is bilingual — so the API sends **a code beside
+the sentence** rather than only a sentence (`errorCodes.ts`).
+
+- **The English message stays, and stays the contract.** It is what a `curl`, a
+  log line and a client that has never heard of codes have to go on, and it is
+  still the `error` field it always was. `code` and `vars` are additive.
+- **The frontend translates the code and falls back to the message.** An unknown
+  code — an older build against a newer server — shows the English rather than
+  nothing (`message()` in `web/src/i18n.tsx`). That fallback is what makes
+  partial coverage safe, and it is also what would let a gap go unnoticed, which
+  is why there is a test.
+- **Interpolated values travel as `vars`, never baked into the sentence**, for
+  exactly the reason notices hand over values rather than phrases (§4.2). A
+  message built on the server could only ever be English.
+- **`errorCodes.test.ts` reads `web/src/strings.ts`** and fails if a code has no
+  entry, or an entry has no code. TypeScript cannot span the two packages — the
+  code is a string on the wire — so this is the only thing holding the halves
+  together.
+- **Zod failures deliberately carry no code.** They name a field and say what is
+  wrong with it, which beats a translated "check that form", and every one of
+  them is unreachable through the interface anyway: the forms carry the same
+  `required`, `minLength` and `maxLength` the schemas do. What reaches that path
+  is a script or a stale client.
+
 ### Conventions to follow
 
-- Throw `HttpError` (or `badRequest`/`notFound`/`forbidden`/…) from anywhere; the error middleware turns it into JSON. Do not hand-roll `res.status(...).json({error})`.
+- Throw `HttpError` (or `badRequest`/`notFound`/`forbidden`/…) from anywhere; the error middleware turns it into JSON. Do not hand-roll `res.status(...).json({error})`. Give it an **`ErrorCode`** unless it is a Zod failure — see above.
 - Wrap every handler in `asyncHandler` — including sync ones, for uniformity.
 - Validate all input with a Zod schema through `parseBody`. `parseBody` is generic over the schema so `.default()` resolves to the *output* type.
 - Multi-statement writes go in `db.transaction(...)` (see register and join).
@@ -610,9 +637,10 @@ Every screen reads in **English or German**, chosen by whoever is looking at it.
 - **Emails read the same column** (§4.2), which is what stopped there being two
   answers to "what language is this person". `users.language` decides both what
   the interface says and what the post says.
-- **API error messages are still English**, in both languages — the UI prints
-  what the server returns verbatim, so a German page can answer a bad password
-  in English (§14).
+- **Refusals from the API are translated too** (§8, "Refusals"). The server
+  sends a code beside its English sentence and the page renders whichever it can
+  — which was the last thing in the app that spoke English regardless of who was
+  reading.
 - Two things the browser decides and the app cannot: `<input type="date">` and
   `<input type="month">` render in the **browser's** UI language, not the page's.
   A German page on an English browser shows `08/07/2026` in the date field. The
@@ -743,7 +771,7 @@ Two suites, run together with `npm run test:all`.
 
 ### Server integration suite — Vitest, `server/test/`
 
-- 249 tests, run with `npm test` from the repo root.
+- 255 tests, run with `npm test` from the repo root.
 - They are **integration tests over real HTTP**, not unit tests: each file boots the actual app on an ephemeral port and drives it with a cookie-aware client. There is no mocking of the database, the router or the session.
 - `test/setup.ts` runs before any application module is imported and points `DATABASE_PATH` at a unique temp file. Vitest gives each test file its own module registry, so **every test file gets its own SQLite database** and files can run in parallel.
 - `resetDatabase()` truncates every table in `beforeEach`.
@@ -766,11 +794,12 @@ Two suites, run together with `npm run test:all`.
 - `forgotPassword.test.ts` — the other half of that: a provider **is** configured, and asking for your own link works end to end from the emailed message rather than from the database. The two that matter are indistinguishability (an address with no account gets the same status, the same body and no mail) and that the token never appears in the response; then retiring earlier links of either kind, address normalisation, an unconfirmed address, an account with no household, that the owner-issued route is refused here (for a member and for the owner's own account alike) and that `ownerRecovery` says so, and — in a second `describe`, the one place in the suite that runs with `enableRateLimits: true` — the five-an-hour per-address budget, with a bystander's address proving the bucket is not the IP.
 - `compression.test.ts` — measures **raw wire bytes** with `node:http`, because `fetch` transparently decompresses and would compare a number with itself.
 - `notificationsSending.test.ts` — the other half: a provider **is** configured, and every route that changes a household has to reach the right people and nobody else — joins, removals, role changes, renames, both deletions, password changes and invites. It also holds the **language** cases (§4.2): one household with an English and a German member hearing the same rename in two languages, a sign-up confirmed in the language it was made in, a client that says nothing still getting English, an account changing its mind, and the two rules for an invited address. Only calls to the provider are intercepted; requests to the app are real HTTP. The environment is set before `config.ts` loads, which is what the file's top-level `await import` is for.
+- `errorCodes.test.ts` — the only test that reads across the workspace boundary: every code the API can return has a sentence in `web/src/strings.ts`, and every `error.…` entry there has a code behind it. Nothing else can catch a refusal that ships untranslated, because the frontend falls back to English rather than failing.
 - `notifications.test.ts` — email (§4.1) with `fetch` stubbed, including that a notice is composed in the recipient's language with the link appended unchanged (§4.2),, so the suite never touches a provider: nothing sent and nothing claimed when no key is configured, the exact request made when one is, the address and link base derived from `DOMAIN`, a relative link refusing to go out without `APP_URL`, and a refusal, a network failure and an addressless invite all degrading to the link rather than throwing. `config.ts` reads the environment once at import, so each case sets its variables behind `vi.resetModules()`.
 
 ### Browser tests — Playwright, `e2e/`
 
-- 26 tests, run with `npm run test:e2e`. Config is `playwright.config.ts` at the repo root.
+- 27 tests, run with `npm run test:e2e`. Config is `playwright.config.ts` at the repo root.
 - **Four areas: the guest flow, the statistics page, multiple households and the language switch.** The guest flow is the riskiest path — the one surface reachable without an account — and was the only coverage for a long time. (The theme test lives there because the toggle is on the guest header too.)
 - `statistics.spec.ts` exists because **every bug that page has had was invisible to the server suite**: a fold bucket that borrowed a real category's name, a one-month range drawing a lone dot, a stale response overwriting a newer one. Those are questions about what is on the screen. It reaches the page through the header link, never a direct URL — a page nobody can navigate to is a page nobody has.
 - `seedStatsHousehold()` builds a household through the API, giving **each joining member its own request context**: joining sets a session cookie, and a shared jar would sign the owner out halfway through.
@@ -799,7 +828,7 @@ What it asserts: a member creates and shares a list through the UI; a guest with
 
 ### Both suites were verified by breaking the code
 
-Fifty-two deliberate regressions were introduced, and each was caught by a failing test:
+Fifty-six deliberate regressions were introduced, and each was caught by a failing test:
 
 1. Removing the `household_id` filter from the expenses list query → `isolation` failed.
 2. Adding `householdId` to the guest share response → `share` failed.
@@ -853,6 +882,10 @@ Fifty-two deliberate regressions were introduced, and each was caught by a faili
 50. Dropping the write-back half → `language` failed twice, the account never learning what was chosen on the device.
 51. Reverting `useTheme()` to a hook holding its own state → `language` failed, the toggle and the adopter each moving a private copy and neither seeing the other. The subtlest of the fifty-two, and invisible until there were two callers.
 52. Making `PUT /auth/preferences` ignore the theme it was sent → `accounts` failed, half of one save silently dropped.
+53. Renaming one code in the web dictionary → `errorCodes` failed from both directions at once: a code with no sentence, and a sentence with no code.
+54. Dropping `code` from the error middleware → `auth` and the `language` browser test failed, every refusal back to English for everybody.
+55. Hoisting the "show the server's sentence" branch above the translation in `message()` → the `language` browser test failed, the German page answering a bad password in English.
+56. Baking an interpolated name into the sentence instead of sending it as `vars` → `auth` failed, the one thing that makes a message with a value in it translatable at all.
 
 The statistics suite also earned its place on the way in: the one-month test failed against the unguarded fetch, which is how the stale-response race in §9.2 was found.
 
@@ -936,12 +969,13 @@ Honest list — these are real, and none is currently blocking.
 - **Self-service recovery needs a mail provider, so on an unconfigured deployment there is none.** `POST /auth/forgot` refuses with a 503 pointing at the household owner, since the alternative — showing the link the way every other flow does — would let anybody into any account by typing its address. Local runs and the suite therefore exercise it only with `RESEND_API_KEY` set.
 - **Nothing proves an address on an unconfigured deployment.** Without `RESEND_API_KEY` the confirmation link is handed straight to whoever registered, so it is a step in the flow rather than a check. That is the right trade for the suite and for local work, but it means "confirmed" only means "verified" where a provider is actually configured.
 - **An owner can still reach any account in their household on a deployment with no mail provider.** This was the general case and is now the exception: with email configured the route is refused (§4). Where it is not, an owner minting a link for somebody who belongs to households they have never heard of remains possible, because the alternative is a locked-out member with no way back in. Removing someone retires their outstanding links (§3), which closes the worst of it. The real fix is configuring email, which is one secret.
-- **API error messages are still English in both languages.** The UI prints
-  what the server returns verbatim, so a German page can answer a bad password
-  with an English sentence. Fixing it means the API returning **codes** the
-  frontend translates rather than sentences it prints — which is a change to
-  every `badRequest('…')` in the codebase and to how the frontend renders a
-  failure, not a dictionary entry. Emails no longer have this problem (§4.2).
+- **Schema failures answer in English, in both languages.** Everything else the
+  API refuses now carries a code the page translates (§8, "Refusals"), but a Zod
+  failure deliberately does not: it names a field, and that beats a translated
+  generality. It is only reachable by a script or a stale client, since the forms
+  carry the same constraints the schemas do — but "only reachable" is a claim
+  about today's forms, and a new form that forgets a `maxLength` would quietly
+  make it reachable.
 - **An account has one language and one theme, and they are the last ones
   chosen on any signed-in device** (§9.1b). Somebody who wants German on their
   phone and English on a shared laptop cannot have both any more; whichever they

@@ -35,7 +35,7 @@ export function getItem(listId: string, itemId: string): ShoppingItemRow {
   const row = db
     .prepare('SELECT * FROM shopping_items WHERE id = ? AND list_id = ?')
     .get(itemId, listId) as ShoppingItemRow | undefined;
-  if (!row) throw notFound('That item does not exist');
+  if (!row) throw notFound('That item does not exist', 'error.itemNotFound');
   return row;
 }
 
@@ -83,7 +83,7 @@ export function deleteItem(listId: string, itemId: string) {
   const result = db
     .prepare('DELETE FROM shopping_items WHERE id = ? AND list_id = ?')
     .run(itemId, listId);
-  if (result.changes === 0) throw notFound('That item does not exist');
+  if (result.changes === 0) throw notFound('That item does not exist', 'error.itemNotFound');
 }
 
 /** Clears everything already in the basket, leaving the outstanding items. */

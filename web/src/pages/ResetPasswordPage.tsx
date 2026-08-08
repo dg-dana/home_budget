@@ -12,7 +12,7 @@ import AuthPage from '../components/AuthPage';
 export default function ResetPasswordPage() {
   const { token = '' } = useParams();
   const { setSession } = useSession();
-  const { t, tx } = useI18n();
+  const { t, tx, message } = useI18n();
   const navigate = useNavigate();
 
   const [account, setAccount] = useState<{ email: string } | null>(null);
@@ -26,7 +26,7 @@ export default function ResetPasswordPage() {
     api
       .get<{ email: string }>(`/auth/reset/${encodeURIComponent(token)}`)
       .then(setAccount)
-      .catch((err: Error) => setLoadError(err.message));
+      .catch((err: unknown) => setLoadError(message(err, 'reset.failed')));
   }, [token]);
 
   const handleSubmit = async (event: React.FormEvent) => {
@@ -42,7 +42,7 @@ export default function ResetPasswordPage() {
       setSession(restored);
       navigate(restored.household ? '/' : '/households', { replace: true });
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('reset.failed'));
+      setError(message(err, 'reset.failed'));
     } finally {
       setBusy(false);
     }

@@ -32,7 +32,7 @@ function sharedList(token: string): ShoppingListRow {
   const row = db
     .prepare('SELECT * FROM shopping_lists WHERE share_token = ?')
     .get(token) as ShoppingListRow | undefined;
-  if (!row) throw notFound('This shopping list link is no longer active');
+  if (!row) throw notFound('This shopping list link is no longer active', 'error.shareInactive');
   return row;
 }
 
@@ -40,7 +40,7 @@ function sharedList(token: string): ShoppingListRow {
 function editableList(token: string): ShoppingListRow {
   const list = sharedList(token);
   if (list.share_can_edit !== 1) {
-    throw forbidden('This list is shared as view-only');
+    throw forbidden('This list is shared as view-only', 'error.shareViewOnly');
   }
   return list;
 }

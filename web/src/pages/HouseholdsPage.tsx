@@ -17,7 +17,7 @@ const CURRENCIES = ['USD', 'EUR', 'GBP', 'ILS', 'CAD', 'AUD', 'CHF', 'SEK', 'PLN
  */
 export default function HouseholdsPage() {
   const { user, households, switchHousehold, refresh, signOut } = useSession();
-  const { t, tx, plural } = useI18n();
+  const { t, tx, plural, message } = useI18n();
   const navigate = useNavigate();
 
   const [form, setForm] = useState({ name: '', currency: 'USD', displayName: '' });
@@ -55,7 +55,7 @@ export default function HouseholdsPage() {
       await refresh();
       navigate('/', { replace: true });
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('join.failed'));
+      setError(message(err, 'join.failed'));
       await loadInvitations().catch(() => {});
     } finally {
       setBusy(false);
@@ -68,7 +68,7 @@ export default function HouseholdsPage() {
       await switchHousehold(id);
       navigate('/', { replace: true });
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('households.openFailed'));
+      setError(message(err, 'households.openFailed'));
     }
   };
 
@@ -83,7 +83,7 @@ export default function HouseholdsPage() {
       setForm({ name: '', currency: 'USD', displayName: '' });
       setCreating(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('households.createFailed'));
+      setError(message(err, 'households.createFailed'));
     } finally {
       setBusy(false);
     }
@@ -113,7 +113,7 @@ export default function HouseholdsPage() {
     } catch (err) {
       // The server refuses while you are the only owner of a household with
       // other people in it, and names which — that message is the useful one.
-      setError(err instanceof Error ? err.message : t('households.deleteFailed'));
+      setError(message(err, 'households.deleteFailed'));
     } finally {
       setBusy(false);
     }
@@ -155,7 +155,7 @@ export default function HouseholdsPage() {
                 className="button secondary"
                 onClick={() => {
                   handleResend().catch((err: unknown) =>
-                    setError(err instanceof Error ? err.message : t('households.sendLinkFailed')),
+                    setError(message(err, 'households.sendLinkFailed')),
                   );
                 }}
               >

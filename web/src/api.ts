@@ -1,10 +1,21 @@
 import type { Language } from './language';
 import type { Theme } from './theme';
 
+/**
+ * A refusal from the API.
+ *
+ * `message` is the server's English sentence and is always present. `code` is
+ * what lets the page say the same thing in the reader's language, and `vars`
+ * carries the values it interpolates. Both are optional: a refusal with no code
+ * — or with one this build has never heard of — falls back to the English
+ * sentence, which is what shipped before any of this and is never nothing.
+ */
 export class ApiError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    readonly code?: string,
+    readonly vars?: Record<string, string>,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -25,11 +36,17 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   const payload = text ? (JSON.parse(text) as unknown) : null;
 
   if (!response.ok) {
+    const body = (payload ?? {}) as { error?: unknown; code?: unknown; vars?: unknown };
     const message =
-      payload && typeof payload === 'object' && 'error' in payload
-        ? String((payload as { error: unknown }).error)
-        : `Request failed (${response.status})`;
-    throw new ApiError(response.status, message);
+      'error' in body ? String(body.error) : `Request failed (${response.status})`;
+    throw new ApiError(
+      response.status,
+      message,
+      typeof body.code === 'string' ? body.code : undefined,
+      typeof body.vars === 'object' && body.vars !== null
+        ? (body.vars as Record<string, string>)
+        : undefined,
+    );
   }
   return payload as T;
 }

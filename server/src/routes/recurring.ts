@@ -40,7 +40,9 @@ function assertOwned(table: 'categories' | 'users', id: string | null | undefine
           .prepare('SELECT user_id FROM memberships WHERE user_id = ? AND household_id = ?')
           .get(id, householdId);
   if (!row) {
-    throw badRequest(table === 'categories' ? 'Unknown category' : 'Unknown household member');
+    throw table === 'categories'
+      ? badRequest('Unknown category', 'error.unknownCategory')
+      : badRequest('Unknown household member', 'error.unknownMember');
   }
 }
 
@@ -48,7 +50,7 @@ function ownedRule(id: string, householdId: string): RecurringExpenseRow {
   const row = db
     .prepare('SELECT * FROM recurring_expenses WHERE id = ? AND household_id = ?')
     .get(id, householdId) as RecurringExpenseRow | undefined;
-  if (!row) throw notFound('That recurring expense does not exist');
+  if (!row) throw notFound('That recurring expense does not exist', 'error.recurringNotFound');
   return row;
 }
 

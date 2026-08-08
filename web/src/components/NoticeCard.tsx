@@ -23,7 +23,7 @@ export default function NoticeCard({
   /** Issues a fresh notice. Offered only once something was actually sent. */
   onResend?: () => Promise<void>;
 }) {
-  const { t, tx } = useI18n();
+  const { t, tx, message } = useI18n();
   const [copied, setCopied] = useState(false);
   const [resending, setResending] = useState(false);
   const [resent, setResent] = useState(false);
@@ -41,7 +41,7 @@ export default function NoticeCard({
       await onResend!();
       setResent(true);
     } catch (err) {
-      setResendError(err instanceof Error ? err.message : t('notice.resendFailed'));
+      setResendError(message(err, 'notice.resendFailed'));
     } finally {
       setResending(false);
     }

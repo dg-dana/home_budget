@@ -20,7 +20,7 @@ const GUEST_NAME_KEY = 'home-budget:guest-name';
  */
 export default function SharedListPage() {
   const { token = '' } = useParams();
-  const { t } = useI18n();
+  const { t, message } = useI18n();
 
   const [view, setView] = useState<SharedListView | null>(null);
   const [guestName, setGuestName] = useState(() => localStorage.getItem(GUEST_NAME_KEY) ?? '');
@@ -34,7 +34,7 @@ export default function SharedListPage() {
       api
         .get<SharedListView>(`/share/${encodeURIComponent(token)}`)
         .then(setView)
-        .catch((err: Error) => setLoadError(err.message)),
+        .catch((err: unknown) => setLoadError(message(err, 'share.linkNotActive'))),
     [token],
   );
 
@@ -51,7 +51,7 @@ export default function SharedListPage() {
       await action();
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('common.somethingWrong'));
+      setError(message(err, 'common.somethingWrong'));
     }
   };
 
