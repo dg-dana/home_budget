@@ -3,15 +3,15 @@
 The running state of this project. **Updated after every step** — see the
 "Working agreement" in `CLAUDE.md`.
 
-Last updated: 2026-08-07 · live: deploy run #33 (`5cd346e`)
+Last updated: 2026-08-08 · live: deploy run #34 (`1dd719f`)
 
 ---
 
-## Next: deploy German emails
+## Live: German emails
 
-**Merged but not deployed.** The app now writes to people in German as well as
-showing them German. Deploy run #33 shipped the interface; this is the server
-half, and it needs a run of its own.
+**Deployed on run #34** (`1dd719f`) — all 17 steps green, "Verify the public
+URL works" included, and migration `005` ran as the container came up. The app
+now writes to people in German as well as showing them German.
 
 The thing to understand about it: **reading and writing are two settings, and
 they had to be.** What the browser renders in is per device — it works signed
@@ -38,13 +38,14 @@ Two rules worth keeping:
   language, since they are the only person who knows who they are writing to.
 
 Every account that predates this defaults to English — exactly what they have
-been receiving all along. A deploy must not start writing to people in a
-language they did not pick.
+been receiving all along. Nobody has started getting German they did not pick.
 
 Five browser and server regressions were introduced and watched fail:
 recipients all reported as English, registration ignoring the language it was
 given, an invite overruling an existing account's choice, the route accepting
 any string, and the frontend never posting the change at all.
+
+**Nobody has watched a German message land in a real inbox yet** — see below.
 
 **Still English in both languages: API error messages.** The UI prints what the
 server returns verbatim, so a German page can answer a bad password with an
@@ -61,9 +62,10 @@ live domain by policy, so anything about the real site is yours.
 - [ ] **Say if the notices are too much or too little.** Wording and who hears
       what are both easy to change; what is hard is noticing later that nobody
       reads them. `ARCHITECTURE.md` §4.1 has the table.
-- [ ] **Deploy it**, then send yourself one German email to check it reads
-      right — a password reset is the quickest. Nobody has watched a German
-      message land in a real inbox yet.
+- [ ] **Send yourself one German email and check it reads right** — switch the
+      picker to DE while signed in, then use "Forgotten your password?" on the
+      sign-in page. That is the quickest round trip, and nobody has watched a
+      German message actually land in an inbox. (Live since run #34.)
 - [ ] **Check the rest of the live site on a phone.** The Household page was
       checked on run #25, leaving a household on run #26, and password recovery
       on runs #27–#28 — all look right. What runs #17–#24 shipped still has
@@ -113,7 +115,8 @@ live domain by policy, so anything about the real site is yours.
       `users.language` (migration `005`), set at registration and followed by
       `PUT /auth/language`; `notificationStrings.ts` as the server's dictionary;
       routes handing notices values rather than phrases. Five deliberate breaks
-      watched failing. (merged, **not yet deployed**)
+      watched failing. (PR #63, live on run #34, **no German message watched
+      arriving yet**)
 - [x] **English and German across the whole interface**, per device, on every
       screen including the guest's — dictionary in `web/src/strings.ts`, one
       entry per string with both languages; whole sentences rather than glued
