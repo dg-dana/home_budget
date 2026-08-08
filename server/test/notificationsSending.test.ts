@@ -62,6 +62,98 @@ afterEach(() => {
   sent = [];
 });
 
+/**
+ * The language a message goes out in is a property of **the person receiving
+ * it**, not of the request that caused it. These are the cases that prove it:
+ * one household, two languages, one action.
+ */
+describe('what language it goes out in', () => {
+  it('confirms a sign-up in the language the sign-up was made in', async () => {
+    const client = createClient();
+    const email = uniqueEmail('anmeldung');
+    const registered = await client.post('/api/auth/register', {
+      email,
+      password: 'password123',
+      language: 'de',
+    });
+
+    expect(registered.status).toBe(201);
+    expect(to(email)).toEqual(['Bestätige deine E-Mail-Adresse']);
+  });
+
+  it('is English when the client says nothing, which is every old build', async () => {
+    const client = createClient();
+    const email = uniqueEmail('silent');
+    await client.post('/api/auth/register', { email, password: 'password123' });
+
+    expect(to(email)).toEqual(['Confirm your email address']);
+  });
+
+  it('writes to each member of one household in their own language', async () => {
+    const owner = await registerHousehold({ householdName: 'The Flat' });
+    const english = await addMember(owner, 'Noa');
+    const german = await addMember(owner, 'Jonas', { language: 'de' });
+    sent = [];
+
+    // One action, three people, two languages. The owner did it, so hears
+    // nothing; the other two hear the same fact in different words.
+    const renamed = await owner.client.put('/api/household', {
+      name: 'The Old Flat',
+      currency: 'USD',
+    });
+    expect(renamed.status).toBe(200);
+
+    expect(to(english.email)).toEqual(['"The Flat" was changed']);
+    expect(to(german.email)).toEqual(['„The Flat“ wurde geändert']);
+    expect(to(owner.email)).toEqual([]);
+  });
+
+  it('follows the account when it changes its mind', async () => {
+    const owner = await registerHousehold();
+    const member = await addMember(owner, 'Noa');
+
+    const changed = await member.client.put('/api/auth/language', { language: 'de' });
+    expect(changed.status).toBe(204);
+    sent = [];
+
+    await owner.client.put(`/api/household/members/${member.userId}/role`, { role: 'owner' });
+
+    expect(to(member.email)).toEqual(['Du bist jetzt Eigentümer von „Test Household“']);
+  });
+
+  it('writes an invite in the inviting owner\'s language when the address is a stranger', async () => {
+    const owner = await registerHousehold({ householdName: 'Die Wohnung' });
+    await owner.client.put('/api/auth/language', { language: 'de' });
+    sent = [];
+
+    const stranger = uniqueEmail('fremd');
+    const invited = await owner.client.post('/api/household/invites', {
+      email: stranger,
+      role: 'member',
+    });
+    expect(invited.status).toBe(201);
+
+    // Nobody has an account at that address yet, so there is no stored choice
+    // to read. The owner is the one person who knows who they are writing to.
+    expect(to(stranger)).toEqual(['Tritt Die Wohnung bei Home Budget bei']);
+  });
+
+  it("prefers an existing account's own choice over the inviter's", async () => {
+    const owner = await registerHousehold({ householdName: 'Die Wohnung' });
+    await owner.client.put('/api/auth/language', { language: 'de' });
+    // Already has an account, and reads English. Their choice, not the owner's.
+    const existing = await registerAccount({ email: uniqueEmail('english') });
+    sent = [];
+
+    await owner.client.post('/api/household/invites', {
+      email: existing.email,
+      role: 'member',
+    });
+
+    expect(to(existing.email)).toEqual(['Join Die Wohnung on Home Budget']);
+  });
+});
+
 describe('who hears about what', () => {
   it('emails the confirmation link rather than only showing it', async () => {
     const client = createClient();

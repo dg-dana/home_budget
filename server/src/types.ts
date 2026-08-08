@@ -1,5 +1,8 @@
 export type Role = 'owner' | 'member';
 
+/** The languages the app writes in. Mirrors `web/src/language.ts`. */
+export type Language = 'en' | 'de';
+
 export interface HouseholdRow {
   id: string;
   name: string;
@@ -22,6 +25,12 @@ export interface UserRow {
   email_verified_at: string | null;
   /** Where a fresh sign-in lands. A convenience, never an access decision. */
   last_household_id: string | null;
+  /**
+   * What language to email this account in. Not what it *reads* the app in —
+   * that is per device and never leaves the browser — but the server has
+   * nobody to ask when it writes to somebody who is not making the request.
+   */
+  language: Language;
   created_at: string;
 }
 

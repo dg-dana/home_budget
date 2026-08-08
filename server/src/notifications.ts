@@ -21,6 +21,26 @@
  */
 
 import { config } from './config.js';
+import { line, type NoticeStringKey } from './notificationStrings.js';
+import type { Language } from './types.js';
+
+/**
+ * Who a notice is going to, and what language they read.
+ *
+ * The language travels with the address rather than being looked up here,
+ * because half of these messages go to people who are not making the request —
+ * an owner hearing that somebody joined is not holding the browser. It comes
+ * from `users.language`, gathered by `householdAddresses()` in `auth.ts`, so
+ * one household with an English and a German member gets two different emails
+ * out of one call.
+ */
+export interface Recipient {
+  email: string;
+  language: Language;
+}
+
+/** For an address with no account behind it — an invite to a stranger. */
+export const recipientAt = (email: string, language: Language): Recipient => ({ email, language });
 
 export type NoticeKind =
   | 'verify-email'
@@ -44,6 +64,8 @@ export type NoticeKind =
 export interface Notice {
   kind: NoticeKind;
   to: string;
+  /** Which language it went out in — what the API returns, and the UI shows. */
+  language: Language;
   subject: string;
   /** Present when the notice is an action the person has to take. */
   link?: string;
@@ -126,53 +148,60 @@ export async function deliver(notice: Draft): Promise<Notice> {
   return { ...notice, delivered: await send(notice) };
 }
 
-export function verifyEmailNotice(to: string, link: string): Promise<Notice> {
+/**
+ * One notice, composed in the recipient's language.
+ *
+ * Every builder below is this call with a different pair of dictionary keys —
+ * which is what stops the thirteenth message quietly growing a shape the other
+ * twelve do not have, and what makes "is this translated?" a question about
+ * `notificationStrings.ts` rather than about thirteen functions.
+ */
+function compose(
+  kind: NoticeKind,
+  to: Recipient,
+  subjectKey: NoticeStringKey,
+  bodyKey: NoticeStringKey,
+  vars: Record<string, string> = {},
+  link?: string,
+): Promise<Notice> {
   return deliver({
-    kind: 'verify-email',
-    to,
-    subject: 'Confirm your email address',
-    link,
-    body: 'Confirm your address to create or join a household. The link works once and expires in 24 hours.',
+    kind,
+    to: to.email,
+    language: to.language,
+    subject: line(subjectKey, to.language, vars),
+    body: line(bodyKey, to.language, vars),
+    ...(link === undefined ? {} : { link }),
   });
 }
 
-export function householdCreatedNotice(to: string, householdName: string): Promise<Notice> {
-  return deliver({
-    kind: 'household-created',
-    to,
-    subject: `You created ${householdName}`,
-    body: `"${householdName}" is ready. You are its owner, so you can invite the rest of the household from the Household page.`,
+export function verifyEmailNotice(to: Recipient, link: string): Promise<Notice> {
+  return compose('verify-email', to, 'verify.subject', 'verify.body', {}, link);
+}
+
+export function householdCreatedNotice(to: Recipient, household: string): Promise<Notice> {
+  return compose('household-created', to, 'householdCreated.subject', 'householdCreated.body', {
+    household,
   });
 }
 
 /**
  * An invite may carry no address — an owner can mint a link to hand over in
  * person. `deliver()` treats that as nothing to send, so the link is shown, as
- * it always was.
+ * it always was. Where there *is* an address and no account behind it yet, the
+ * language is the inviting owner's: they are the only person who knows who
+ * they are writing to.
  */
-export function inviteNotice(to: string, householdName: string, link: string): Promise<Notice> {
-  return deliver({
-    kind: 'invite',
-    to,
-    subject: `Join ${householdName} on Home Budget`,
-    link,
-    body: `You have been invited to join "${householdName}". Open the link to accept — it works once and expires in 14 days.`,
-  });
+export function inviteNotice(to: Recipient, household: string, link: string): Promise<Notice> {
+  return compose('invite', to, 'invite.subject', 'invite.body', { household }, link);
 }
 
-export function passwordResetNotice(to: string, link: string): Promise<Notice> {
-  return deliver({
-    kind: 'password-reset',
-    to,
-    subject: 'Reset your Home Budget password',
-    link,
-    body: 'Open the link to choose a new password. It works once, expires in 24 hours, and signs out every other device.',
-  });
+export function passwordResetNotice(to: Recipient, link: string): Promise<Notice> {
+  return compose('password-reset', to, 'passwordReset.subject', 'passwordReset.body', {}, link);
 }
 
 /**
  * Sends the same notice to several people at once — everyone in a household,
- * or its owners. Addresses are gathered by `householdAddresses()` in
+ * or its owners. Recipients are gathered by `householdAddresses()` in
  * `auth.ts`, and for anything that deletes rows they must be gathered
  * **before** the deletion.
  *
@@ -180,109 +209,106 @@ export function passwordResetNotice(to: string, link: string): Promise<Notice> {
  * people costs about what telling one does. Like every send, a failure is a
  * warning rather than an exception: nobody's account deletion fails because a
  * mail server was slow.
+ *
+ * Deduplication is by **address**, not by the whole recipient: one person is
+ * one message even if two rows disagree about their language.
  */
 export function notifyAll(
-  recipients: readonly string[],
-  build: (to: string) => Promise<Notice>,
+  recipients: readonly Recipient[],
+  build: (to: Recipient) => Promise<Notice>,
 ): Promise<Notice[]> {
-  const addresses = [...new Set(recipients.filter(Boolean))];
-  return Promise.all(addresses.map(build));
+  const seen = new Map<string, Recipient>();
+  for (const recipient of recipients) {
+    if (recipient.email && !seen.has(recipient.email)) seen.set(recipient.email, recipient);
+  }
+  return Promise.all([...seen.values()].map(build));
 }
 
 /** Somebody's password changed — the one message worth sending unprompted. */
-export function passwordChangedNotice(to: string, how: 'changed' | 'reset'): Promise<Notice> {
-  return deliver({
-    kind: 'password-changed',
-    to,
-    subject: 'Your Home Budget password was changed',
-    body:
-      how === 'reset'
-        ? 'Your password was just set using a recovery link, and every other device was signed out. If this was not you, change your password now — whoever holds that link can use it once.'
-        : 'Your password was just changed, and every other device was signed out. If this was not you, reset it now.',
-  });
+export function passwordChangedNotice(to: Recipient, how: 'changed' | 'reset'): Promise<Notice> {
+  return compose('password-changed', to, 'passwordChanged.subject', `passwordChanged.body.${how}`);
 }
 
-export function accountDeletedNotice(to: string): Promise<Notice> {
-  return deliver({
-    kind: 'account-deleted',
-    to,
-    subject: 'Your Home Budget account was deleted',
-    body: 'Your account, and your place in every household it belonged to, has been deleted. Expenses you had already recorded stay with those households, so nobody else\'s totals moved. There is no undo — signing up again starts from nothing.',
-  });
+export function accountDeletedNotice(to: Recipient): Promise<Notice> {
+  return compose('account-deleted', to, 'accountDeleted.subject', 'accountDeleted.body');
 }
 
-export function householdDeletedNotice(to: string, householdName: string): Promise<Notice> {
-  return deliver({
-    kind: 'household-deleted',
-    to,
-    subject: `"${householdName}" was deleted`,
-    body: `An owner deleted "${householdName}". Its expenses, budgets, recurring rules, shopping lists and share links are gone, and so is everyone's place in it. Accounts are untouched — anyone in another household still has it.`,
-  });
-}
-
-export function householdChangedNotice(
-  to: string,
-  householdName: string,
-  what: string,
-): Promise<Notice> {
-  return deliver({
-    kind: 'household-changed',
-    to,
-    subject: `"${householdName}" was changed`,
-    body: `An owner changed ${what}.`,
-  });
-}
-
-/** To the household's owners: somebody redeemed an invite. */
-export function memberJoinedNotice(
-  to: string,
-  householdName: string,
-  who: string,
-): Promise<Notice> {
-  return deliver({
-    kind: 'member-joined',
-    to,
-    subject: `${who} joined "${householdName}"`,
-    body: `${who} redeemed an invite and is now in "${householdName}". They can see and add expenses, budgets, recurring rules and shopping lists. If you did not expect this, remove them from the Household page.`,
+export function householdDeletedNotice(to: Recipient, household: string): Promise<Notice> {
+  return compose('household-deleted', to, 'householdDeleted.subject', 'householdDeleted.body', {
+    household,
   });
 }
 
 /**
- * Somebody is no longer in a household. `reason` is what makes one message do
- * for both ways out — being removed by an owner, and leaving by deleting the
- * account — since the household hears the same fact either way.
+ * What actually moved, rather than a sentence describing it.
+ *
+ * The route used to hand over a ready-made English phrase, which made the
+ * message untranslatable by construction. Passing the values means every
+ * combination is one whole entry in the dictionary — which is also the only way
+ * German puts the verb where German puts it.
  */
-export function memberRemovedNotice(
-  to: string,
-  householdName: string,
-  who: 'you' | string,
+export interface HouseholdChange {
+  oldName: string;
+  newName: string;
+  oldCurrency: string;
+  newCurrency: string;
+}
+
+export function householdChangedNotice(
+  to: Recipient,
+  change: HouseholdChange,
 ): Promise<Notice> {
-  const isSubject = who === 'you';
-  return deliver({
-    kind: 'member-removed',
+  const renamed = change.oldName !== change.newName;
+  const redenominated = change.oldCurrency !== change.newCurrency;
+  const body = renamed && redenominated ? 'both' : renamed ? 'name' : 'currency';
+  return compose(
+    'household-changed',
     to,
-    subject: isSubject ? `You were removed from "${householdName}"` : `${who} left "${householdName}"`,
-    body: isSubject
-      ? `An owner removed you from "${householdName}". You can no longer see it, and any recovery link outstanding for you has been retired. The expenses you recorded stay with the household. Your account and any other household you belong to are untouched.`
-      : `${who} is no longer in "${householdName}". The expenses they recorded stay, so nobody's totals moved.`,
+    'householdChanged.subject',
+    `householdChanged.body.${body}`,
+    { ...change, household: change.oldName },
+  );
+}
+
+/** To the household's owners: somebody redeemed an invite. */
+export function memberJoinedNotice(
+  to: Recipient,
+  household: string,
+  who: string,
+): Promise<Notice> {
+  return compose('member-joined', to, 'memberJoined.subject', 'memberJoined.body', {
+    household,
+    who,
   });
 }
 
+/**
+ * Somebody is no longer in a household. `who` is what makes one message do for
+ * both ways out — being removed by an owner, and leaving by deleting the
+ * account — since the household hears the same fact either way. `'you'` is the
+ * sentinel for writing to the person it happened to.
+ */
+export function memberRemovedNotice(
+  to: Recipient,
+  household: string,
+  who: 'you' | string,
+): Promise<Notice> {
+  const which = who === 'you' ? 'you' : 'other';
+  return compose(
+    'member-removed',
+    to,
+    `memberRemoved.subject.${which}`,
+    `memberRemoved.body.${which}`,
+    { household, who },
+  );
+}
+
 export function roleChangedNotice(
-  to: string,
-  householdName: string,
+  to: Recipient,
+  household: string,
   role: 'owner' | 'member',
 ): Promise<Notice> {
-  return deliver({
-    kind: 'role-changed',
-    to,
-    subject:
-      role === 'owner'
-        ? `You are now an owner of "${householdName}"`
-        : `You are no longer an owner of "${householdName}"`,
-    body:
-      role === 'owner'
-        ? `An owner made you an owner of "${householdName}". You can now invite and remove people, rename it, and delete it.`
-        : `An owner changed your role in "${householdName}" back to member. You keep full access to the money and the lists; what goes is inviting, removing, renaming and deleting.`,
+  return compose('role-changed', to, `roleChanged.subject.${role}`, `roleChanged.body.${role}`, {
+    household,
   });
 }

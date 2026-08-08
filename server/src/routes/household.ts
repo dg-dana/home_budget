@@ -10,6 +10,7 @@ import {
   newToken,
   nowIso,
   requireAuth,
+  recipient,
   requireHousehold,
   requireOwner,
 } from '../auth.js';
@@ -22,11 +23,34 @@ import {
   memberRemovedNotice,
   notifyAll,
   passwordResetNotice,
+  recipientAt,
   roleChangedNotice,
 } from '../notifications.js';
-import type { HouseholdRow, InviteRow, MembershipRow, UserRow } from '../types.js';
+import type { HouseholdRow, InviteRow, Language, MembershipRow, UserRow } from '../types.js';
 
 export const householdRouter = Router();
+
+/**
+ * What language to write an invite in.
+ *
+ * An invited address usually has no account yet, so there is nothing stored to
+ * read. Where there *is* an account — somebody who signed up first and is being
+ * added to a second household — that account's own choice wins, because they
+ * have made one. Otherwise the inviting owner's language is the best guess
+ * available: they are the one person who knows who they are writing to.
+ */
+function inviteeLanguage(email: string | undefined, inviter: { id: string }): Language {
+  const existing = email
+    ? (db.prepare('SELECT language FROM users WHERE email = ?').get(email) as
+        | Pick<UserRow, 'language'>
+        | undefined)
+    : undefined;
+  if (existing) return existing.language;
+  const owner = db
+    .prepare('SELECT language FROM users WHERE id = ?')
+    .get(inviter.id) as Pick<UserRow, 'language'>;
+  return owner.language;
+}
 
 // Everything here is about the household currently open, so a request that is
 // not about one has no meaning. `requireHousehold` is what lets every handler
@@ -79,14 +103,17 @@ householdRouter.put(
     // Only when something actually moved, and only to the people who did not
     // do it. Saving a form unchanged is not news, and the currency changes
     // what every figure on screen means.
-    const changes: string[] = [];
-    if (before.name !== input.name) changes.push(`the name from "${before.name}" to "${input.name}"`);
-    if (before.currency !== input.currency) {
-      changes.push(`the currency from ${before.currency} to ${input.currency}`);
-    }
-    if (changes.length > 0) {
+    // What moved, not a sentence about it: the notice builder composes the
+     // wording, because a phrase assembled here could only ever be English.
+    const change = {
+      oldName: before.name,
+      newName: input.name,
+      oldCurrency: before.currency,
+      newCurrency: input.currency,
+    };
+    if (change.oldName !== change.newName || change.oldCurrency !== change.newCurrency) {
       await notifyAll(householdAddresses(user.householdId, { except: user.id }), (to) =>
-        householdChangedNotice(to, before.name, changes.join(' and ')),
+        householdChangedNotice(to, change),
       );
     }
 
@@ -268,8 +295,8 @@ householdRouter.delete(
     if (!membership) throw notFound('That member does not exist');
 
     const removed = db
-      .prepare('SELECT email FROM users WHERE id = ?')
-      .get(membership.user_id) as Pick<UserRow, 'email'>;
+      .prepare('SELECT email, language FROM users WHERE id = ?')
+      .get(membership.user_id) as Pick<UserRow, 'email' | 'language'>;
     const household = db
       .prepare('SELECT name FROM households WHERE id = ?')
       .get(user.householdId) as Pick<HouseholdRow, 'name'>;
@@ -295,7 +322,7 @@ householdRouter.delete(
     // owners hear that the household changed shape. The owner who did it does
     // not need telling.
     await Promise.all([
-      memberRemovedNotice(removed.email, household.name, 'you'),
+      memberRemovedNotice(recipient(removed), household.name, 'you'),
       notifyAll(owners, (to) =>
         memberRemovedNotice(to, household.name, membership.display_name),
       ),
@@ -335,12 +362,12 @@ householdRouter.put(
 
     if (membership.role !== input.role) {
       const member = db
-        .prepare('SELECT email FROM users WHERE id = ?')
-        .get(membership.user_id) as Pick<UserRow, 'email'>;
+        .prepare('SELECT email, language FROM users WHERE id = ?')
+        .get(membership.user_id) as Pick<UserRow, 'email' | 'language'>;
       const household = db
         .prepare('SELECT name FROM households WHERE id = ?')
         .get(user.householdId) as Pick<HouseholdRow, 'name'>;
-      await roleChangedNotice(member.email, household.name, input.role);
+      await roleChangedNotice(recipient(member), household.name, input.role);
     }
 
     // Their next request picks this up: the membership is re-read every time
@@ -395,11 +422,13 @@ householdRouter.post(
     const user = currentUser(req);
     const member = db
       .prepare(
-        `SELECT users.id AS id, users.email AS email
+        `SELECT users.id AS id, users.email AS email, users.language AS language
          FROM memberships JOIN users ON users.id = memberships.user_id
          WHERE memberships.user_id = ? AND memberships.household_id = ?`,
       )
-      .get(req.params.id, user.householdId) as { id: string; email: string } | undefined;
+      .get(req.params.id, user.householdId) as
+      | { id: string; email: string; language: Language }
+      | undefined;
     if (!member) throw notFound('That member does not exist');
 
     // Shared with self-service recovery (`POST /auth/forgot`), so both kinds of
@@ -410,7 +439,7 @@ householdRouter.post(
     res.status(201).json({
       token,
       expires_at: expiresAt,
-      notice: await passwordResetNotice(member.email, `/reset/${token}`),
+      notice: await passwordResetNotice(recipient(member), `/reset/${token}`),
     });
   }),
 );
@@ -483,7 +512,14 @@ householdRouter.post(
       email: input.email || null,
       role: input.role,
       expires_at: expiresAt,
-      notice: await inviteNotice(input.email || '', household.name, `/join/${token}`),
+      // An invited address may have no account yet, so there is no stored
+      // language to read. The inviting owner's is the best guess available —
+      // they are the one person who knows who they are writing to.
+      notice: await inviteNotice(
+        recipientAt(input.email || '', inviteeLanguage(input.email, user)),
+        household.name,
+        `/join/${token}`,
+      ),
     });
   }),
 );

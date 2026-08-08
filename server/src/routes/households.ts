@@ -10,6 +10,7 @@ import {
   nowIso,
   requireAuth,
   requireVerifiedEmail,
+  recipient,
 } from '../auth.js';
 import { db } from '../db.js';
 import { asyncHandler, badRequest, conflict, notFound, parseBody } from '../http.js';
@@ -115,7 +116,7 @@ householdsRouter.post(
     issueSession(res, getUser(account.id), householdId);
     res.status(201).json({
       household: describe(householdId, 'owner', input.displayName),
-      notice: await householdCreatedNotice(account.email, input.name),
+      notice: await householdCreatedNotice(recipient(getUser(account.id)), input.name),
     });
   }),
 );

@@ -28,6 +28,9 @@ function acceptingFetch() {
 
 const payloadOf = (init: RequestInit) => JSON.parse(init.body as string);
 
+/** The recipient most of these cases are about: one address, reading English. */
+const EN = { email: 'someone@example.test', language: 'en' } as const;
+
 describe('notifications', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -40,7 +43,7 @@ describe('notifications', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     const { verifyEmailNotice } = await loadNotifications({ APP_URL: 'https://example.test' });
-    const notice = await verifyEmailNotice('someone@example.test', '/verify/tok');
+    const notice = await verifyEmailNotice(EN, '/verify/tok');
 
     expect(fetchMock).not.toHaveBeenCalled();
     expect(notice.delivered).toBe(false);
@@ -57,7 +60,7 @@ describe('notifications', () => {
       MAIL_FROM: 'Home Budget <noreply@example.test>',
       APP_URL: 'https://example.test',
     });
-    const notice = await verifyEmailNotice('someone@example.test', '/verify/tok');
+    const notice = await verifyEmailNotice(EN, '/verify/tok');
 
     expect(notice.delivered).toBe(true);
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -83,7 +86,7 @@ describe('notifications', () => {
       RESEND_API_KEY: 'test-key',
       DOMAIN: 'example.test',
     });
-    await verifyEmailNotice('someone@example.test', '/verify/tok');
+    await verifyEmailNotice(EN, '/verify/tok');
 
     const payload = payloadOf(fetchMock.mock.calls[0]![1]);
     expect(payload.from).toBe('Home Budget <noreply@example.test>');
@@ -98,10 +101,32 @@ describe('notifications', () => {
       RESEND_API_KEY: 'test-key',
       MAIL_FROM: 'Home Budget <noreply@example.test>',
     });
-    const notice = await verifyEmailNotice('someone@example.test', '/verify/tok');
+    const notice = await verifyEmailNotice(EN, '/verify/tok');
 
     expect(fetchMock).not.toHaveBeenCalled();
     expect(notice.delivered).toBe(false);
+  });
+
+  it('writes the message in the recipient\'s language, link and all', async () => {
+    const fetchMock = acceptingFetch();
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { verifyEmailNotice } = await loadNotifications({
+      RESEND_API_KEY: 'test-key',
+      DOMAIN: 'example.test',
+    });
+    const notice = await verifyEmailNotice(
+      { email: 'jemand@example.test', language: 'de' },
+      '/verify/tok',
+    );
+
+    const payload = payloadOf(fetchMock.mock.calls[0]![1]);
+    expect(payload.subject).toBe('Bestätige deine E-Mail-Adresse');
+    expect(payload.text).toContain('Bestätige deine Adresse');
+    // The link is appended the same way in either language — it is a URL, not
+    // a sentence, and `APP_URL` does not know about any of this.
+    expect(payload.text).toContain('https://example.test/verify/tok');
+    expect(notice.language).toBe('de');
   });
 
   it('has nobody to email when an invite carries no address', async () => {
@@ -112,7 +137,7 @@ describe('notifications', () => {
       RESEND_API_KEY: 'test-key',
       DOMAIN: 'example.test',
     });
-    const notice = await inviteNotice('', 'The Flat', '/join/tok');
+    const notice = await inviteNotice({ email: '', language: 'en' }, 'The Flat', '/join/tok');
 
     expect(fetchMock).not.toHaveBeenCalled();
     expect(notice.delivered).toBe(false);
@@ -127,7 +152,7 @@ describe('notifications', () => {
       RESEND_API_KEY: 'expired-key',
       DOMAIN: 'example.test',
     });
-    const notice = await passwordResetNotice('someone@example.test', '/reset/tok');
+    const notice = await passwordResetNotice(EN, '/reset/tok');
 
     expect(notice.delivered).toBe(false);
     expect(notice.link).toBe('/reset/tok');
@@ -149,7 +174,7 @@ describe('notifications', () => {
       RESEND_API_KEY: 'test-key',
       DOMAIN: 'example.test',
     });
-    const notice = await householdCreatedNotice('someone@example.test', 'The Flat');
+    const notice = await householdCreatedNotice(EN, 'The Flat');
 
     expect(notice.delivered).toBe(false);
     warn.mockRestore();

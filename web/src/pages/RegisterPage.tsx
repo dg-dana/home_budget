@@ -16,7 +16,7 @@ import NoticeCard from '../components/NoticeCard';
  */
 export default function RegisterPage() {
   const { refresh } = useSession();
-  const { t, tx } = useI18n();
+  const { t, tx, language } = useI18n();
   const navigate = useNavigate();
   const location = useLocation();
   // Someone who followed an invite link lands here via the sign-in page; keep
@@ -46,9 +46,12 @@ export default function RegisterPage() {
     setBusy(true);
     setError('');
     try {
+      // The language goes with the sign-up so the confirmation email — the
+      // very first thing this account receives — is already in the language
+      // they were reading when they typed their address.
       const created = await api.post<SessionPayload & { verification: Notice }>(
         '/auth/register',
-        form,
+        { ...form, language },
       );
       // Deliberately *not* setSession yet. The cookie is already set server
       // side, but telling the app it is signed in would let RedirectIfSignedIn

@@ -5,6 +5,7 @@ import type { RequestHandler } from 'express';
 import { config } from './config.js';
 import { db } from './db.js';
 import { badRequest, forbidden, unauthorized } from './http.js';
+import type { Recipient } from './notifications.js';
 import type { MembershipRow, SessionAccount, SessionUser, UserRow } from './types.js';
 
 const COOKIE_NAME = 'hb_session';
@@ -75,19 +76,28 @@ export const membershipsOf = (userId: string) =>
 export function householdAddresses(
   householdId: string,
   { ownersOnly = false, except }: { ownersOnly?: boolean; except?: string } = {},
-): string[] {
-  const rows = db
+): Recipient[] {
+  // The language comes back with the address rather than being looked up by
+  // the caller, because these are the people who are *not* holding a browser:
+  // there is nothing else to ask. One household with an English and a German
+  // member produces two differently worded emails out of one call.
+  return db
     .prepare(
-      `SELECT u.email FROM memberships m
+      `SELECT u.email, u.language FROM memberships m
        JOIN users u ON u.id = m.user_id
        WHERE m.household_id = ?
          AND (? = 0 OR m.role = 'owner')
          AND (? IS NULL OR m.user_id != ?)
        ORDER BY u.email`,
     )
-    .all(householdId, ownersOnly ? 1 : 0, except ?? null, except ?? null) as Array<{ email: string }>;
-  return rows.map((row) => row.email);
+    .all(householdId, ownersOnly ? 1 : 0, except ?? null, except ?? null) as Recipient[];
 }
+
+/** The account itself as a recipient — its address, and the language it reads. */
+export const recipient = (user: Pick<UserRow, 'email' | 'language'>): Recipient => ({
+  email: user.email,
+  language: user.language,
+});
 
 export const membershipIn = (userId: string, householdId: string) =>
   db
