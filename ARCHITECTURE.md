@@ -876,7 +876,7 @@ Fifty-six deliberate regressions were introduced, and each was caught by a faili
 44. Making `householdAddresses()` report every recipient as English → `notificationsSending` failed, one household's German member written to in English.
 45. Ignoring the language a registration carries → `notificationsSending` and `accounts` failed, the confirmation email in the wrong language before the account had done anything else.
 46. Letting an invite use the inviter's language over an existing account's own choice → `notificationsSending` failed, somebody who had already chosen being overruled by whoever invited them.
-47. Widening `PUT /auth/language` to accept any string → `accounts` failed, a value the dictionary cannot render getting into the column.
+47. Widening the preferences route (then `PUT /auth/language`, now `/auth/preferences`) to accept any string → `accounts` failed, a value the dictionary cannot render getting into the column.
 48. Unwiring the preference sync → the `language` browser test failed, the picker changing the page and nothing else, so the emails silently stayed English.
 49. Dropping the adoption half of `useAccountPreferences()` → `language` failed on the sign-out case: a browser that forgot its storage stayed forgotten, which is the bug the whole thing exists to close.
 50. Dropping the write-back half → `language` failed twice, the account never learning what was chosen on the device.
