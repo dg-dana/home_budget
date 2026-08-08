@@ -32,7 +32,7 @@ function ownedList(listId: string, householdId: string): ShoppingListRow {
   const row = db
     .prepare('SELECT * FROM shopping_lists WHERE id = ? AND household_id = ?')
     .get(listId, householdId) as ShoppingListRow | undefined;
-  if (!row) throw notFound('That shopping list does not exist');
+  if (!row) throw notFound('That shopping list does not exist', 'error.listNotFound');
   return row;
 }
 

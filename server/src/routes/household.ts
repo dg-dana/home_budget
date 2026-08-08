@@ -238,11 +238,15 @@ householdRouter.delete(
       throw badRequest(
         `You are the only person in "${household.name}", so there would be nobody left to reach it. ` +
           'Delete the household instead, from the Danger zone below.',
+        'error.leaveLastPerson',
+        { household: household.name },
       );
     }
     if (user.role === 'owner' && others.owners === 0) {
       throw badRequest(
         `You are the only owner of "${household.name}". Make someone else an owner first.`,
+        'error.leaveSoleOwner',
+        { household: household.name },
       );
     }
 
@@ -287,12 +291,12 @@ householdRouter.delete(
   asyncHandler(async (req, res) => {
     const user = currentUser(req);
     if (req.params.id === user.id) {
-      throw badRequest('You cannot remove yourself from the household');
+      throw badRequest('You cannot remove yourself from the household', 'error.removeSelf');
     }
     const membership = db
       .prepare('SELECT * FROM memberships WHERE user_id = ? AND household_id = ?')
       .get(req.params.id, user.householdId) as MembershipRow | undefined;
-    if (!membership) throw notFound('That member does not exist');
+    if (!membership) throw notFound('That member does not exist', 'error.memberNotFound');
 
     const removed = db
       .prepare('SELECT email, language FROM users WHERE id = ?')
@@ -350,13 +354,13 @@ householdRouter.put(
   asyncHandler(async (req, res) => {
     const user = currentUser(req);
     if (req.params.id === user.id) {
-      throw badRequest('You cannot change your own role — ask another owner');
+      throw badRequest('You cannot change your own role — ask another owner', 'error.ownRole');
     }
     const input = parseBody(z.object({ role: z.enum(['owner', 'member']) }), req.body);
     const membership = db
       .prepare('SELECT * FROM memberships WHERE user_id = ? AND household_id = ?')
       .get(req.params.id, user.householdId) as MembershipRow | undefined;
-    if (!membership) throw notFound('That member does not exist');
+    if (!membership) throw notFound('That member does not exist', 'error.memberNotFound');
 
     db.prepare('UPDATE memberships SET role = ? WHERE id = ?').run(input.role, membership.id);
 
@@ -416,6 +420,7 @@ householdRouter.post(
     if (config.emailConfigured) {
       throw forbidden(
         'Anyone locked out can reset their own password from the sign-in page — "Forgotten your password?". Owner-issued links are only used where this site cannot send email.',
+        'error.ownerRecoveryOff',
       );
     }
 
@@ -429,7 +434,7 @@ householdRouter.post(
       .get(req.params.id, user.householdId) as
       | { id: string; email: string; language: Language }
       | undefined;
-    if (!member) throw notFound('That member does not exist');
+    if (!member) throw notFound('That member does not exist', 'error.memberNotFound');
 
     // Shared with self-service recovery (`POST /auth/forgot`), so both kinds of
     // link expire and retire each other by the same rule; `created_by` is what
@@ -491,7 +496,11 @@ householdRouter.post(
         )
         .get(user.householdId, input.email) as { name: string } | undefined;
       if (existing) {
-        throw conflict(`${existing.name} is already in this household — no invite needed.`);
+        throw conflict(
+        `${existing.name} is already in this household — no invite needed.`,
+        'error.alreadyMember',
+        { name: existing.name },
+      );
       }
     }
 
@@ -532,7 +541,7 @@ householdRouter.delete(
     const result = db
       .prepare('DELETE FROM invites WHERE token = ? AND household_id = ?')
       .run(req.params.token, user.householdId);
-    if (result.changes === 0) throw notFound('That invite does not exist');
+    if (result.changes === 0) throw notFound('That invite does not exist', 'error.inviteNotFound');
     res.status(204).end();
   }),
 );

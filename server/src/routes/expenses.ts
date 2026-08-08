@@ -29,10 +29,10 @@ const expenseSchema = z.object({
 
 /** Half-open date range [start, end) covering the given YYYY-MM month. */
 function monthRange(month: string): { start: string; end: string } {
-  if (!MONTH_PATTERN.test(month)) throw badRequest('month must be in YYYY-MM format');
+  if (!MONTH_PATTERN.test(month)) throw badRequest('month must be in YYYY-MM format', 'error.monthFormat');
   const year = Number(month.slice(0, 4));
   const monthIndex = Number(month.slice(5, 7));
-  if (monthIndex < 1 || monthIndex > 12) throw badRequest('month must be in YYYY-MM format');
+  if (monthIndex < 1 || monthIndex > 12) throw badRequest('month must be in YYYY-MM format', 'error.monthFormat');
   const nextYear = monthIndex === 12 ? year + 1 : year;
   const nextMonth = monthIndex === 12 ? 1 : monthIndex + 1;
   return {
@@ -75,7 +75,9 @@ function assertOwned(
           .prepare('SELECT user_id FROM memberships WHERE user_id = ? AND household_id = ?')
           .get(id, householdId);
   if (!row) {
-    throw badRequest(table === 'categories' ? 'Unknown category' : 'Unknown household member');
+    throw table === 'categories'
+      ? badRequest('Unknown category', 'error.unknownCategory')
+      : badRequest('Unknown household member', 'error.unknownMember');
   }
 }
 
@@ -237,10 +239,12 @@ expensesRouter.get(
     // monthRange also validates the format, throwing a 400 on anything else.
     const { start } = monthRange(from);
     const { end } = monthRange(to);
-    if (from > to) throw badRequest('from must not be after to');
+    if (from > to) throw badRequest('from must not be after to', 'error.rangeOrder');
     const months = monthsInRange(from, to);
     if (months.length > MAX_STATS_MONTHS) {
-      throw badRequest(`Range must be ${MAX_STATS_MONTHS} months or fewer`);
+      throw badRequest(`Range must be ${MAX_STATS_MONTHS} months or fewer`, 'error.rangeTooLong', {
+        months: String(MAX_STATS_MONTHS),
+      });
     }
     const scope = [user.householdId, start, end];
 
@@ -428,7 +432,7 @@ expensesRouter.put(
         req.params.id,
         user.householdId,
       );
-    if (result.changes === 0) throw notFound('That expense does not exist');
+    if (result.changes === 0) throw notFound('That expense does not exist', 'error.expenseNotFound');
 
     res.json(db.prepare(`${SELECT_EXPENSE} WHERE e.id = ?`).get(req.params.id));
   }),
@@ -441,7 +445,7 @@ expensesRouter.delete(
     const result = db
       .prepare('DELETE FROM expenses WHERE id = ? AND household_id = ?')
       .run(req.params.id, user.householdId);
-    if (result.changes === 0) throw notFound('That expense does not exist');
+    if (result.changes === 0) throw notFound('That expense does not exist', 'error.expenseNotFound');
     res.status(204).end();
   }),
 );

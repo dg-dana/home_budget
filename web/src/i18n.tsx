@@ -8,6 +8,7 @@ import {
   useState,
 } from 'react';
 import type { ReactNode } from 'react';
+import { ApiError } from './api';
 import { applyLanguage, LANGUAGE_KEY, readLanguage, type Language } from './language';
 import { STRINGS, type StringKey } from './strings';
 
@@ -35,6 +36,19 @@ export interface I18n {
   tx: (key: StringKey, vars: NodeVars) => ReactNode;
   /** Picks `<key>_one` or `<key>_other`, and passes `count` through as a var. */
   plural: (count: number, key: PluralKey, vars?: Vars) => string;
+  /**
+   * Turns whatever a failed request threw into a sentence to put on screen.
+   *
+   * Three cases, in order. A refusal carrying a **code this build knows** is
+   * translated, values and all. A refusal carrying an unknown code — or none —
+   * falls back to the **server's English sentence**, which is exactly what the
+   * app showed before codes existed and is never nothing. Anything that is not
+   * an `Error` at all gets the caller's own fallback.
+   *
+   * The fallback to English is what makes partial coverage safe: a route that
+   * grows a new refusal tomorrow is readable today.
+   */
+  message: (err: unknown, fallback: StringKey) => string;
 }
 
 const PLACEHOLDER = /\{(\w+)\}/g;
@@ -92,6 +106,13 @@ export function I18nProvider({ children }: { children: ReactNode }) {
       tx: (key, vars) => fillNodes(line(key), vars),
       plural: (count, key, vars) =>
         fill(line(`${key}_${count === 1 ? 'one' : 'other'}` as StringKey), { count, ...vars }),
+      message: (err, fallback) => {
+        if (err instanceof ApiError && err.code && err.code in STRINGS) {
+          return fill(line(err.code as StringKey), err.vars);
+        }
+        if (err instanceof Error) return err.message;
+        return fill(line(fallback));
+      },
     };
   }, [language, setLanguage]);
 

@@ -84,7 +84,7 @@ export function createApp({ enableRateLimits = true }: CreateAppOptions = {}): E
   app.use('/api/lists', listsRouter);
   app.use('/api/share', ...shareLimiter, shareRouter);
 
-  app.use('/api', (_req, _res, next) => next(notFound('Unknown API endpoint')));
+  app.use('/api', (_req, _res, next) => next(notFound('Unknown API endpoint', 'error.unknownEndpoint')));
 
   // In production the API also serves the built frontend, so the whole app is a
   // single process behind one port.

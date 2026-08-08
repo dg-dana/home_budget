@@ -31,7 +31,7 @@ const emptyForm = (userId: string): ExpenseForm => ({
 
 export default function ExpensesPage() {
   const { user, household } = useSession();
-  const { t, plural } = useI18n();
+  const { t, plural, message } = useI18n();
   const currency = household?.currency ?? 'USD';
 
   const [month, setMonth] = useState(currentMonth());
@@ -58,7 +58,7 @@ export default function ExpensesPage() {
   }, [month]);
 
   useEffect(() => {
-    load().catch((err: Error) => setError(err.message));
+    load().catch((err: unknown) => setError(message(err, 'common.somethingWrong')));
   }, [load]);
 
   const update =
@@ -101,7 +101,7 @@ export default function ExpensesPage() {
       if (targetMonth !== month) setMonth(targetMonth);
       else await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('expenses.saveFailed'));
+      setError(message(err, 'expenses.saveFailed'));
     } finally {
       setBusy(false);
     }
@@ -127,7 +127,7 @@ export default function ExpensesPage() {
       if (editingId === expense.id) resetForm();
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('expenses.deleteFailed'));
+      setError(message(err, 'expenses.deleteFailed'));
     }
   };
 

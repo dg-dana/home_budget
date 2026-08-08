@@ -16,7 +16,7 @@ import { useI18n } from '../i18n';
  * sent you".
  */
 export default function ForgotPasswordPage() {
-  const { t, tx } = useI18n();
+  const { t, tx, message } = useI18n();
   const [email, setEmail] = useState('');
   const [sent, setSent] = useState(false);
   const [error, setError] = useState('');
@@ -32,7 +32,7 @@ export default function ForgotPasswordPage() {
     } catch (err) {
       // A deployment with no email provider refuses this outright (503) and
       // says to ask an owner, which is the recovery this app has always had.
-      setError(err instanceof Error ? err.message : t('forgot.failed'));
+      setError(message(err, 'forgot.failed'));
     } finally {
       setBusy(false);
     }

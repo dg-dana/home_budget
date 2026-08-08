@@ -9,7 +9,7 @@ const CURRENCIES = ['USD', 'EUR', 'GBP', 'ILS', 'CAD', 'AUD', 'CHF', 'SEK', 'PLN
 
 export default function HouseholdPage() {
   const { user, household, ownerRecovery, refresh } = useSession();
-  const { t, tx, plural } = useI18n();
+  const { t, tx, plural, message } = useI18n();
   const navigate = useNavigate();
   const isOwner = user?.role === 'owner';
   const currency = household?.currency ?? 'USD';
@@ -48,7 +48,7 @@ export default function HouseholdPage() {
   }, [isOwner]);
 
   useEffect(() => {
-    load().catch((err: Error) => setError(err.message));
+    load().catch((err: unknown) => setError(message(err, 'common.somethingWrong')));
   }, [load]);
 
   useEffect(() => {
@@ -66,7 +66,7 @@ export default function HouseholdPage() {
       await action();
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('common.somethingWrong'));
+      setError(message(err, 'common.somethingWrong'));
     }
   };
 
@@ -101,7 +101,7 @@ export default function HouseholdPage() {
       setPasswords({ current: '', next: '' });
       setPasswordNotice(t('household.passwordChanged'));
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('household.passwordFailed'));
+      setError(message(err, 'household.passwordFailed'));
     }
   };
 
@@ -120,7 +120,7 @@ export default function HouseholdPage() {
         },
       }));
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('household.resetFailed'));
+      setError(message(err, 'household.resetFailed'));
     }
   };
 
@@ -149,7 +149,7 @@ export default function HouseholdPage() {
       await api.delete('/household/members/me');
       await returnToHouseholds();
     } catch (err) {
-      setDangerError(err instanceof Error ? err.message : t('household.leaveFailed'));
+      setDangerError(message(err, 'household.leaveFailed'));
     }
   };
 
@@ -169,7 +169,7 @@ export default function HouseholdPage() {
       await api.delete('/household', { password: dangerPassword });
       await returnToHouseholds();
     } catch (err) {
-      setDangerError(err instanceof Error ? err.message : t('household.deleteFailed'));
+      setDangerError(message(err, 'household.deleteFailed'));
     }
   };
 
@@ -377,7 +377,7 @@ export default function HouseholdPage() {
                       // "already in this household" is answered by editing what
                       // was typed, not by typing it again.
                       setInviteError(
-                        err instanceof Error ? err.message : t('household.inviteFailed'),
+                        message(err, 'household.inviteFailed'),
                       );
                     }
                   })();

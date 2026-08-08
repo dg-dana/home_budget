@@ -158,7 +158,7 @@ authRouter.post(
   asyncHandler(async (req, res) => {
     const input = parseBody(registerSchema, req.body);
     if (findUserByEmail(input.email)) {
-      throw conflict('An account with that email already exists');
+      throw conflict('An account with that email already exists', 'error.emailTaken');
     }
 
     const passwordHash = await hashPassword(input.password);
@@ -184,7 +184,7 @@ authRouter.post(
         nowIso(),
       );
     } catch (err) {
-      if (isUniqueViolation(err)) throw conflict('An account with that email already exists');
+      if (isUniqueViolation(err)) throw conflict('An account with that email already exists', 'error.emailTaken');
       throw err;
     }
 
@@ -210,7 +210,7 @@ authRouter.get(
       .get(req.params.token) as EmailVerificationRow | undefined;
 
     if (!row || row.used_at || new Date(row.expires_at) < new Date()) {
-      throw badRequest('This confirmation link is invalid or has expired');
+      throw badRequest('This confirmation link is invalid or has expired', 'error.verifyLinkBad');
     }
     res.json({ email: getUser(row.user_id).email });
   }),
@@ -226,7 +226,7 @@ authRouter.post(
       .get(input.token) as EmailVerificationRow | undefined;
 
     if (!row || row.used_at || new Date(row.expires_at) < new Date()) {
-      throw badRequest('This confirmation link is invalid or has expired');
+      throw badRequest('This confirmation link is invalid or has expired', 'error.verifyLinkBad');
     }
 
     db.transaction(() => {
@@ -275,7 +275,7 @@ authRouter.post(
   asyncHandler(async (req, res) => {
     const account = currentAccount(req);
     const user = getUser(account.id);
-    if (user.email_verified_at) throw badRequest('That address is already confirmed');
+    if (user.email_verified_at) throw badRequest('That address is already confirmed', 'error.alreadyConfirmed');
 
     const { token } = issueEmailVerification(user);
     res.status(201).json({
@@ -302,7 +302,7 @@ authRouter.get(
       .get(req.params.token) as InviteRow | undefined;
 
     if (!invite || invite.used_at || new Date(invite.expires_at) < new Date()) {
-      throw badRequest('This invite link is invalid or has expired');
+      throw badRequest('This invite link is invalid or has expired', 'error.inviteLinkBad');
     }
     const household = db
       .prepare('SELECT * FROM households WHERE id = ?')
@@ -332,7 +332,7 @@ authRouter.post(
     // Same message either way so the response cannot be used to probe for
     // which email addresses have accounts.
     if (!user || !(await verifyPassword(input.password, user.password_hash))) {
-      throw unauthorized('Incorrect email or password');
+      throw unauthorized('Incorrect email or password', 'error.signInFailed');
     }
 
     const current = landingHousehold(user);
@@ -366,7 +366,7 @@ authRouter.post(
     const user = getUser(account.id);
 
     if (!(await verifyPassword(input.currentPassword, user.password_hash))) {
-      throw badRequest('That is not your current password');
+      throw badRequest('That is not your current password', 'error.wrongCurrentPassword');
     }
 
     await setPassword(user.id, input.newPassword);
@@ -410,6 +410,7 @@ authRouter.post(
     if (!config.emailConfigured) {
       throw unavailable(
         'This site cannot send email, so it cannot reset a password by itself. Ask a household owner to send you a reset link.',
+        'error.cannotSendEmail',
       );
     }
 
@@ -437,7 +438,7 @@ authRouter.get(
       .get(req.params.token) as PasswordResetRow | undefined;
 
     if (!reset || reset.used_at || new Date(reset.expires_at) < new Date()) {
-      throw badRequest('This reset link is invalid or has expired');
+      throw badRequest('This reset link is invalid or has expired', 'error.resetLinkBad');
     }
     const user = getUser(reset.user_id);
     // A name belongs to a household, and a reset link is about the account, so
@@ -459,7 +460,7 @@ authRouter.post(
       .get(input.token) as PasswordResetRow | undefined;
 
     if (!reset || reset.used_at || new Date(reset.expires_at) < new Date()) {
-      throw badRequest('This reset link is invalid or has expired');
+      throw badRequest('This reset link is invalid or has expired', 'error.resetLinkBad');
     }
 
     await setPassword(reset.user_id, input.password);
@@ -531,6 +532,8 @@ authRouter.delete(
       throw badRequest(
         `You are the only owner of ${stranded.map((name) => `"${name}"`).join(', ')}. ` +
           'Make someone else an owner there first, or delete the household itself.',
+        'error.strandedOwner',
+        { households: stranded.map((name) => `"${name}"`).join(', ') },
       );
     }
 

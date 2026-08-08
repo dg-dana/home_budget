@@ -170,6 +170,29 @@ test.describe('language', () => {
     await expect(page.locator('html')).toHaveAttribute('lang', 'de');
   });
 
+  test('a refusal from the API is German too', async ({ page }) => {
+    // The last thing in the app that spoke English regardless. The server still
+    // sends an English sentence — a curl and a log line need one — but it sends
+    // a code beside it, and the page turns that into the reader's language.
+    await page.goto('/login');
+    await page.getByRole('button', { name: 'Deutsch' }).click();
+    await expect(page.getByRole('heading', { name: 'Willkommen zurück' })).toBeVisible();
+
+    await page.getByLabel('E-Mail').fill(uniqueEmail('nobody'));
+    await page.getByLabel('Passwort').fill('definitely-wrong');
+    await page.getByRole('button', { name: 'Anmelden' }).click();
+
+    await expect(page.locator('.alert')).toHaveText(
+      'E-Mail-Adresse oder Passwort stimmt nicht',
+    );
+
+    // And the same refusal in English, so this is a translation rather than a
+    // second hard-coded sentence.
+    await page.getByRole('button', { name: 'English' }).click();
+    await page.getByRole('button', { name: 'Sign in' }).click();
+    await expect(page.locator('.alert')).toHaveText('Incorrect email or password');
+  });
+
   test('German moves the decimal point, not only the labels', async ({ page, request }) => {
     const email = uniqueEmail('lang');
     await seedAccountWithHousehold(request, { email, currency: 'EUR' });

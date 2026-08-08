@@ -7,7 +7,7 @@ import AuthPage from '../components/AuthPage';
 
 export default function LoginPage() {
   const { setSession } = useSession();
-  const { t, tx } = useI18n();
+  const { t, tx, message } = useI18n();
   const navigate = useNavigate();
   const location = useLocation();
   // Someone sent here from an invite link should land back on it once in.
@@ -28,7 +28,7 @@ export default function LoginPage() {
       // picker is the only page that can render.
       navigate(from ?? (signedIn.household ? '/' : '/households'), { replace: true });
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('login.failed'));
+      setError(message(err, 'login.failed'));
     } finally {
       setBusy(false);
     }

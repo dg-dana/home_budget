@@ -9,48 +9,42 @@ German emails are live and **confirmed arriving**.
 
 ---
 
-## Live: preferences that stick
+## Next: deploy translated refusals
 
-**Deployed on run #35** (`ea6dc70`) — all 17 steps green, "Verify the public URL
-works" included, and migration `006` ran as the container came up.
+**Merged but not deployed.** The last thing in the app that spoke English
+regardless of who was reading: when the API refused something, the page printed
+the server's sentence verbatim. A German page answered a wrong password in
+English.
 
-Reported from the live site: choose German and light, sign out, sign back in,
-and the app is English and dark again — the phone's own defaults.
+The API now sends a **code** beside the sentence, and the page turns that into
+whichever language is on screen.
 
-Nothing in the app was clearing anything. Both settings lived in
-`localStorage` and only there, and **a browser is entitled to throw that away**:
-iOS evicts it, a Home Screen shortcut keeps a copy separate from Safari's, a
-reinstall wipes it, a second browser never had it. The choice went with it and
-there was no way back except making it again. A setting you have to keep
-re-making is not a setting.
+Three things about it are load-bearing:
 
-So language and theme now belong to the **account**. Two rules, and the order
-between them is the whole design:
+- **The English sentence stays, and stays the contract.** It is what a `curl`, a
+  log line and any client that has never heard of codes have to go on. `code`
+  and `vars` are additive — nothing that read the old shape breaks.
+- **An unknown code falls back to the English.** A gap is untranslated rather
+  than broken, which is what makes partial coverage safe — and also what would
+  let a gap go unnoticed forever, which is why there is a test.
+- **`errorCodes.test.ts` reads `web/src/strings.ts` from the server suite** and
+  fails if a code has no sentence or a sentence has no code. TypeScript cannot
+  span two packages when the thing crossing is a string on a wire, so this is
+  the only thing holding the halves together.
 
-1. **On sign-in the account wins** — its saved pair is adopted and written into
-   `localStorage`, so the pre-paint script has it right next load.
-2. **After that the device wins and is written up** — changing either control
-   saves both, and the next device to sign in adopts them.
+Interpolated values travel as `vars` rather than baked into the sentence — the
+same rule the emails follow, and for the same reason: a sentence assembled on
+the server could only ever be English.
 
-**Signed out, and for a guest, nothing changed at all.** `localStorage` is the
-only store they have and it still works exactly as before.
+Four deliberate breaks were watched failing: a code renamed in the dictionary,
+the middleware dropping `code`, the page preferring the server's sentence over
+the translation, and a value baked into a message instead of sent beside it.
 
-This reverses something `ARCHITECTURE.md` had argued for deliberately — that
-the two should be per device, because one person may want dark on a phone and
-light on a laptop. That is true and almost nobody does it; losing your settings
-to a browser clearing house is the thing that actually happens. **The accepted
-cost is that a phone and a laptop can no longer disagree**: whichever device
-last changed something wins everywhere.
-
-The deploy changed nothing under anybody. `preferences_saved_at` is NULL for
-every account that predates migration `006`, so the **device** won once and was
-written up — the first sign-in after the deploy keeps exactly what was on
-screen, and it sticks from then on.
-
-Four deliberate breaks were watched failing, including the subtle one: reverting
-`useTheme()` to a hook holding its own state, where the toggle and the adopter
-each move a private copy and neither sees the other. That was invisible while
-the toggle was the only caller.
+**What stays English, deliberately: Zod schema failures.** They name a field and
+say what is wrong with it, which beats a translated "check that form" — and they
+are unreachable through the interface, since every form carries the same
+`required`, `minLength` and `maxLength` the schemas do. What reaches that path
+is a script or a stale client.
 
 ## Needs your hands
 
@@ -78,10 +72,11 @@ live domain by policy, so anything about the real site is yours.
       longer disagree about language or theme — whichever was changed last wins
       everywhere. Deliberate: keeping both would mean the app ranking devices.
       Say if it grates. (§9.1b)
-- [ ] **API error messages are English in both languages.** They land in a
-      German page's alert boxes as English sentences. Fixing it means the API
-      returning codes the frontend translates rather than sentences it prints —
-      a change to every `badRequest()` and to how a failure is rendered. (§14)
+- [ ] **Zod schema failures answer in English, in both languages.** Deliberate:
+      they name a field, which beats a translated generality, and the forms
+      carry the same constraints the schemas do so nothing reaches them through
+      the interface. "Unreachable" is a claim about today's forms, though — a
+      new form that forgets a `maxLength` would quietly make it reachable. (§14)
 - [ ] **Native date and month pickers ignore the page's language.** Chrome
       renders `<input type="date">` in the *browser's* UI language, so a German
       page on an English browser still shows `08/07/2026`. Only replacing the
@@ -108,6 +103,11 @@ live domain by policy, so anything about the real site is yours.
 
 ## Done
 
+- [x] **Refusals from the API are translated** — the server sends a code beside
+      its English sentence, the page renders whichever it can, and a test that
+      reads the web dictionary from the server suite fails if the two ever drift
+      apart. Values travel as `vars` rather than baked into the sentence. Four
+      deliberate breaks watched failing. (merged, **not yet deployed**)
 - [x] **Language and theme stick to the account** — adopted on sign-in, written
       back on every change, so a browser losing its `localStorage` no longer
       loses the choice with it. Signed-out and guest screens are unchanged.

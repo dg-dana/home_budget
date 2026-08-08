@@ -13,7 +13,7 @@ import AuthPage from '../components/AuthPage';
 export default function VerifyEmailPage() {
   const { token = '' } = useParams();
   const { setSession } = useSession();
-  const { t, tx } = useI18n();
+  const { t, tx, message } = useI18n();
   const navigate = useNavigate();
 
   const [account, setAccount] = useState<{ email: string } | null>(null);
@@ -25,7 +25,7 @@ export default function VerifyEmailPage() {
     api
       .get<{ email: string }>(`/auth/verify/${encodeURIComponent(token)}`)
       .then(setAccount)
-      .catch((err: Error) => setLoadError(err.message));
+      .catch((err: unknown) => setLoadError(message(err, 'verify.failed')));
   }, [token]);
 
   const handleConfirm = async () => {
@@ -35,7 +35,7 @@ export default function VerifyEmailPage() {
       setSession(await api.post<SessionPayload>('/auth/verify', { token }));
       navigate('/households', { replace: true });
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('verify.failed'));
+      setError(message(err, 'verify.failed'));
     } finally {
       setBusy(false);
     }

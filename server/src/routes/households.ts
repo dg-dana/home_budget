@@ -185,13 +185,15 @@ householdsRouter.post(
       .get(input.token) as InviteRow | undefined;
 
     if (!invite || invite.used_at || new Date(invite.expires_at) < new Date()) {
-      throw badRequest('This invite link is invalid or has expired');
+      throw badRequest('This invite link is invalid or has expired', 'error.inviteLinkBad');
     }
     if (invite.email && invite.email !== account.email) {
-      throw badRequest(`This invite was issued for ${invite.email}`);
+      throw badRequest(`This invite was issued for ${invite.email}`, 'error.inviteForOther', {
+        email: invite.email ?? '',
+      });
     }
     if (membershipIn(account.id, invite.household_id)) {
-      throw conflict('You are already in that household');
+      throw conflict('You are already in that household', 'error.alreadyInHousehold');
     }
 
     db.transaction(() => {
@@ -236,7 +238,7 @@ householdsRouter.post(
   asyncHandler((req, res) => {
     const account = currentAccount(req);
     const membership = membershipIn(account.id, req.params.id);
-    if (!membership) throw notFound('That household does not exist');
+    if (!membership) throw notFound('That household does not exist', 'error.householdNotFound');
 
     issueSession(res, getUser(account.id), membership.household_id);
     res.json({ household: describe(membership.household_id, membership.role, membership.display_name) });

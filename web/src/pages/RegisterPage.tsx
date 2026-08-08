@@ -17,7 +17,7 @@ import NoticeCard from '../components/NoticeCard';
  */
 export default function RegisterPage() {
   const { refresh } = useSession();
-  const { t, tx, language } = useI18n();
+  const { t, tx, language, message } = useI18n();
   const [theme] = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
@@ -61,7 +61,7 @@ export default function RegisterPage() {
       // read. The session is adopted on Continue instead.
       setNotice(created.verification);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('register.failed'));
+      setError(message(err, 'register.failed'));
     } finally {
       setBusy(false);
     }

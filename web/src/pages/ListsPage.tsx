@@ -6,7 +6,7 @@ import { useI18n } from '../i18n';
 import { usePoll } from '../usePoll';
 
 export default function ListsPage() {
-  const { t } = useI18n();
+  const { t, message } = useI18n();
   const [lists, setLists] = useState<ShoppingList[]>([]);
   const [name, setName] = useState('');
   const [error, setError] = useState('');
@@ -17,7 +17,7 @@ export default function ListsPage() {
       api
         .get<ShoppingList[]>('/lists')
         .then(setLists)
-        .catch((err: Error) => setError(err.message)),
+        .catch((err: unknown) => setError(message(err, 'common.somethingWrong'))),
     [],
   );
 
@@ -40,7 +40,7 @@ export default function ListsPage() {
       setName('');
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('lists.createFailed'));
+      setError(message(err, 'lists.createFailed'));
     } finally {
       setBusy(false);
     }
