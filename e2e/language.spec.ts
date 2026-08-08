@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import {
   PASSWORD,
   identifyAs,
@@ -9,19 +9,24 @@ import {
 } from './helpers';
 
 /**
- * The language picker, which is a **per-device** choice like the theme and for
- * the same reasons — so these tests are mostly about the screens with no
- * account behind them.
+ * Language and theme: the two controls that decide what the app looks like.
  *
- * Three things need proving, and only a browser can do any of them:
+ * Signed out — and for a guest — they live on the device and nowhere else,
+ * because there is nowhere else. Signed in they belong to the **account**
+ * (`ARCHITECTURE.md` §9.1b), which is what makes them survive a browser
+ * throwing its storage away.
  *
- * 1. The control is on the screens that have no header to hold it — the guest
+ * Four things need proving, and only a browser can do any of them:
+ *
+ * 1. The controls are on the screens with no header to hold them — the guest
  *    page and the signed-out pages. That is the trap the theme toggle fell into
- *    twice (`ARCHITECTURE.md` §9.1).
+ *    twice (§9.1).
  * 2. Choosing German changes the **numbers as well as the words**. A page with
  *    German labels and `105.00` on it is half-translated, and no server test can
  *    see that.
  * 3. The choice survives a reload, and reaches `<html lang>`.
+ * 4. It survives a sign-out **and a browser that has forgotten everything** —
+ *    which is the bug that started all of this.
  */
 test.describe('language', () => {
   test('a guest can read the list in German, and it survives a reload', async ({
@@ -104,34 +109,65 @@ test.describe('language', () => {
     await expect(page.getByRole('heading', { name: 'Passwort vergessen?' })).toBeVisible();
   });
 
-  test('flipping the picker while signed in changes what the account is emailed in', async ({
-    page,
-    request,
-  }) => {
-    // Two settings that meet in exactly one place. What the browser renders in
-    // is per device and never leaves it; what the *account* is emailed in has
-    // to be stored, because half the messages the server sends go to people who
-    // are not holding a browser. Only a browser can prove the picker reaches it.
-    const email = uniqueEmail('emaillang');
+  test('a signed-in choice reaches the account', async ({ page, request }) => {
+    // The device is only a cache once somebody is signed in. Only a browser can
+    // prove the controls actually reach the account behind it.
+    const email = uniqueEmail('prefs');
     await seedAccountWithHousehold(request, { email });
+    await signIn(page, email);
 
-    await page.goto('/login');
-    await page.getByLabel('Email').fill(email);
-    await page.getByLabel('Password').fill(PASSWORD);
-    await page.getByRole('button', { name: 'Sign in' }).click();
-    await page.waitForURL('/');
-
-    const stored = async () =>
-      (await (await page.request.get('/api/auth/me')).json()).user.language;
-    expect(await stored()).toBe('en');
+    const stored = async () => {
+      const { user } = await (await page.request.get('/api/auth/me')).json();
+      return `${user.language}/${user.theme}`;
+    };
+    await expect.poll(stored).toBe('en/system');
 
     await page.getByRole('button', { name: 'Deutsch' }).click();
     await expect(page.getByRole('link', { name: 'Ausgaben' })).toBeVisible();
-    await expect.poll(stored).toBe('de');
+    await page.getByRole('button', { name: 'Dunkel' }).click();
+    await expect.poll(stored).toBe('de/dark');
 
     // And back — a follow, not a one-way door.
     await page.getByRole('button', { name: 'English' }).click();
-    await expect.poll(stored).toBe('en');
+    await expect.poll(stored).toBe('en/dark');
+  });
+
+  test('preferences survive a sign-out, and a browser that lost its storage', async ({
+    page,
+    request,
+  }) => {
+    // The bug this closes, in the order it was hit: choose German and light,
+    // sign out, sign back in, and find the device's own defaults again. It
+    // happened because the choice only ever lived in `localStorage`, and a
+    // browser is entitled to throw that away.
+    const email = uniqueEmail('sticky');
+    await seedAccountWithHousehold(request, { email });
+    await signIn(page, email);
+
+    await page.getByRole('button', { name: 'Deutsch' }).click();
+    await page.getByRole('button', { name: 'Hell' }).click();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+    await expect.poll(async () => {
+      const { user } = await (await page.request.get('/api/auth/me')).json();
+      return `${user.language}/${user.theme}`;
+    }).toBe('de/light');
+
+    await page.getByRole('button', { name: 'Abmelden' }).click();
+    await page.waitForURL('/login');
+
+    // The device forgets everything it was told — which is exactly what iOS
+    // does on its own, and what a Home Screen shortcut looks like from here.
+    await page.evaluate(() => localStorage.clear());
+    await page.reload();
+    await expect(page.getByRole('heading', { name: 'Welcome back' })).toBeVisible();
+    await expect(page.locator('html')).not.toHaveAttribute('data-theme', /./);
+
+    await signIn(page, email);
+
+    // Signing in brings both back, without touching a control.
+    await expect(page.getByRole('link', { name: 'Ausgaben' })).toBeVisible();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+    await expect(page.locator('html')).toHaveAttribute('lang', 'de');
   });
 
   test('German moves the decimal point, not only the labels', async ({ page, request }) => {
@@ -160,6 +196,15 @@ test.describe('language', () => {
     await expect(gesamt).not.toContainText('105.00');
   });
 });
+
+/** Signs in through the form, in whichever language the page is currently in. */
+async function signIn(page: Page, email: string, { german = false } = {}) {
+  await page.goto('/login');
+  await page.getByLabel(german ? 'E-Mail' : 'Email').fill(email);
+  await page.getByLabel(german ? 'Passwort' : 'Password').fill(PASSWORD);
+  await page.getByRole('button', { name: german ? 'Anmelden' : 'Sign in' }).click();
+  await page.waitForURL('/');
+}
 
 /** Today in local time, matching what the app itself records. */
 function today(): string {

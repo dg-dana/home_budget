@@ -222,13 +222,12 @@ the person receiving it rather than of the request that caused it.
   the table in §4.1 describes messages sent to people who are *not* holding a
   browser — an owner hearing that somebody joined, everybody hearing a household
   was deleted. There is nothing to ask.
-- **It is not the same setting as the interface language**, and must not become
-  one. Reading is per device, works signed out, and works for a guest with no
-  account at all (§9.1a). The two meet in exactly one place: `PUT /auth/language`,
-  which the frontend calls when somebody **signed in** flips the picker. That is
-  a *follow*, not a binding — a second device left in English does not drag the
-  emails back, and whichever device last made a choice while signed in is the one
-  that set it. Anything cleverer would mean ranking devices.
+- **It is the same column the interface reads** (§9.1b). It started as an
+  email-only setting on the reasoning that reading is per device; that reasoning
+  was reversed a deploy later, and the two collapsing into one column is the
+  happy consequence — there is now exactly one answer to "what language is this
+  person", rather than two that could disagree. A guest and every signed-out
+  screen still read the device, because there is nothing else for them to read.
 - **Registration carries the language**, so the confirmation email — the very
   first thing an account receives — is already in the language the person was
   reading when they typed their address. The field is optional and defaults to
@@ -456,14 +455,14 @@ different questions. Keep them apart rather than merging them.
 - **A refusal belongs next to the form that caused it.** The Household page has one alert at the top for anything general, but inviting, the danger zone and changing a password each keep their own — on a phone that page is several screens long, so an error at the top of it is an error nobody sees. The rule of thumb: if the page can scroll the form out of sight, the form owns its error. Failed submissions also keep what was typed, since "that address is already in this household" is answered by editing it, not retyping it.
 - `api.ts` — thin typed `fetch` wrapper; unwraps `{error}` bodies into `ApiError` carrying the status. Also the single home for all response type definitions. `delete` takes an optional body, which is how the two deletions in §3 send their password confirmation.
 - `usePoll.ts` — the shopping pages' refetch loop: every 15 s, **skipped while the tab is hidden**, and immediate when it becomes visible again. All three shopping screens use it (the lists index, a member's list, the guest's), which is what stopped the member pages going stale while a guest shopped (§14). It is deliberately not on the expenses pages: two people do not edit the same month at the same minute, and the request costs the same either way. `load` must be a `useCallback`, or the effect restarts every render and the interval never fires.
-- `session.tsx` — the only global state. Holds `user`, the `household` currently open, the full `households` list, and `ownerRecovery` (whether an owner can still mint a recovery link, §4 — it defaults to false so a page cannot flash a control that is about to vanish); hydrates from `GET /auth/me` on mount, treats a 401 as "signed out" rather than an error. `switchHousehold` posts and then **refetches** rather than patching local state: the server decides what the new household contains.
+- `session.tsx` — the only global state. Also `useAccountPreferences()`, which adopts an account's saved language and theme on sign-in and writes changes back (§9.1b). Holds `user`, the `household` currently open, the full `households` list, and `ownerRecovery` (whether an owner can still mint a recovery link, §4 — it defaults to false so a page cannot flash a control that is about to vanish); hydrates from `GET /auth/me` on mount, treats a 401 as "signed out" rather than an error. `switchHousehold` posts and then **refetches** rather than patching local state: the server decides what the new household contains.
 - **Two guards, not one.** `RequireAuth` sends the signed-out to `/login`; `RequireHousehold` sends an account with no household open to `/households`. The second is the client half of the server's `requireHousehold` — without it every page would render and then fill with 403s.
 - **`Layout` keys its `<main>` on the household id.** Every page loads its data once on mount, so switching household while already on a page would otherwise leave the previous household's money sitting under the new household's name — the route does not change, so nothing refetches. One key remounts whichever page is on screen, and beats adding a household-changed effect to each of six pages. A browser test covers exactly this.
 - `HouseholdSwitcher` is a `<select>` rather than a menu: it is a one-of-n choice and gets the platform's own picker on a phone for free. **It renders even with a single household**, which looks redundant and is not — it first collapsed to plain text on the reasoning that nothing should suggest a choice that does not exist, and that shipped a dead end: `/households` is also where another household is *created*, so anyone with exactly one (everybody, on their first day) had no route to it at all. The chevron is the only affordance saying there is anything beyond the household you are in. A browser test pins the single-household case specifically.
 - `NoticeCard` shows a message the app would have emailed, link included. Pretending an inbox will receive something it never will would be worse than saying so.
 - `format.ts` — money and date helpers. **Month/day helpers use local time, not UTC**, so "today" matches the user's calendar rather than the server's.
 - `styles.css` — plain CSS, custom properties, light/dark themes (§9.1). No CSS framework, no CSS-in-JS.
-- `theme.ts` — reads/writes the theme preference and applies it to `<html>`.
+- `theme.tsx` — the theme preference: reads/writes `localStorage`, applies it to `<html>`, and holds it in a **context** so every caller sees one value (§9.1b).
 - `language.ts` / `i18n.tsx` / `strings.ts` — the language preference, the
   `t` / `tx` / `plural` helpers, and the dictionary (§9.1a). `language.ts` is
   the theme's counterpart and holds no React; `format.ts` reads `activeLocale()`
@@ -549,7 +548,7 @@ different questions. Keep them apart rather than merging them.
 - **Only two rules in the whole stylesheet mention a theme by name**: `:root[data-theme='light']` and `:root[data-theme='dark']`, each setting nothing but `color-scheme`. Everything else just uses the variables.
 - Using `color-scheme` rather than re-listing colours also fixes the native widgets — date pickers, scrollbars, the checkbox tick were all rendering light-on-dark before.
 - `light-dark()` takes *colours*, so `--shadow` (a composite value) is built from `--shadow-near` / `--shadow-far` instead.
-- **The preference is per-device, not per-user**: `localStorage['home-budget:theme']`, one of `light` / `dark` / `system`. It never touches the API. A guest has no account to hang a setting on, and the same person may want different answers on a phone and a laptop.
+- **The preference is stored per device *and* per account** (§9.1b). `localStorage['home-budget:theme']` is one of `light` / `dark` / `system` and is the only store a guest or a signed-out visitor has; for somebody signed in it is a cache of what `users.theme` says. It was per device only, on the reasoning that the same person may want different answers on a phone and a laptop — see §9.1b for why that turned out to be the wrong thing to optimise for.
 - **No `data-theme` attribute at all means "follow the OS"** — that is the `color-scheme: light dark` on `:root`. Do not write `data-theme="system"`.
 - **An inline script in `web/index.html` applies the stored choice before first paint.** Without it, a dark-mode device flashes the light palette on every load while React boots. It duplicates `applyTheme()` in `theme.ts` on purpose — the two must be changed together, and there is an e2e test that blocks the JS bundle to prove the inline copy is doing the work.
 - `ThemeToggle` sits in both headers: the member `Layout` and `SharedListPage`'s own guest header. Three states, not a switch, because "match device" is the default and a two-way toggle would strand anyone whose phone flips to dark at sunset.
@@ -559,13 +558,12 @@ different questions. Keep them apart rather than merging them.
 
 Every screen reads in **English or German**, chosen by whoever is looking at it.
 
-- **The same shape as the theme, deliberately** (§9.1). It is
-  `localStorage['home-budget:language']`, one of `en` / `de`, it never touches
-  the API, and it is a **per-device** choice. A guest has no account to hang a
-  setting on, and the person who wants German on their phone may share a laptop
-  with somebody who does not. Making it a column on `users` would have excluded
-  the guest share page — which is the one screen most likely to be opened by
-  somebody outside the household.
+- **The same shape as the theme, deliberately** (§9.1), and the two now travel
+  together (§9.1b). `localStorage['home-budget:language']` is one of `en` / `de`
+  and is the only store a guest or a signed-out visitor has — which is why it
+  could never be *only* a column on `users`, since the guest share page is the
+  screen most likely to be opened by somebody outside the household. For
+  somebody signed in it is a cache of `users.language`.
 - **`web/src/strings.ts` is the whole dictionary**, one entry per string holding
   `[English, German]`. Same reasoning as one `light-dark()` pair per colour: a
   new string is one line rather than an edit in two places, and the `satisfies`
@@ -609,11 +607,9 @@ Every screen reads in **English or German**, chosen by whoever is looking at it.
   stays inside the GSM 7-bit alphabet like the English — umlauts are in it,
   typographic quotes are not — so a pasted list still fits an SMS segment (§9,
   "Copy list").
-- **Emails follow the account, not the device** (§4.2). Reading is per device
-  and never leaves the browser; writing has to be stored, because half the
-  messages the server sends go to people who are not making the request. The
-  two meet in one place: `useEmailLanguage()` posts to `PUT /auth/language`
-  when somebody signed in uses the picker.
+- **Emails read the same column** (§4.2), which is what stopped there being two
+  answers to "what language is this person". `users.language` decides both what
+  the interface says and what the post says.
 - **API error messages are still English**, in both languages — the UI prints
   what the server returns verbatim, so a German page can answer a bad password
   in English (§14).
@@ -621,6 +617,51 @@ Every screen reads in **English or German**, chosen by whoever is looking at it.
   `<input type="month">` render in the **browser's** UI language, not the page's.
   A German page on an English browser shows `08/07/2026` in the date field. The
   fix would be replacing the native pickers, which costs more than it buys.
+
+### 9.1b Preferences belong to the account
+
+Language and theme are saved on the account and adopted on sign-in. Both started
+per device and only per device; this is what changed and why.
+
+- **The reasoning that put them on the device was about the wrong case.** It was
+  that one person may want dark on a phone at night and light on a laptop —
+  true, and almost nobody does it. What people actually hit is a browser
+  throwing `localStorage` away: iOS evicts it, a Home Screen shortcut keeps a
+  copy separate from Safari's, a reinstall wipes it, a second browser never had
+  it. The choice then goes with no way back except making it again, which is
+  how it was reported — *"I choose German and light, sign out, sign in, and it
+  is English and dark again"*. **A setting you have to keep re-making is not a
+  setting.**
+- **Signed out and for a guest, nothing changed.** `localStorage` is still the
+  only store there is, the pre-paint script still reads it, and the controls
+  still work with no account (§9.1, §9.1a). That is not a fallback, it is the
+  whole answer for anybody the app cannot name.
+- **Two rules, and the order between them is the design** (`useAccountPreferences()`
+  in `session.tsx`):
+  1. **On sign-in the account wins.** Its saved pair is adopted and written into
+     `localStorage`, so the pre-paint script has it right on the next load.
+  2. **After that the device wins and is written up.** Changing either control
+     saves both through `PUT /auth/preferences`, and the next device to sign in
+     adopts them.
+- **`preferences_saved_at` is what made this deployable.** NULL means the
+  account has never saved a pair — which is every account that predates
+  migration `006` — and there rule 1 is skipped and the **device's** current
+  settings are written up instead. Nobody's app changed appearance the day this
+  shipped; it simply started sticking. Signing up counts as saving, since
+  whatever the person was looking at while they typed their address is a choice.
+- **Both are saved by one route and one action**, because they are one decision
+  to the person making it: "this is how I like it". Splitting them into
+  `/auth/language` and `/auth/theme` would double the round trips to express it.
+- **The theme had to move into a context first** (`ThemeProvider` in
+  `theme.tsx`). `useTheme()` was a hook holding its own `useState`, which was
+  invisible while `ThemeToggle` was its only caller and would have broken the
+  moment there were two: each caller gets its own copy, so the toggle and the
+  adopter would each move their own and neither would see the other. There is a
+  browser test that fails on exactly that regression.
+- **The cost, accepted deliberately:** one account has **one** pair, so a phone
+  and a laptop can no longer disagree. Whichever device last changed something
+  wins everywhere. Keeping both would mean ranking devices, and nobody has asked
+  for that.
 
 ### 9.2 Charts and the statistics page
 
@@ -702,7 +743,7 @@ Two suites, run together with `npm run test:all`.
 
 ### Server integration suite — Vitest, `server/test/`
 
-- 248 tests, run with `npm test` from the repo root.
+- 249 tests, run with `npm test` from the repo root.
 - They are **integration tests over real HTTP**, not unit tests: each file boots the actual app on an ephemeral port and drives it with a cookie-aware client. There is no mocking of the database, the router or the session.
 - `test/setup.ts` runs before any application module is imported and points `DATABASE_PATH` at a unique temp file. Vitest gives each test file its own module registry, so **every test file gets its own SQLite database** and files can run in parallel.
 - `resetDatabase()` truncates every table in `beforeEach`.
@@ -729,12 +770,15 @@ Two suites, run together with `npm run test:all`.
 
 ### Browser tests — Playwright, `e2e/`
 
-- 25 tests, run with `npm run test:e2e`. Config is `playwright.config.ts` at the repo root.
+- 26 tests, run with `npm run test:e2e`. Config is `playwright.config.ts` at the repo root.
 - **Four areas: the guest flow, the statistics page, multiple households and the language switch.** The guest flow is the riskiest path — the one surface reachable without an account — and was the only coverage for a long time. (The theme test lives there because the toggle is on the guest header too.)
 - `statistics.spec.ts` exists because **every bug that page has had was invisible to the server suite**: a fold bucket that borrowed a real category's name, a one-month range drawing a lone dot, a stale response overwriting a newer one. Those are questions about what is on the screen. It reaches the page through the header link, never a direct URL — a page nobody can navigate to is a page nobody has.
 - `seedStatsHousehold()` builds a household through the API, giving **each joining member its own request context**: joining sets a session cookie, and a shared jar would sign the owner out halfway through.
-- `language.spec.ts` covers the English/German switch (§9.1a), and it is a
-  browser suite's job for the same reason the theme tests are: the questions are
+- `language.spec.ts` covers the English/German switch (§9.1a) **and the
+  preferences belonging to the account** (§9.1b) — including the case that
+  started it: choose German and light, sign out, wipe `localStorage` the way a
+  browser does on its own, sign back in, and find both waiting. It is a browser
+  suite's job for the same reason the theme tests are: the questions are
   whether the control is on the screens with no header to hold it, whether
   choosing German moves the **numbers** as well as the labels, and whether
   `<html lang>` is right before the bundle has run. `use.locale` is pinned to
@@ -755,7 +799,7 @@ What it asserts: a member creates and shares a list through the UI; a guest with
 
 ### Both suites were verified by breaking the code
 
-Forty-eight deliberate regressions were introduced, and each was caught by a failing test:
+Fifty-two deliberate regressions were introduced, and each was caught by a failing test:
 
 1. Removing the `household_id` filter from the expenses list query → `isolation` failed.
 2. Adding `householdId` to the guest share response → `share` failed.
@@ -804,7 +848,11 @@ Forty-eight deliberate regressions were introduced, and each was caught by a fai
 45. Ignoring the language a registration carries → `notificationsSending` and `accounts` failed, the confirmation email in the wrong language before the account had done anything else.
 46. Letting an invite use the inviter's language over an existing account's own choice → `notificationsSending` failed, somebody who had already chosen being overruled by whoever invited them.
 47. Widening `PUT /auth/language` to accept any string → `accounts` failed, a value the dictionary cannot render getting into the column.
-48. Unwiring `useEmailLanguage()` → the `language` browser test failed, the picker changing the page and nothing else, so the emails silently stayed English.
+48. Unwiring the preference sync → the `language` browser test failed, the picker changing the page and nothing else, so the emails silently stayed English.
+49. Dropping the adoption half of `useAccountPreferences()` → `language` failed on the sign-out case: a browser that forgot its storage stayed forgotten, which is the bug the whole thing exists to close.
+50. Dropping the write-back half → `language` failed twice, the account never learning what was chosen on the device.
+51. Reverting `useTheme()` to a hook holding its own state → `language` failed, the toggle and the adopter each moving a private copy and neither seeing the other. The subtlest of the fifty-two, and invisible until there were two callers.
+52. Making `PUT /auth/preferences` ignore the theme it was sent → `accounts` failed, half of one save silently dropped.
 
 The statistics suite also earned its place on the way in: the one-month test failed against the unguarded fetch, which is how the stale-response race in §9.2 was found.
 
@@ -894,10 +942,12 @@ Honest list — these are real, and none is currently blocking.
   frontend translates rather than sentences it prints — which is a change to
   every `badRequest('…')` in the codebase and to how the frontend renders a
   failure, not a dictionary entry. Emails no longer have this problem (§4.2).
-- **An account has one email language, and it is the last one chosen on any
-  signed-in device.** Somebody reading German on their phone and English on a
-  shared laptop sets it from whichever they touched last. Ranking devices would
-  be the only fix and nobody has asked for one.
+- **An account has one language and one theme, and they are the last ones
+  chosen on any signed-in device** (§9.1b). Somebody who wants German on their
+  phone and English on a shared laptop cannot have both any more; whichever they
+  touched last wins everywhere. That is the deliberate trade for the choice
+  surviving a browser that forgets, which is the failure that actually happened.
+  Ranking devices would be the only way to have both and nobody has asked.
 - **Polling is 15-second HTTP, not a push.** Every shopping page refetches on the same interval now (§9), which closes the old split where only the guest page kept up, but a change still takes up to fifteen seconds to appear and each open page costs a request. SSE or a WebSocket would be immediate and cheaper at rest; neither is worth a persistent connection on a 512 MB box for a household of four.
 - Rate limiting is in-process and will not survive horizontal scaling (see §13) — moot while the deployment is deliberately one machine.
 - **The container runs as root.** Fly volumes mount root-owned, and dropping privileges needs a startup chown dance that was not worth the risk of an unverifiable failure. Worth hardening later.

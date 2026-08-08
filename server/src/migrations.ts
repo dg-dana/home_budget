@@ -253,4 +253,29 @@ ALTER TABLE users ADD COLUMN language TEXT NOT NULL DEFAULT 'en' CHECK (language
 `);
     },
   },
+
+  {
+    id: '006-account-preferences',
+    up: (db) => {
+      // Language and theme now **follow the account**, not the device.
+      //
+      // Both started per device, on the reasoning that one person may want
+      // different answers on a phone and a laptop (`ARCHITECTURE.md` §9.1).
+      // That reasoning was wrong about the case that actually happens: a
+      // browser drops its `localStorage` — iOS evicts it, a Home Screen
+      // shortcut keeps its own, a reinstall wipes it — and the choice is gone
+      // with no way to get it back except making it again. A setting you have
+      // to keep re-making is not a setting.
+      //
+      // `preferences_saved_at` is what makes this deployable without changing
+      // anything under anybody. NULL means this account has never explicitly
+      // saved a pair, so the **device wins** on the next sign-in and is written
+      // up — everyone keeps exactly what they are looking at today, and it
+      // sticks from then on. Non-null means the account decides.
+      db.exec(`
+ALTER TABLE users ADD COLUMN theme TEXT NOT NULL DEFAULT 'system' CHECK (theme IN ('light', 'dark', 'system'));
+ALTER TABLE users ADD COLUMN preferences_saved_at TEXT;
+`);
+    },
+  },
 ];

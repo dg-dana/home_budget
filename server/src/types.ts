@@ -3,6 +3,9 @@ export type Role = 'owner' | 'member';
 /** The languages the app writes in. Mirrors `web/src/language.ts`. */
 export type Language = 'en' | 'de';
 
+/** Mirrors `web/src/theme.tsx`. No attribute at all means "follow the device". */
+export type Theme = 'light' | 'dark' | 'system';
+
 export interface HouseholdRow {
   id: string;
   name: string;
@@ -26,11 +29,20 @@ export interface UserRow {
   /** Where a fresh sign-in lands. A convenience, never an access decision. */
   last_household_id: string | null;
   /**
-   * What language to email this account in. Not what it *reads* the app in —
-   * that is per device and never leaves the browser — but the server has
-   * nobody to ask when it writes to somebody who is not making the request.
+   * What language this account reads *and* is written to in. It started as an
+   * email-only setting, because the server has nobody to ask when it writes to
+   * somebody who is not making the request; it now also decides what the
+   * interface says, so the choice survives a browser losing its storage.
    */
   language: Language;
+  /** What theme this account gets, on whatever it signs in to. */
+  theme: Theme;
+  /**
+   * When this account last saved a pair of preferences, or NULL if it never
+   * has. NULL is what lets the **device** win the first time, so nothing
+   * changes under anyone the day this ships (migration `006`).
+   */
+  preferences_saved_at: string | null;
   created_at: string;
 }
 

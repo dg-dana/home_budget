@@ -379,36 +379,73 @@ describe('accounts and households', () => {
       expect(users.count).toBe(0);
     });
 
-    it('remembers what language to write to the account in', async () => {
-      // Two settings, not one. What the browser *renders* in never leaves the
-      // browser (`ARCHITECTURE.md` §9.1a); this is what the post arrives in,
-      // and the server has to store it because half the messages it sends go
-      // to people who are not making the request.
+    it('remembers the language and theme on the account, not the device', async () => {
+      // The whole point of `006`: a browser that loses its localStorage — iOS
+      // evicting it, a Home Screen shortcut with its own copy, a reinstall —
+      // used to lose the choice with it. Signing in has to bring it back.
       const account = await registerAccount({ language: 'de' });
-      expect((await account.client.get('/api/auth/me')).body.user.language).toBe('de');
+      const before = (await account.client.get('/api/auth/me')).body.user;
+      expect(before.language).toBe('de');
+      // Signing up counts as saving: whatever they were looking at is theirs.
+      expect(before.preferencesSaved).toBe(true);
 
-      const changed = await account.client.put('/api/auth/language', { language: 'en' });
+      const changed = await account.client.put('/api/auth/preferences', {
+        language: 'en',
+        theme: 'dark',
+      });
       expect(changed.status).toBe(204);
-      expect((await account.client.get('/api/auth/me')).body.user.language).toBe('en');
+
+      const after = (await account.client.get('/api/auth/me')).body.user;
+      expect(after.language).toBe('en');
+      expect(after.theme).toBe('dark');
+      expect(after.preferencesSaved).toBe(true);
     });
 
-    it('defaults to English and refuses a language it cannot write', async () => {
-      // Every account that predates this, and every client that says nothing,
-      // carries on getting exactly the English it always got.
+    it('leaves an account that has never saved a pair unmarked', async () => {
+      // Every account that predates migration 006 is in this state, and it is
+      // what lets the device win once and be written up — so nobody's app
+      // changed appearance the day this shipped.
       const account = await registerAccount();
-      expect((await account.client.get('/api/auth/me')).body.user.language).toBe('en');
+      db.prepare('UPDATE users SET preferences_saved_at = NULL WHERE email = ?').run(
+        account.email,
+      );
 
-      const refused = await account.client.put('/api/auth/language', { language: 'fr' });
-      expect(refused.status).toBe(400);
-      expect((await account.client.get('/api/auth/me')).body.user.language).toBe('en');
+      const me = (await account.client.get('/api/auth/me')).body.user;
+      expect(me.preferencesSaved).toBe(false);
+      // The columns still answer something sensible in the meantime.
+      expect(me.language).toBe('en');
+      expect(me.theme).toBe('system');
     });
 
-    it('keeps one account\'s language out of another\'s', async () => {
+    it('defaults to English and system, and refuses what it cannot render', async () => {
+      // Every account that predates this, and every client that says nothing,
+      // carries on getting exactly what it always got.
+      const account = await registerAccount();
+      const me = (await account.client.get('/api/auth/me')).body.user;
+      expect(me.language).toBe('en');
+      expect(me.theme).toBe('system');
+
+      for (const bad of [
+        { language: 'fr', theme: 'system' },
+        { language: 'en', theme: 'sepia' },
+      ]) {
+        expect((await account.client.put('/api/auth/preferences', bad)).status).toBe(400);
+      }
+
+      const unchanged = (await account.client.get('/api/auth/me')).body.user;
+      expect(unchanged.language).toBe('en');
+      expect(unchanged.theme).toBe('system');
+    });
+
+    it('keeps one account\'s preferences out of another\'s', async () => {
       const german = await registerAccount({ language: 'de' });
       const english = await registerAccount();
+      await german.client.put('/api/auth/preferences', { language: 'de', theme: 'dark' });
 
       expect((await german.client.get('/api/auth/me')).body.user.language).toBe('de');
+      expect((await german.client.get('/api/auth/me')).body.user.theme).toBe('dark');
       expect((await english.client.get('/api/auth/me')).body.user.language).toBe('en');
+      expect((await english.client.get('/api/auth/me')).body.user.theme).toBe('system');
     });
 
     it('renames you in one household without touching the other', async () => {
