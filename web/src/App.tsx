@@ -15,7 +15,7 @@ import SharedListPage from './pages/SharedListPage';
 import StatsPage from './pages/StatsPage';
 import VerifyEmailPage from './pages/VerifyEmailPage';
 import { useI18n } from './i18n';
-import { useSession } from './session';
+import { useEmailLanguage, useSession } from './session';
 
 /** The one-line placeholder all three guards show while `/auth/me` is in flight. */
 function Loading() {
@@ -53,6 +53,11 @@ function RedirectIfSignedIn({ children }: { children: JSX.Element }) {
 }
 
 export default function App() {
+  // The account's email language follows the picker whenever somebody signed in
+  // uses it. Here rather than inside `SessionProvider` so the dependency on
+  // `I18nProvider` sitting outside it is visible (`session.tsx`).
+  useEmailLanguage();
+
   return (
     <Routes>
       {/* Guest route: reachable with just the link, no account needed. */}

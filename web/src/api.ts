@@ -1,3 +1,5 @@
+import type { Language } from './language';
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -58,6 +60,12 @@ export interface SessionUser {
   householdId: string | null;
   name: string | null;
   role: Role | null;
+  /**
+   * What language this account is **emailed** in — not what this browser
+   * renders in, which is a per-device choice that never reaches the server
+   * (`language.ts`). The two are kept in step by `useEmailLanguage()`.
+   */
+  language: Language;
 }
 
 /** One of the households an account belongs to. */

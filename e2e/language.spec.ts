@@ -104,6 +104,36 @@ test.describe('language', () => {
     await expect(page.getByRole('heading', { name: 'Passwort vergessen?' })).toBeVisible();
   });
 
+  test('flipping the picker while signed in changes what the account is emailed in', async ({
+    page,
+    request,
+  }) => {
+    // Two settings that meet in exactly one place. What the browser renders in
+    // is per device and never leaves it; what the *account* is emailed in has
+    // to be stored, because half the messages the server sends go to people who
+    // are not holding a browser. Only a browser can prove the picker reaches it.
+    const email = uniqueEmail('emaillang');
+    await seedAccountWithHousehold(request, { email });
+
+    await page.goto('/login');
+    await page.getByLabel('Email').fill(email);
+    await page.getByLabel('Password').fill(PASSWORD);
+    await page.getByRole('button', { name: 'Sign in' }).click();
+    await page.waitForURL('/');
+
+    const stored = async () =>
+      (await (await page.request.get('/api/auth/me')).json()).user.language;
+    expect(await stored()).toBe('en');
+
+    await page.getByRole('button', { name: 'Deutsch' }).click();
+    await expect(page.getByRole('link', { name: 'Ausgaben' })).toBeVisible();
+    await expect.poll(stored).toBe('de');
+
+    // And back — a follow, not a one-way door.
+    await page.getByRole('button', { name: 'English' }).click();
+    await expect.poll(stored).toBe('en');
+  });
+
   test('German moves the decimal point, not only the labels', async ({ page, request }) => {
     const email = uniqueEmail('lang');
     await seedAccountWithHousehold(request, { email, currency: 'EUR' });

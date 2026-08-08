@@ -231,4 +231,26 @@ ALTER TABLE users DROP COLUMN name;
 `);
     },
   },
+
+  {
+    id: '005-user-language',
+    up: (db) => {
+      // What language to *email* this account in.
+      //
+      // The interface language is a per-device choice and stays one — a guest
+      // has no account to hang it on (`ARCHITECTURE.md` §9.1a). But the server
+      // cannot ask a device anything: half the messages it sends go to people
+      // who are not making the request, and some go to people who are asleep.
+      // So an account carries the language its post arrives in, set from
+      // whatever the browser was reading when it registered and updated
+      // whenever a signed-in person flips the picker.
+      //
+      // Defaulting to 'en' is what every account that predates this gets, which
+      // is exactly the English they have been receiving all along. A deploy must
+      // not silently start writing to people in a language they did not pick.
+      db.exec(`
+ALTER TABLE users ADD COLUMN language TEXT NOT NULL DEFAULT 'en' CHECK (language IN ('en', 'de'));
+`);
+    },
+  },
 ];

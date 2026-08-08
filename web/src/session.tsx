@@ -1,6 +1,7 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { ApiError, api, type Household, type SessionPayload, type SessionUser } from './api';
+import { useI18n } from './i18n';
 
 interface SessionState {
   user: SessionUser | null;
@@ -114,6 +115,44 @@ export function useSession(): SessionState {
   const context = useContext(SessionContext);
   if (!context) throw new Error('useSession must be used inside a SessionProvider');
   return context;
+}
+
+/**
+ * Keeps the language an account is **emailed** in level with the language the
+ * person is reading.
+ *
+ * These are two different settings on purpose. Reading is per device: it works
+ * signed out, it works for a guest with no account, and it never touches the
+ * API (`ARCHITECTURE.md` §9.1a). Writing has to be per account, because half
+ * the messages the server sends go to people who are not making the request —
+ * an owner hearing that somebody joined is not holding a browser.
+ *
+ * So this is the one place they meet, and it is a **follow rather than a
+ * binding**: flipping the picker while signed in tells the server "write to me
+ * in this from now on". A second device left in English does not drag it back;
+ * whichever device last made a choice while signed in is the one that set it.
+ *
+ * The ref is what stops the effect firing twice before the refetch lands.
+ * Called once, from `App`, so the dependency on `I18nProvider` wrapping
+ * `SessionProvider` is visible at a call site rather than buried in one.
+ */
+export function useEmailLanguage(): void {
+  const { user, refresh } = useSession();
+  const { language } = useI18n();
+  const sent = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!user || user.language === language || sent.current === language) return;
+    sent.current = language;
+    api
+      .put('/auth/language', { language })
+      .then(refresh)
+      .catch(() => {
+        // Not worth an alert: the app is still in the right language, and the
+        // next flip — or the next sign-in on this device — tries again.
+        sent.current = null;
+      });
+  }, [user, language, refresh]);
 }
 
 /** Convenience hook for pages that only render behind the household guard. */

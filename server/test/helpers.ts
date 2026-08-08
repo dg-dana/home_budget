@@ -129,13 +129,20 @@ const tokenFromLink = (link: string) => link.split('/').pop()!;
  * no household selected.
  */
 export async function registerAccount(
-  overrides: Partial<{ email: string; password: string; verify: boolean }> = {},
+  overrides: Partial<{
+    email: string;
+    password: string;
+    verify: boolean;
+    /** What language this account's post arrives in. Defaults to English. */
+    language: 'en' | 'de';
+  }> = {},
 ): Promise<Account> {
   const client = createClient();
   const email = overrides.email ?? uniqueEmail('account');
   const registered = await client.post('/api/auth/register', {
     email,
     password: overrides.password ?? 'password123',
+    ...(overrides.language ? { language: overrides.language } : {}),
   });
   if (registered.status !== 201) {
     throw new Error(`register failed: ${registered.status} ${JSON.stringify(registered.body)}`);
@@ -193,12 +200,13 @@ export async function createHousehold(
 export async function addMember(
   owner: Household,
   name = 'Member',
+  { language }: { language?: 'en' | 'de' } = {},
 ): Promise<{ client: Client; userId: string; email: string }> {
   const invite = await owner.client.post('/api/household/invites', { role: 'member' });
   if (invite.status !== 201) {
     throw new Error(`invite failed: ${invite.status} ${JSON.stringify(invite.body)}`);
   }
-  const account = await registerAccount({ email: uniqueEmail('member') });
+  const account = await registerAccount({ email: uniqueEmail('member'), language });
   const joined = await joinHousehold(account, invite.body.token, name);
   if (joined.status !== 201) {
     throw new Error(`join failed: ${joined.status} ${JSON.stringify(joined.body)}`);

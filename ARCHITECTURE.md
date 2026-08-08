@@ -212,6 +212,53 @@ they are simply dropped.
 - **Routine edits send nothing**: expenses, categories, budgets, recurring rules, shopping lists, share links, and renaming yourself. A household that emails on every grocery item trains everyone to ignore it.
 - `notifyAll()` fans one notice out to several addresses in parallel, deduplicated, each bounded by the same timeout — so telling nine people costs about what telling one does, and a failure is still only a warning.
 
+### 4.2 What language a message goes out in
+
+Every notice is composed in **the recipient's** language, which is a property of
+the person receiving it rather than of the request that caused it.
+
+- **`users.language` is the store** (migration `005`, `'en'` | `'de'`, default
+  `'en'`). It has to be stored rather than read off the request, because most of
+  the table in §4.1 describes messages sent to people who are *not* holding a
+  browser — an owner hearing that somebody joined, everybody hearing a household
+  was deleted. There is nothing to ask.
+- **It is not the same setting as the interface language**, and must not become
+  one. Reading is per device, works signed out, and works for a guest with no
+  account at all (§9.1a). The two meet in exactly one place: `PUT /auth/language`,
+  which the frontend calls when somebody **signed in** flips the picker. That is
+  a *follow*, not a binding — a second device left in English does not drag the
+  emails back, and whichever device last made a choice while signed in is the one
+  that set it. Anything cleverer would mean ranking devices.
+- **Registration carries the language**, so the confirmation email — the very
+  first thing an account receives — is already in the language the person was
+  reading when they typed their address. The field is optional and defaults to
+  English, so an old build, a script or a `curl` still registers.
+- **Existing accounts default to English**, which is exactly what they have been
+  receiving all along. A deploy must not silently start writing to people in a
+  language they did not choose.
+- **`householdAddresses()` returns `Recipient[]`** — address *and* language —
+  rather than addresses. That is what makes one household with an English and a
+  German member produce two differently worded emails out of one `notifyAll()`.
+  Deduplication there is by address, not by the whole recipient: one person is
+  one message.
+- **`server/src/notificationStrings.ts` is the dictionary**, deliberately the
+  same shape as `web/src/strings.ts`: one entry per string holding
+  `[English, German]`, whole sentences with `{named}` placeholders, and a
+  `satisfies` clause that refuses a half-missing pair. Two dictionaries in one
+  house style beats one shared across a process boundary neither side needs to
+  cross — the frontend's strings are never sent and these are never rendered.
+- **A route hands over values, never a phrase.** `PUT /household` used to build
+  `the name from "X" to "Y"` and pass it in, which made the message
+  untranslatable by construction; it now passes the four values and the notice
+  builder picks one of three whole sentences. This is the server's version of
+  the §9.1a rule, and the temptation is stronger here because notices are long.
+- **An invited address usually has no account yet**, so there is nothing stored
+  to read. Where one exists, that account's own choice wins — they have made
+  one. Otherwise the **inviting owner's** language is used: they are the one
+  person who knows who they are writing to.
+- **The link is language-independent.** It is a URL, appended the same way in
+  either language, and `APP_URL` knows nothing about any of this.
+
 ### Passwords and session invalidation
 
 - Three ways to change a password: **self-service change** (`POST /auth/password`, requires the current one), **asking for your own recovery link** (`POST /auth/forgot` → `/reset/:token`), and an **owner-issued recovery link** (`POST /household/members/:id/reset-password` → the same page) — which now exists **only where the app cannot send email**.
@@ -332,7 +379,8 @@ so the UI can badge them.
 - `migrations.ts` — the ordered, append-only migration list.
 - `recurring.ts` — recurrence date maths (pure) and materialisation.
 - `auth.ts` — hashing, cookies, id/token generation, auth middleware, `setPassword`, `assertPassword`, `issuePasswordReset()` (one minting rule for both kinds of recovery link, §4), `householdAddresses()` (who to notify, §4.1), and the **membership resolution** that turns a cookie's `hh` claim into the household a request is about.
-- `notifications.ts` — the one place that decides how a message travels: Resend when configured, the on-screen link when not (§4.1). Every caller is ignorant of both.
+- `notifications.ts` — the one place that decides how a message travels: Resend when configured, the on-screen link when not (§4.1). Every caller is ignorant of both. It is also where a notice is **composed in the recipient's language** (§4.2), from `notificationStrings.ts`.
+- `notificationStrings.ts` — every word the app sends, in both languages, one entry per string (§4.2).
 - `http.ts` — `HttpError` + status helpers, `asyncHandler`, `parseBody`, error middleware.
 - `rateLimit.ts` — in-process fixed-window limiter, keyed by client IP unless the caller supplies a `key` (recovery is counted per address, §13).
 - `backup.ts` — consistent snapshots via SQLite's online backup API.
@@ -561,8 +609,14 @@ Every screen reads in **English or German**, chosen by whoever is looking at it.
   stays inside the GSM 7-bit alphabet like the English — umlauts are in it,
   typographic quotes are not — so a pasted list still fits an SMS segment (§9,
   "Copy list").
-- **The server is still English-only.** Emails, and the error messages the API
-  returns and the UI shows verbatim, are not translated (§14).
+- **Emails follow the account, not the device** (§4.2). Reading is per device
+  and never leaves the browser; writing has to be stored, because half the
+  messages the server sends go to people who are not making the request. The
+  two meet in one place: `useEmailLanguage()` posts to `PUT /auth/language`
+  when somebody signed in uses the picker.
+- **API error messages are still English**, in both languages — the UI prints
+  what the server returns verbatim, so a German page can answer a bad password
+  in English (§14).
 - Two things the browser decides and the app cannot: `<input type="date">` and
   `<input type="month">` render in the **browser's** UI language, not the page's.
   A German page on an English browser shows `08/07/2026` in the date field. The
@@ -648,7 +702,7 @@ Two suites, run together with `npm run test:all`.
 
 ### Server integration suite — Vitest, `server/test/`
 
-- 238 tests, run with `npm test` from the repo root.
+- 248 tests, run with `npm test` from the repo root.
 - They are **integration tests over real HTTP**, not unit tests: each file boots the actual app on an ephemeral port and drives it with a cookie-aware client. There is no mocking of the database, the router or the session.
 - `test/setup.ts` runs before any application module is imported and points `DATABASE_PATH` at a unique temp file. Vitest gives each test file its own module registry, so **every test file gets its own SQLite database** and files can run in parallel.
 - `resetDatabase()` truncates every table in `beforeEach`.
@@ -670,12 +724,12 @@ Two suites, run together with `npm run test:all`.
 - `password.test.ts` — self-service change, owner-issued recovery, that both evict other devices, and that an outstanding link is retired when the member goes — whether an owner removed them or they left of their own accord. **No provider is configured in this file, which is now what the whole second half depends on**: it holds the deployment where owner-issued recovery still works (and `ownerRecovery` is true) and where `POST /auth/forgot` refuses with a 503 rather than showing a link.
 - `forgotPassword.test.ts` — the other half of that: a provider **is** configured, and asking for your own link works end to end from the emailed message rather than from the database. The two that matter are indistinguishability (an address with no account gets the same status, the same body and no mail) and that the token never appears in the response; then retiring earlier links of either kind, address normalisation, an unconfirmed address, an account with no household, that the owner-issued route is refused here (for a member and for the owner's own account alike) and that `ownerRecovery` says so, and — in a second `describe`, the one place in the suite that runs with `enableRateLimits: true` — the five-an-hour per-address budget, with a bystander's address proving the bucket is not the IP.
 - `compression.test.ts` — measures **raw wire bytes** with `node:http`, because `fetch` transparently decompresses and would compare a number with itself.
-- `notificationsSending.test.ts` — the other half: a provider **is** configured, and every route that changes a household has to reach the right people and nobody else — joins, removals, role changes, renames, both deletions, password changes and invites. Only calls to the provider are intercepted; requests to the app are real HTTP. The environment is set before `config.ts` loads, which is what the file's top-level `await import` is for.
-- `notifications.test.ts` — email (§4.1) with `fetch` stubbed, so the suite never touches a provider: nothing sent and nothing claimed when no key is configured, the exact request made when one is, the address and link base derived from `DOMAIN`, a relative link refusing to go out without `APP_URL`, and a refusal, a network failure and an addressless invite all degrading to the link rather than throwing. `config.ts` reads the environment once at import, so each case sets its variables behind `vi.resetModules()`.
+- `notificationsSending.test.ts` — the other half: a provider **is** configured, and every route that changes a household has to reach the right people and nobody else — joins, removals, role changes, renames, both deletions, password changes and invites. It also holds the **language** cases (§4.2): one household with an English and a German member hearing the same rename in two languages, a sign-up confirmed in the language it was made in, a client that says nothing still getting English, an account changing its mind, and the two rules for an invited address. Only calls to the provider are intercepted; requests to the app are real HTTP. The environment is set before `config.ts` loads, which is what the file's top-level `await import` is for.
+- `notifications.test.ts` — email (§4.1) with `fetch` stubbed, including that a notice is composed in the recipient's language with the link appended unchanged (§4.2),, so the suite never touches a provider: nothing sent and nothing claimed when no key is configured, the exact request made when one is, the address and link base derived from `DOMAIN`, a relative link refusing to go out without `APP_URL`, and a refusal, a network failure and an addressless invite all degrading to the link rather than throwing. `config.ts` reads the environment once at import, so each case sets its variables behind `vi.resetModules()`.
 
 ### Browser tests — Playwright, `e2e/`
 
-- 24 tests, run with `npm run test:e2e`. Config is `playwright.config.ts` at the repo root.
+- 25 tests, run with `npm run test:e2e`. Config is `playwright.config.ts` at the repo root.
 - **Four areas: the guest flow, the statistics page, multiple households and the language switch.** The guest flow is the riskiest path — the one surface reachable without an account — and was the only coverage for a long time. (The theme test lives there because the toggle is on the guest header too.)
 - `statistics.spec.ts` exists because **every bug that page has had was invisible to the server suite**: a fold bucket that borrowed a real category's name, a one-month range drawing a lone dot, a stale response overwriting a newer one. Those are questions about what is on the screen. It reaches the page through the header link, never a direct URL — a page nobody can navigate to is a page nobody has.
 - `seedStatsHousehold()` builds a household through the API, giving **each joining member its own request context**: joining sets a session cookie, and a shared jar would sign the owner out halfway through.
@@ -701,7 +755,7 @@ What it asserts: a member creates and shares a list through the UI; a guest with
 
 ### Both suites were verified by breaking the code
 
-Forty-three deliberate regressions were introduced, and each was caught by a failing test:
+Forty-eight deliberate regressions were introduced, and each was caught by a failing test:
 
 1. Removing the `household_id` filter from the expenses list query → `isolation` failed.
 2. Adding `householdId` to the guest share response → `share` failed.
@@ -746,6 +800,11 @@ Forty-three deliberate regressions were introduced, and each was caught by a fai
 41. Taking it out of `AuthPage` → `language` failed, the sign-in page offering no way into German. (Same trap as 8, and the reason it was worth repeating.)
 42. Letting `applyLanguage()` set `<html lang>` without updating the locale `format.ts` reads → `language` failed on the money, which stayed `105.00` under German labels.
 43. Deleting the language half of the pre-paint script in `index.html` → `language` failed on the JS-blocked reload, exactly as 6 does for the theme.
+44. Making `householdAddresses()` report every recipient as English → `notificationsSending` failed, one household's German member written to in English.
+45. Ignoring the language a registration carries → `notificationsSending` and `accounts` failed, the confirmation email in the wrong language before the account had done anything else.
+46. Letting an invite use the inviter's language over an existing account's own choice → `notificationsSending` failed, somebody who had already chosen being overruled by whoever invited them.
+47. Widening `PUT /auth/language` to accept any string → `accounts` failed, a value the dictionary cannot render getting into the column.
+48. Unwiring `useEmailLanguage()` → the `language` browser test failed, the picker changing the page and nothing else, so the emails silently stayed English.
 
 The statistics suite also earned its place on the way in: the one-month test failed against the unguarded fetch, which is how the stale-response race in §9.2 was found.
 
@@ -829,13 +888,16 @@ Honest list — these are real, and none is currently blocking.
 - **Self-service recovery needs a mail provider, so on an unconfigured deployment there is none.** `POST /auth/forgot` refuses with a 503 pointing at the household owner, since the alternative — showing the link the way every other flow does — would let anybody into any account by typing its address. Local runs and the suite therefore exercise it only with `RESEND_API_KEY` set.
 - **Nothing proves an address on an unconfigured deployment.** Without `RESEND_API_KEY` the confirmation link is handed straight to whoever registered, so it is a step in the flow rather than a check. That is the right trade for the suite and for local work, but it means "confirmed" only means "verified" where a provider is actually configured.
 - **An owner can still reach any account in their household on a deployment with no mail provider.** This was the general case and is now the exception: with email configured the route is refused (§4). Where it is not, an owner minting a link for somebody who belongs to households they have never heard of remains possible, because the alternative is a locked-out member with no way back in. Removing someone retires their outstanding links (§3), which closes the worst of it. The real fix is configuring email, which is one secret.
-- **The interface is bilingual; the server is not.** Emails go out in English
-  whoever reads them, and so do the API's error messages, which the UI shows
-  verbatim — so a German page can still answer a bad password in English. Fixing
-  the emails needs a language stored per account rather than per device (§9.1a),
-  and fixing the errors needs the API to return codes the frontend translates
-  rather than sentences it prints. Neither is hard; both are more than a
-  dictionary.
+- **API error messages are still English in both languages.** The UI prints
+  what the server returns verbatim, so a German page can answer a bad password
+  with an English sentence. Fixing it means the API returning **codes** the
+  frontend translates rather than sentences it prints — which is a change to
+  every `badRequest('…')` in the codebase and to how the frontend renders a
+  failure, not a dictionary entry. Emails no longer have this problem (§4.2).
+- **An account has one email language, and it is the last one chosen on any
+  signed-in device.** Somebody reading German on their phone and English on a
+  shared laptop sets it from whichever they touched last. Ranking devices would
+  be the only fix and nobody has asked for one.
 - **Polling is 15-second HTTP, not a push.** Every shopping page refetches on the same interval now (§9), which closes the old split where only the guest page kept up, but a change still takes up to fifteen seconds to appear and each open page costs a request. SSE or a WebSocket would be immediate and cheaper at rest; neither is worth a persistent connection on a 512 MB box for a household of four.
 - Rate limiting is in-process and will not survive horizontal scaling (see §13) — moot while the deployment is deliberately one machine.
 - **The container runs as root.** Fly volumes mount root-owned, and dropping privileges needs a startup chown dance that was not worth the risk of an unverifiable failure. Worth hardening later.

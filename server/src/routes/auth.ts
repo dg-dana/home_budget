@@ -7,6 +7,7 @@ import {
   currentAccount,
   hashPassword,
   householdAddresses,
+  recipient,
   issuePasswordReset,
   issueSession,
   membershipIn,
@@ -48,7 +49,18 @@ const password = z.string().min(8, 'Password must be at least 8 characters');
  * name. Those belong to a household, and this person does not have one yet;
  * they may end up with several, called something different in each.
  */
-const registerSchema = z.object({ email, password });
+/**
+ * The language is optional and defaults to English, because a client that
+ * knows nothing about this — an old build, a script, a curl — must still be
+ * able to register. It is what the account's post arrives in, not what the
+ * browser renders in; the two are set together and then drift apart freely,
+ * since reading is per device and post is per person.
+ */
+const language = z.enum(['en', 'de']);
+
+const registerSchema = z.object({ email, password, language: language.default('en') });
+
+const languageSchema = z.object({ language });
 
 const loginSchema = z.object({ email, password: z.string().min(1) });
 
@@ -114,7 +126,7 @@ function sessionPayload(user: UserRow, currentHouseholdId: string | null) {
   const membership = memberships.find((m) => m.household_id === current?.id) ?? null;
 
   return {
-    user: toSessionAccount(user, membership),
+    user: { ...toSessionAccount(user, membership), language: user.language },
     household: current,
     households,
     // Deployment-wide rather than per-account, but this is the channel the
@@ -144,9 +156,9 @@ authRouter.post(
     // still "that address is taken" — not a 500.
     try {
       db.prepare(
-        `INSERT INTO users (id, email, password_hash, created_at)
-         VALUES (?, ?, ?, ?)`,
-      ).run(userId, input.email, passwordHash, nowIso());
+        `INSERT INTO users (id, email, password_hash, language, created_at)
+         VALUES (?, ?, ?, ?, ?)`,
+      ).run(userId, input.email, passwordHash, input.language, nowIso());
     } catch (err) {
       if (isUniqueViolation(err)) throw conflict('An account with that email already exists');
       throw err;
@@ -160,7 +172,7 @@ authRouter.post(
     issueSession(res, user, null);
     res.status(201).json({
       ...sessionPayload(user, null),
-      verification: await verifyEmailNotice(user.email, `/verify/${token}`),
+      verification: await verifyEmailNotice(recipient(user), `/verify/${token}`),
     });
   }),
 );
@@ -206,6 +218,31 @@ authRouter.post(
   }),
 );
 
+/**
+ * What language to write to this account in.
+ *
+ * The interface language is a **per-device** choice and stays one — it lives in
+ * `localStorage`, works signed out, and works for a guest with no account at
+ * all (`ARCHITECTURE.md` §9.1a). This route is the one place the two meet: when
+ * somebody signed in flips the picker, the language their post arrives in
+ * follows what they are reading.
+ *
+ * That is deliberately a **follow**, not a binding. A second device left in
+ * English does not drag the emails back; whichever device most recently made a
+ * choice while signed in is the one that set it. Anything cleverer would need
+ * the app to rank devices, which nobody asked it to do.
+ */
+authRouter.put(
+  '/language',
+  requireAuth,
+  asyncHandler((req, res) => {
+    const account = currentAccount(req);
+    const input = parseBody(languageSchema, req.body);
+    db.prepare('UPDATE users SET language = ? WHERE id = ?').run(input.language, account.id);
+    res.status(204).end();
+  }),
+);
+
 /** Issues a fresh confirmation link for the signed-in account. */
 authRouter.post(
   '/verify/resend',
@@ -216,7 +253,9 @@ authRouter.post(
     if (user.email_verified_at) throw badRequest('That address is already confirmed');
 
     const { token } = issueEmailVerification(user);
-    res.status(201).json({ verification: await verifyEmailNotice(user.email, `/verify/${token}`) });
+    res.status(201).json({
+      verification: await verifyEmailNotice(recipient(user), `/verify/${token}`),
+    });
   }),
 );
 
@@ -308,7 +347,7 @@ authRouter.post(
     await setPassword(user.id, input.newPassword);
     // Told, not asked: a password changing without the owner's knowledge is
     // the one thing worth an unprompted message.
-    await passwordChangedNotice(user.email, 'changed');
+    await passwordChangedNotice(recipient(user), 'changed');
     // Every other device is signed out; this one gets a fresh cookie, keeping
     // whichever household it was looking at.
     issueSession(res, getUser(user.id), account.householdId);
@@ -356,7 +395,7 @@ authRouter.post(
       // Retires any outstanding link, the same as an owner issuing one: only
       // the newest works, so a link asked for twice cannot leave two keys out.
       const { token } = issuePasswordReset(user.id, null);
-      await passwordResetNotice(user.email, `/reset/${token}`);
+      await passwordResetNotice(recipient(user), `/reset/${token}`);
     }
 
     // Accepted, not "sent": from out here the two cases have to look the same.
@@ -407,7 +446,7 @@ authRouter.post(
     // The account's own address hears about it even though the link may have
     // come from an owner: a recovery link is a way in, so the person it
     // belongs to should see it being used.
-    await passwordChangedNotice(user.email, 'reset');
+    await passwordChangedNotice(recipient(user), 'reset');
     issueSession(res, user, current);
     res.status(201).json(sessionPayload(user, current));
   }),
@@ -473,7 +512,7 @@ authRouter.delete(
     // Everything the notices need, read while the rows still exist: the
     // address about to be deleted, and — for each household carrying on —
     // who is left to tell and what this person was called there.
-    const deletedAddress = getUser(account.id).email;
+    const deleted = recipient(getUser(account.id));
     const departures = memberships
       .filter((membership) => !householdsToDelete.includes(membership.household_id))
       .map((membership) => ({
@@ -501,7 +540,7 @@ authRouter.delete(
     // Leaving looks the same from the household's side whether an owner did the
     // removing or the person deleted their account, so it is the same notice.
     await Promise.all([
-      accountDeletedNotice(deletedAddress),
+      accountDeletedNotice(deleted),
       ...departures.map((departure) =>
         notifyAll(departure.owners, (to) =>
           memberRemovedNotice(to, departure.name, departure.displayName),

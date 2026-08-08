@@ -379,6 +379,38 @@ describe('accounts and households', () => {
       expect(users.count).toBe(0);
     });
 
+    it('remembers what language to write to the account in', async () => {
+      // Two settings, not one. What the browser *renders* in never leaves the
+      // browser (`ARCHITECTURE.md` §9.1a); this is what the post arrives in,
+      // and the server has to store it because half the messages it sends go
+      // to people who are not making the request.
+      const account = await registerAccount({ language: 'de' });
+      expect((await account.client.get('/api/auth/me')).body.user.language).toBe('de');
+
+      const changed = await account.client.put('/api/auth/language', { language: 'en' });
+      expect(changed.status).toBe(204);
+      expect((await account.client.get('/api/auth/me')).body.user.language).toBe('en');
+    });
+
+    it('defaults to English and refuses a language it cannot write', async () => {
+      // Every account that predates this, and every client that says nothing,
+      // carries on getting exactly the English it always got.
+      const account = await registerAccount();
+      expect((await account.client.get('/api/auth/me')).body.user.language).toBe('en');
+
+      const refused = await account.client.put('/api/auth/language', { language: 'fr' });
+      expect(refused.status).toBe(400);
+      expect((await account.client.get('/api/auth/me')).body.user.language).toBe('en');
+    });
+
+    it('keeps one account\'s language out of another\'s', async () => {
+      const german = await registerAccount({ language: 'de' });
+      const english = await registerAccount();
+
+      expect((await german.client.get('/api/auth/me')).body.user.language).toBe('de');
+      expect((await english.client.get('/api/auth/me')).body.user.language).toBe('en');
+    });
+
     it('renames you in one household without touching the other', async () => {
       const home = await registerHousehold({ householdName: 'Home', name: 'Dad' });
       await createHousehold(home, { name: 'Flat share', displayName: 'Dana' });

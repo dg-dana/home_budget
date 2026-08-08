@@ -7,46 +7,51 @@ Last updated: 2026-08-07 · live: deploy run #33 (`5cd346e`)
 
 ---
 
-## Live: German, and the copy-list change
+## Next: deploy German emails
 
-**Both are deployed.** Deploy run #33 shipped the language switch on top of run
-#32's copy-list change; every step passed, "Verify the public URL works"
-included.
+**Merged but not deployed.** The app now writes to people in German as well as
+showing them German. Deploy run #33 shipped the interface; this is the server
+half, and it needs a run of its own.
 
-The whole interface now reads in **English or German**, switched from a picker
-beside the theme toggle — so it is on both headers, on every signed-out screen
-and on the guest share page, and needs no account. The choice is per device
-(`localStorage`), exactly like the theme and for the same reasons: a guest has
-nowhere to store a setting, and one person's phone is not another's laptop.
-With nothing chosen, a German phone gets German on its own.
+The thing to understand about it: **reading and writing are two settings, and
+they had to be.** What the browser renders in is per device — it works signed
+out, it works for a guest, it never touches the API. But most of the messages
+the server sends go to people who are *not* making the request: an owner
+hearing somebody joined, everyone hearing a household was deleted. There is
+nobody to ask. So `users.language` (migration `005`) stores what an account's
+post arrives in, and the two meet in exactly one place — flipping the picker
+while signed in tells the server to follow.
 
-Three decisions worth knowing before touching it (`ARCHITECTURE.md` §9.1a):
+That means one household can now hold an English member and a German one, and
+a single rename sends two differently worded emails. `householdAddresses()`
+returns the language alongside the address, which is what makes that fall out
+rather than needing arranging.
 
-- `web/src/strings.ts` is the whole dictionary, **one entry per string holding
-  both languages** — the same shape as one `light-dark()` pair per colour, and
-  TypeScript refuses a pair with a half missing, so German cannot fall behind.
-- Entries are **whole sentences** with `{named}` placeholders, never fragments
-  glued together at the call site. German does not put the verb where English
-  does. `tx()` fills a placeholder with a `<Link>` or a `<strong>` so a sentence
-  containing markup still stays one entry.
-- Choosing German moves the **money and the dates** too, not only the words.
-  German labels over `105.00` read as half-finished, and that is the half a
-  dictionary alone leaves behind.
+Two rules worth keeping:
 
-Three browser tests cover it, and the code was broken four times to watch each
-one fail: the toggle removed from the guest header, removed from the signed-out
-shell, the locale stopped following the language, and the pre-paint `<html lang>`
-script deleted.
+- **A route hands the notice values, never a phrase.** `PUT /household` used to
+  build `the name from "X" to "Y"` and pass it in, which made that message
+  untranslatable by construction. It now passes the four values and the notice
+  builder picks one of three whole sentences.
+- **An invited address usually has no account yet.** Where one exists its own
+  choice wins; otherwise the invite goes out in the **inviting owner's**
+  language, since they are the only person who knows who they are writing to.
 
-**What is NOT translated: anything the server says.** Emails all go out in
-English, and so do the API's error messages, which the UI prints verbatim — so
-a German page can still answer a bad password in English. Emails would need a
-language stored per account rather than per device; the errors would need the
-API to return codes instead of sentences. Say if either matters and they are
-the next thing.
+Every account that predates this defaults to English — exactly what they have
+been receiving all along. A deploy must not start writing to people in a
+language they did not pick.
 
-**German has been checked by hand on the live site and looks right** — which
-is the only check that counts, since an agent sandbox cannot load it.
+Five browser and server regressions were introduced and watched fail:
+recipients all reported as English, registration ignoring the language it was
+given, an invite overruling an existing account's choice, the route accepting
+any string, and the frontend never posting the change at all.
+
+**Still English in both languages: API error messages.** The UI prints what the
+server returns verbatim, so a German page can answer a bad password with an
+English sentence. Fixing it means the API returning *codes* the frontend
+translates rather than sentences it prints — a change to every `badRequest()`
+in the codebase and to how the frontend renders a failure. Not a dictionary
+entry, and worth doing only if it actually grates.
 
 ## Needs your hands
 
@@ -56,11 +61,9 @@ live domain by policy, so anything about the real site is yours.
 - [ ] **Say if the notices are too much or too little.** Wording and who hears
       what are both easy to change; what is hard is noticing later that nobody
       reads them. `ARCHITECTURE.md` §4.1 has the table.
-- [ ] **Say whether the emails should be German too.** They are the one part of
-      the app that stays English, because the language lives on the device and
-      the server has no idea which device is reading. Making them follow would
-      mean storing a language on the account — worth doing only if the messages
-      are actually being read.
+- [ ] **Deploy it**, then send yourself one German email to check it reads
+      right — a password reset is the quickest. Nobody has watched a German
+      message land in a real inbox yet.
 - [ ] **Check the rest of the live site on a phone.** The Household page was
       checked on run #25, leaving a household on run #26, and password recovery
       on runs #27–#28 — all look right. What runs #17–#24 shipped still has
@@ -71,11 +74,14 @@ live domain by policy, so anything about the real site is yours.
 ## Open work
 
 
-- [ ] **The interface is bilingual; the server is not.** Emails and API error
-      messages are English whoever is reading. The errors are the more visible
-      of the two — they land in a German page's alert boxes — and fixing them
-      means the API returning codes the frontend translates rather than
-      sentences it prints. (§14)
+- [ ] **API error messages are English in both languages.** They land in a
+      German page's alert boxes as English sentences. Fixing it means the API
+      returning codes the frontend translates rather than sentences it prints —
+      a change to every `badRequest()` and to how a failure is rendered. (§14)
+- [ ] **An account has one email language: the last one chosen on any signed-in
+      device.** German on the phone and English on the shared laptop means
+      whichever was touched last wins. Ranking devices is the only fix and
+      nobody has asked for one. (§14)
 - [ ] **Native date and month pickers ignore the page's language.** Chrome
       renders `<input type="date">` in the *browser's* UI language, so a German
       page on an English browser still shows `08/07/2026`. Only replacing the
@@ -102,6 +108,12 @@ live domain by policy, so anything about the real site is yours.
 
 ## Done
 
+- [x] **Emails go out in German too** — per recipient, not per request, so one
+      household with two languages gets two versions of the same message.
+      `users.language` (migration `005`), set at registration and followed by
+      `PUT /auth/language`; `notificationStrings.ts` as the server's dictionary;
+      routes handing notices values rather than phrases. Five deliberate breaks
+      watched failing. (merged, **not yet deployed**)
 - [x] **English and German across the whole interface**, per device, on every
       screen including the guest's — dictionary in `web/src/strings.ts`, one
       entry per string with both languages; whole sentences rather than glued
