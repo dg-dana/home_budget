@@ -3,15 +3,18 @@
 The running state of this project. **Updated after every step** — see the
 "Working agreement" in `CLAUDE.md`.
 
-Last updated: 2026-08-08 · live: deploy run #34 (`1dd719f`)
+Last updated: 2026-08-08 · live: deploy run #36 (`9644a62`)
 
 German emails are live and **confirmed arriving**.
 
 ---
 
-## Next: deploy translated refusals
+## Live: translated refusals
 
-**Merged but not deployed.** The last thing in the app that spoke English
+**Deployed on run #36** (`9644a62`) — all 17 steps green, "Verify the public
+URL works" included.
+
+The last thing in the app that spoke English
 regardless of who was reading: when the API refused something, the page printed
 the server's sentence verbatim. A German page answered a wrong password in
 English.
@@ -54,10 +57,10 @@ live domain by policy, so anything about the real site is yours.
 - [ ] **Say if the notices are too much or too little.** Wording and who hears
       what are both easy to change; what is hard is noticing later that nobody
       reads them. `ARCHITECTURE.md` §4.1 has the table.
-- [ ] **Check the settings stick, on the phone that lost them** (live since run
-      #35). Choose German and light, sign out, sign back in — both should be
-      waiting. Worth doing from a second browser too, since that is the case
-      `localStorage` could never have covered.
+- [ ] **Glance at a German refusal on the live site** (live since run #36).
+      Signing in with the wrong password on a German page is the quickest one.
+      Everything the API refuses is translated now except Zod schema failures,
+      which are deliberate.
 - [ ] **Check the rest of the live site on a phone.** The Household page was
       checked on run #25, leaving a household on run #26, and password recovery
       on runs #27–#28 — all look right. What runs #17–#24 shipped still has
@@ -107,7 +110,7 @@ live domain by policy, so anything about the real site is yours.
       its English sentence, the page renders whichever it can, and a test that
       reads the web dictionary from the server suite fails if the two ever drift
       apart. Values travel as `vars` rather than baked into the sentence. Four
-      deliberate breaks watched failing. (merged, **not yet deployed**)
+      deliberate breaks watched failing. (PR #67, live on run #36)
 - [x] **Language and theme stick to the account** — adopted on sign-in, written
       back on every change, so a browser losing its `localStorage` no longer
       loses the choice with it. Signed-out and guest screens are unchanged.
