@@ -101,15 +101,29 @@ is a script or a stale client.
 None of these can be done from an agent sandbox: the egress proxy refuses the
 live domain by policy, so anything about the real site is yours.
 
-- [ ] **Say if the notices are too much or too little.** Wording and who hears
-      what are both easy to change; what is hard is noticing later that nobody
-      reads them. `ARCHITECTURE.md` §4.1 has the table.
-- [ ] **Check the rest of the live site on a phone.** The Household page was
-      checked on run #25, leaving a household on run #26, and password recovery
-      on runs #27–#28 — all look right. What runs #17–#24 shipped still has
-      not been: the new sign-up flow, the household switcher, "Make owner", and
-      that your existing household looks untouched. A green deploy proves the
-      URL responds, nothing more.
+- [ ] **Are the emails the right amount?** The app writes to you when something
+      happens in a household: somebody joins, somebody is removed, a role
+      changes, the household is renamed or deleted, a password changes. Nobody
+      has said whether that is too much or too little. Too many and they start
+      being ignored, which is worse than none; too few and something happens
+      that you would have wanted to know about. Wording and who hears what are
+      both a small change — noticing a year later that nobody reads them is
+      not. (`ARCHITECTURE.md` §4.1 has the full table of who hears what.)
+
+- [ ] **Four screens nobody has looked at on a phone.** They shipped, their
+      deploys were green, and no human has opened them. A green deploy proves
+      the URL responds and nothing else.
+
+      1. **Signing up** — create an account, then create or join a household as
+         a separate second step. This is the flow a new person meets first.
+      2. **The household switcher** — the dropdown in the header beside the
+         house icon, for moving between households.
+      3. **"Make owner"** on the Household page.
+      4. **Your own household** — that the expenses and lists you actually use
+         still look the way they should.
+
+      (Already checked and fine: the Household page, leaving a household,
+      password recovery, German throughout, and settings sticking.)
 
 ## Open work
 
