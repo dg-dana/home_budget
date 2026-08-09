@@ -3,16 +3,16 @@
 The running state of this project. **Updated after every step** — see the
 "Working agreement" in `CLAUDE.md`.
 
-Last updated: 2026-08-08 · live: deploy run #36 (`9644a62`)
+Last updated: 2026-08-09 · live: deploy run #37 (`ddf6840`)
 
 German emails are live and **confirmed arriving**.
 
 ---
 
-## Next: deploy the browser tests for the untested pages
+## Live: browser tests for the two untested pages
 
-**Merged but not deployed** — though there is nothing to see on the site: this
-is tests, plus one small fix they turned up.
+**Deployed on run #37** (`ddf6840`) — all 17 steps green. There is nothing to
+look at on the site: this is tests, plus one small fix they turned up.
 
 The two pages with no browser coverage at all were the two that matter most:
 the **expenses dashboard**, where the money is entered, and the **Household
@@ -161,7 +161,7 @@ each says why it stays. The first one is a real gap.
       eight of them, each watched failing against a deliberate break. Turned up
       a real defect on the way: every icon-only button was announced as "✕" to a
       screen reader, because the accessible name comes from the glyph and never
-      from `title`. (merged, **not yet deployed**)
+      from `title`. (PR #70, live on run #37)
 - [x] **Refusals from the API are translated** — the server sends a code beside
       its English sentence, the page renders whichever it can, and a test that
       reads the web dictionary from the server suite fails if the two ever drift
