@@ -299,6 +299,7 @@ export default function HouseholdPage() {
                     type="button"
                     className="icon-button danger"
                     title={t('household.removeTitle', { name: member.name })}
+                    aria-label={t('household.removeTitle', { name: member.name })}
                     onClick={() => {
                       if (window.confirm(t('household.confirmRemove', { name: member.name }))) {
                         void run(() => api.delete(`/household/members/${member.id}`));
@@ -626,6 +627,7 @@ export default function HouseholdPage() {
                       type="button"
                       className="icon-button danger"
                       title={t('household.deleteCategoryTitle', { name: category.name })}
+                      aria-label={t('household.deleteCategoryTitle', { name: category.name })}
                       onClick={() => {
                         if (
                           window.confirm(

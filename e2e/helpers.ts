@@ -132,6 +132,53 @@ export async function seedStatsHousehold(
   return { email, api, members, categories: await (await api.get('/api/categories')).json() };
 }
 
+export interface HouseholdWithMember {
+  ownerEmail: string;
+  memberEmail: string;
+  /** The owner's signed-in API context, for seeding more through the API. */
+  api: APIRequestContext;
+  memberId: string;
+  householdName: string;
+}
+
+/**
+ * A household with an owner and one ordinary member, built through the API.
+ *
+ * Each account needs a **request context of its own**, for the same reason
+ * `seedStatsHousehold` does: joining sets a session cookie, and a shared jar
+ * would sign the owner out halfway through.
+ */
+export async function seedHouseholdWithMember(
+  apiRequest: APIRequest,
+  baseURL: string,
+  { householdName = 'The Flat', memberName = 'Noa' } = {},
+): Promise<HouseholdWithMember> {
+  const api = await apiRequest.newContext({ baseURL });
+  const ownerEmail = uniqueEmail('owner');
+  await seedAccountWithHousehold(api, { email: ownerEmail, householdName });
+
+  const invite = await (
+    await api.post('/api/household/invites', { data: { role: 'member' } })
+  ).json();
+
+  const joiner = await apiRequest.newContext({ baseURL });
+  const memberEmail = uniqueEmail('member');
+  const registered = await joiner.post('/api/auth/register', {
+    data: { email: memberEmail, password: PASSWORD },
+  });
+  const account = await registered.json();
+  await joiner.post('/api/auth/verify', {
+    data: { token: String(account.verification.link).split('/').pop() },
+  });
+  const joined = await joiner.post('/api/households/join', {
+    data: { token: invite.token, displayName: memberName },
+  });
+  if (!joined.ok()) throw new Error(`join failed: ${joined.status()}`);
+  await joiner.dispose();
+
+  return { ownerEmail, memberEmail, api, memberId: account.user.id, householdName };
+}
+
 /** Signs a seeded household's owner into the browser and opens Statistics. */
 export async function openStatistics(page: Page, email: string) {
   await page.goto('/login');
