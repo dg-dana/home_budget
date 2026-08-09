@@ -77,6 +77,7 @@ export default function ItemRow({ item, api, editable, canDelete = false, run }:
             type="button"
             className="icon-button danger"
             title={t('common.remove')}
+            aria-label={t('item.removeItem', { name: item.name })}
             onClick={() => run(() => api.remove(item))}
           >
             ✕

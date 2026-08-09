@@ -9,6 +9,42 @@ German emails are live and **confirmed arriving**.
 
 ---
 
+## Next: deploy the browser tests for the untested pages
+
+**Merged but not deployed** — though there is nothing to see on the site: this
+is tests, plus one small fix they turned up.
+
+The two pages with no browser coverage at all were the two that matter most:
+the **expenses dashboard**, where the money is entered, and the **Household
+page**, where the buttons that cannot be undone live. Eight tests now cover
+them, and each was watched failing against a deliberate break.
+
+They ask what only a browser can see:
+
+- **Who is shown which control.** The Danger zone card was briefly owner-only,
+  correctly, back when deleting the household was the only thing in it — and
+  that shipped a page where "Leave this household" was hidden from precisely
+  the people it exists for. The server was perfectly happy.
+- **Where a refusal appears.** The invite error has to land *under* the form:
+  the page is several screens long on a phone, so an alert at the top is one
+  nobody scrolls up to see. That is a claim about pixels.
+- **Whether a control the server would refuse is offered at all** — the only
+  owner gets a disabled button and the reason, not a round trip.
+- **Whether the summary beside the form moves when the form is used**, and
+  whether editing a row arrives holding *that row's* values.
+
+**Writing them turned up a real defect.** Every icon-only button in the app was
+announced as "✕" or "✎" to a screen reader: the accessible name comes from the
+button's content, and `title` is only consulted when there is none. Row
+controls on the expenses, recurring, Household and shopping pages now carry an
+`aria-label`. Found because a test went looking for a button by name and could
+not find it — which is the kind of thing a screenshot never shows.
+
+Two of the first breaks I tried **silently did nothing** — one patch string no
+longer existed, and `hidden` loses to `.card { display: flex }`. Both looked
+like passing tests. Worth remembering: a break that does not break is not
+evidence, so assert the patch applied.
+
 ## The German work is finished
 
 Interface, money and dates, emails and refusals from the API — all of it reads
@@ -81,14 +117,11 @@ Everything below except the first is an **accepted trade-off** rather than
 queued work: it is written down so nobody rediscovers it as a surprise, and
 each says why it stays. The first one is a real gap.
 
-- [ ] **Most of the frontend has no browser tests.** Covered: the guest flow,
-      the statistics page, the household switcher, and language and theme.
-      **Not covered: the expenses dashboard, budgets, recurring rules, invites,
-      and the Household page** — which is where the money is entered and where
-      the irreversible buttons live. Changes there are checked by looking at a
-      screenshot, and a screenshot proves today, not tomorrow. Two bugs in this
-      project's history were invisible to every test *and* to a careful reading
-      of the diff. This is the one item here that would repay doing. (§14)
+- [ ] **Recurring rules and the lists index still have no browser tests.** The
+      two that mattered most — the expenses dashboard and the Household page —
+      are covered now. What is left is smaller: pause/resume and the next-due
+      date on recurring, and creating a list from the index. Worth doing, not
+      urgent. (§14)
 - [ ] **One account, one pair of preferences.** A phone and a laptop can no
       longer disagree about language or theme — whichever was changed last wins
       everywhere. Deliberate: keeping both would mean the app ranking devices.
@@ -124,6 +157,11 @@ each says why it stays. The first one is a real gap.
 
 ## Done
 
+- [x] **Browser tests for the expenses dashboard and the Household page** —
+      eight of them, each watched failing against a deliberate break. Turned up
+      a real defect on the way: every icon-only button was announced as "✕" to a
+      screen reader, because the accessible name comes from the glyph and never
+      from `title`. (merged, **not yet deployed**)
 - [x] **Refusals from the API are translated** — the server sends a code beside
       its English sentence, the page renders whichever it can, and a test that
       reads the web dictionary from the server suite fails if the two ever drift

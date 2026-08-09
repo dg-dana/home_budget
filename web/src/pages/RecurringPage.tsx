@@ -325,6 +325,7 @@ export default function RecurringPage() {
                   type="button"
                   className="icon-button"
                   title={t('common.edit')}
+                  aria-label={t('expenses.editRow', { what: rule.description || t('recurring.fallbackName') })}
                   onClick={() => startEdit(rule)}
                 >
                   ✎
@@ -333,6 +334,7 @@ export default function RecurringPage() {
                   type="button"
                   className="icon-button danger"
                   title={t('common.delete')}
+                  aria-label={t('expenses.deleteRow', { what: rule.description || t('recurring.fallbackName') })}
                   onClick={() => handleDelete(rule)}
                 >
                   ✕

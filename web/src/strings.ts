@@ -490,6 +490,11 @@ export const STRINGS = {
     'Für {month} ist noch nichts erfasst.',
   ],
   'expenses.fallbackName': ['Expense', 'Ausgabe'],
+  /* Icon-only buttons need a name of their own: the accessible name comes from
+     the glyph inside them, never from `title`, so without these a screen reader
+     announces every row's controls as "x" and "pencil". */
+  'expenses.editRow': ['Edit {what}', '{what} bearbeiten'],
+  'expenses.deleteRow': ['Delete {what}', '{what} löschen'],
   'expenses.repeating': ['↻ repeating', '↻ wiederkehrend'],
   'expenses.repeatingTitle': [
     'Added automatically by a recurring rule',
@@ -643,6 +648,7 @@ export const STRINGS = {
   'item.markBought': ['Mark {name} as bought', '{name} als gekauft markieren'],
   'item.addedBy': ['Added by {name}', 'Hinzugefügt von {name}'],
   'item.pickedUpBy': ['· picked up by {name}', '· mitgenommen von {name}'],
+  'item.removeItem': ['Remove {name}', '{name} entfernen'],
 
   // ------------------------------------------------------------ copy list
   'copy.button': ['Copy list', 'Liste kopieren'],

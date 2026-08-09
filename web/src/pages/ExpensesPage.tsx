@@ -315,6 +315,7 @@ export default function ExpensesPage() {
                       type="button"
                       className="icon-button"
                       title={t('common.edit')}
+                      aria-label={t('expenses.editRow', { what: expense.description || t('expenses.fallbackName') })}
                       onClick={() => startEdit(expense)}
                     >
                       ✎
@@ -323,6 +324,7 @@ export default function ExpensesPage() {
                       type="button"
                       className="icon-button danger"
                       title={t('common.delete')}
+                      aria-label={t('expenses.deleteRow', { what: expense.description || t('expenses.fallbackName') })}
                       onClick={() => handleDelete(expense)}
                     >
                       ✕

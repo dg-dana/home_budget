@@ -564,6 +564,12 @@ the sentence** rather than only a sentence (`errorCodes.ts`).
   ordinary members above all, so gating the card would hide the control from
   exactly the people it exists for. Same trap as the theme toggle that shipped
   on every screen except the one you land on (§9.1).
+- **An icon-only button needs an `aria-label`, not just a `title`.** The
+  accessible name comes from the button's content, and `title` is only consulted
+  when there is none — so a button containing `✕` is announced as "✕" however
+  good its tooltip. Every row control on the expenses, recurring, Household and
+  shopping pages was in that state until a browser test went looking for one by
+  name and could not find it.
 - A row's trailing controls are wrapped in `.item-actions` so that on a phone
   they wrap **as a group**, instead of peeling off one at a time under the
   checkbox.
@@ -799,8 +805,8 @@ Two suites, run together with `npm run test:all`.
 
 ### Browser tests — Playwright, `e2e/`
 
-- 27 tests, run with `npm run test:e2e`. Config is `playwright.config.ts` at the repo root.
-- **Four areas: the guest flow, the statistics page, multiple households and the language switch.** The guest flow is the riskiest path — the one surface reachable without an account — and was the only coverage for a long time. (The theme test lives there because the toggle is on the guest header too.)
+- 35 tests, run with `npm run test:e2e`. Config is `playwright.config.ts` at the repo root.
+- **Six areas: the guest flow, the statistics page, multiple households, the language switch, the Household page and the expenses dashboard.** The guest flow is the riskiest path — the one surface reachable without an account — and was the only coverage for a long time. (The theme test lives there because the toggle is on the guest header too.)
 - `statistics.spec.ts` exists because **every bug that page has had was invisible to the server suite**: a fold bucket that borrowed a real category's name, a one-month range drawing a lone dot, a stale response overwriting a newer one. Those are questions about what is on the screen. It reaches the page through the header link, never a direct URL — a page nobody can navigate to is a page nobody has.
 - `seedStatsHousehold()` builds a household through the API, giving **each joining member its own request context**: joining sets a session cookie, and a shared jar would sign the owner out halfway through.
 - `language.spec.ts` covers the English/German switch (§9.1a) **and the
@@ -820,6 +826,7 @@ Two suites, run together with `npm run test:all`.
 - Chromium: the config uses the sandbox's prebuilt binary when `/opt/pw-browsers/chromium` exists (override with `CHROMIUM_PATH`) and a normally installed browser otherwise. **Never run `playwright install` in the sandbox.**
 - Every guest gets `browser.newContext()` — a guest is *defined* by having no cookies and no carried-over storage, so sharing a context would defeat the point.
 - Tests create their own household, so they share nothing but the server and can run in parallel.
+- `household.spec.ts` and `expenses.spec.ts` close the biggest hole this suite had: the page where the money is entered, and the page where the irreversible buttons live, neither of which had any browser coverage. What they ask is what only a browser can see — **who is shown which control** (the Danger zone card was briefly owner-only, which hid "Leave this household" from exactly the people it exists for, and the server was perfectly happy); **where a refusal appears** (the invite error must land under the form, since the page is several screens long on a phone — that is a claim about pixels); whether a control the server would refuse is **offered at all**; whether the summary beside the expense form moves when the form is used; and whether editing a row arrives holding that row's values. Writing them turned up a real defect: every icon-only button was announced as "✕" or "✎", because the accessible name comes from the glyph and never from `title`. They carry an `aria-label` now.
 - `households.spec.ts` asks the questions only a browser can: that the switcher exists as a real control, that using it actually repaints the page (it did not, at first — see the `<main>` key in §9), that the choice survives a reload, that a single-household account can still reach `/households` (it could not, at first), what a brand new account is shown before it has a household at all, that an invitation waiting for that address can be joined without the email, and that such an account can still delete itself — the Household page carrying the same action needs a household open, so without a control here there was no way out (§3).
 
 What it asserts: a member creates and shares a list through the UI; a guest with no account opens the link, names themselves, adds an item and ticks one off; the member sees those changes. A second journey covers the comment: a guest adds an item carrying one, the household reads it and rewrites it, and the guest sees the new wording. A third covers "Copy list" on all three screens it appears on: the clipboard is read back and compared to the exact expected text, and asserted not to contain the share token. The index case also asserts the page did not navigate, since that button lives inside a row that is otherwise a link. One case is about **waiting** rather than clicking: a member leaves a list page open, a guest adds an item and ticks another off, and the member's page catches up on its own. It carries its own 90-second timeout because two poll intervals do not fit in the suite's 30, and it is the only proof `usePoll` works — the invariant is precisely that nobody touched anything. Plus view-only enforcement — including that a view-only guest can read a comment but is offered no control to change it — instant revocation, the name prompt appearing only once, a dead token, that a guest is bounced off every private route, that a chosen theme survives a reload without a flash, and that the sign-in page carries the toggle at all — the one signed-out screen everybody sees.
@@ -828,7 +835,7 @@ What it asserts: a member creates and shares a list through the UI; a guest with
 
 ### Both suites were verified by breaking the code
 
-Fifty-six deliberate regressions were introduced, and each was caught by a failing test:
+Sixty-four deliberate regressions were introduced, and each was caught by a failing test:
 
 1. Removing the `household_id` filter from the expenses list query → `isolation` failed.
 2. Adding `householdId` to the guest share response → `share` failed.
@@ -886,6 +893,14 @@ Fifty-six deliberate regressions were introduced, and each was caught by a faili
 54. Dropping `code` from the error middleware → `auth` and the `language` browser test failed, every refusal back to English for everybody.
 55. Hoisting the "show the server's sentence" branch above the translation in `message()` → the `language` browser test failed, the German page answering a bad password in English.
 56. Baking an interpolated name into the sentence instead of sending it as `vars` → `auth` failed, the one thing that makes a message with a value in it translatable at all.
+57. Making the Danger zone card owner-only again → `household` failed, an ordinary member with no way to leave.
+58. Moving the invite refusal to the page-level alert at the top → `household` failed on the position check, the error back to being one nobody scrolls up to see.
+59. Un-disabling "Leave household" for the only owner → `household` failed, a button offered that the server can only refuse.
+60. Dropping the typed value on the way to the budget save → `household` failed after a reload, the field looking saved and not being.
+61. Loading an edit form with the wrong amount → `expenses` failed, an edit that quietly rewrites the figure it was opened on.
+62. Never marking a category over budget → `expenses` failed, the one number that page exists to surface.
+63. Making "← Previous" shift by zero months → `expenses` failed, the month buttons rendering but doing nothing.
+64. Taking the `aria-label` back off an icon button → `household` failed, the control reachable by sight and by nothing else.
 
 The statistics suite also earned its place on the way in: the one-month test failed against the unguarded fetch, which is how the stale-response race in §9.2 was found.
 
@@ -903,7 +918,7 @@ It matches on method and path shape, so it proves a suite *reaches* a route and 
 
 ### Looking at the pages the suites do not cover
 
-Everything in `web/` outside the guest flow, the sign-in toggles, the statistics page and the language switch is unproven by any test, so a change there has to be looked at. `.claude/skills/preview-ui/` is the tool for that: it builds, runs the production build on a spare port against a throwaway database, seeds a three-person household with three months of expenses **plus a second household on the owner's account** (so the header's switcher has something to switch between — with one it deliberately renders as plain text), signs in, and screenshots the routes you name in both themes at 1100px and 390px.
+What is left in `web/` with no browser test — recurring rules, the lists index, and the signed-out screens beyond sign-in — is unproven, so a change there has to be looked at. `.claude/skills/preview-ui/` is the tool for that: it builds, runs the production build on a spare port against a throwaway database, seeds a three-person household with three months of expenses **plus a second household on the owner's account** (so the header's switcher has something to switch between — with one it deliberately renders as plain text), signs in, and screenshots the routes you name in both themes at 1100px and 390px.
 
 ```bash
 node .claude/skills/preview-ui/preview.mjs /            # the expenses dashboard
@@ -964,7 +979,7 @@ Alongside each screenshot it reports the body colour — the cheap proof a theme
 
 Honest list — these are real, and none is currently blocking.
 
-- **Frontend coverage is the guest flow, the statistics page, the household switcher and the language switch.** The expenses dashboard, budgets, recurring, invites and household settings have no browser tests — changes there still need checking by hand, against the built app rather than by reading the CSS.
+- **Frontend coverage is the guest flow, statistics, the household switcher, language and theme, the Household page and the expenses dashboard.** What is left uncovered is **recurring rules** and the shopping lists index; changes there still need checking by hand — changes there still need checking by hand, against the built app rather than by reading the CSS.
 - **`POST /auth/forgot` is quiet about existence but not about timing.** An address with an account waits for the provider; one without answers straight away. Fixing it means replying before the send instead of awaiting it, which would leave the suite nothing to assert against and `delivered` nothing to report (§4.1). The per-address budget makes the difference useless at any scale, and that is the whole defence.
 - **Self-service recovery needs a mail provider, so on an unconfigured deployment there is none.** `POST /auth/forgot` refuses with a 503 pointing at the household owner, since the alternative — showing the link the way every other flow does — would let anybody into any account by typing its address. Local runs and the suite therefore exercise it only with `RESEND_API_KEY` set.
 - **Nothing proves an address on an unconfigured deployment.** Without `RESEND_API_KEY` the confirmation link is handed straight to whoever registered, so it is a step in the flow rather than a check. That is the right trade for the suite and for local work, but it means "confirmed" only means "verified" where a provider is actually configured.

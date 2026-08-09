@@ -118,7 +118,7 @@ to get started; seven default categories are created with it.
 
 ```bash
 npm test          # server integration suite (255 tests, Vitest)
-npm run test:e2e  # browser tests (27 tests, Playwright)
+npm run test:e2e  # browser tests (35 tests, Playwright)
 npm run test:all  # both
 ```
 
