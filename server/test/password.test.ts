@@ -11,7 +11,7 @@ import {
   type Household,
 } from './helpers.js';
 
-const PASSWORD = 'password123';
+const PASSWORD = 'correct-horse-battery';
 const NEW_PASSWORD = 'a-much-better-password';
 
 /** Signs in as an existing account on a brand new client (i.e. another device). */
@@ -101,7 +101,7 @@ describe('changing your own password', () => {
       newPassword: 'short',
     });
     expect(response.status).toBe(400);
-    expect(response.body.error).toMatch(/8 characters/);
+    expect(response.body.code).toBe('error.passwordTooShort');
   });
 
   it('requires a session', async () => {
@@ -248,7 +248,7 @@ describe('owner-issued password recovery, where nothing can send email', () => {
       password: 'short',
     });
     expect(response.status).toBe(400);
-    expect(response.body.error).toMatch(/8 characters/);
+    expect(response.body.code).toBe('error.passwordTooShort');
   });
 
   it('is owner-only', async () => {

@@ -117,8 +117,8 @@ to get started; seven default categories are created with it.
 ### Tests
 
 ```bash
-npm test          # server integration suite (255 tests, Vitest)
-npm run test:e2e  # browser tests (35 tests, Playwright)
+npm test          # server integration suite (268 tests, Vitest)
+npm run test:e2e  # browser tests (36 tests, Playwright)
 npm run test:all  # both
 ```
 
@@ -240,6 +240,13 @@ household cannot be used to read or change another's data.
 
 ## Security notes
 
+- Passwords must be **at least 12 characters**, and are checked against the 10,000
+  commonest — including padded forms of them, since `password1234` is no better than
+  `password`. There are deliberately **no "must contain a capital and a symbol" rules**
+  and no forced expiry: both produce `Password1!` rather than strong passwords, and
+  current guidance (NIST SP 800-63B) advises against them. A passphrase of ordinary
+  words is the best thing to choose, and everything is allowed in one — spaces,
+  punctuation, any language
 - Passwords are bcrypt-hashed at 12 rounds; login returns the same error for an unknown
   email and a wrong password, and `POST /auth/forgot` answers identically whether or not
   the address has an account — neither can be used to enumerate who has one

@@ -196,7 +196,7 @@ describe('notices over HTTP with no provider', () => {
     const client = createClient();
     const registered = await client.post('/api/auth/register', {
       email: uniqueEmail('notice'),
-      password: 'password123',
+      password: 'correct-horse-battery',
     });
 
     expect(registered.status).toBe(201);

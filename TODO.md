@@ -9,6 +9,48 @@ German emails are live and **confirmed arriving**.
 
 ---
 
+## Next: deploy the new password rules
+
+**Merged but not deployed.** Passwords now follow **current guidance rather
+than the folk version of it**, which is worth saying plainly because the two
+point in opposite directions.
+
+The rule is **length: 12 characters, up from 8.** There are deliberately **no**
+"must contain a capital, a digit and a symbol" rules, and no forced expiry.
+Those do not produce strong passwords — they produce `Password1!`, because
+everybody satisfies them the same predictable way. NIST 800-63B advises
+verifiers against both. `passwords.test.ts` has cases whose entire job is to
+fail if a composition rule is ever added, since that is the change a
+well-meaning tightening makes first.
+
+Three checks sit beyond length, each aimed at what people actually type when a
+minimum is in the way:
+
+- **The commonest 10,000, and their stems.** The stem check is the one that
+  earns its place: only **ten** entries in that list are 12 characters or
+  longer, so at this minimum an exact-match lookup is nearly decoration. Told
+  to type twelve, people pad what they already use — so `password1234` fails
+  for the same reason `password` does.
+- **Runs and keyboard walks** — `aaaaaaaaaaaa`, `123456789012`, `qwertyuiopas`.
+  Every one clears a length rule and appears in no top-10,000 list, because
+  those lists are full of short passwords.
+- **Your own email address, and the name of this app.**
+
+The ceiling is **72 bytes, because that is what bcrypt actually reads.** Past
+it the tail is silently ignored, so a longer password would be stored weaker
+than it was typed. Refusing is honest; truncating is not.
+
+**Nothing changes for anyone already signed up.** The rules run only where a
+password is *set*, never at sign-in, so an existing shorter password keeps
+working. Forced rotation makes passwords worse, not better. The new rule
+applies the next time somebody sets one.
+
+The refusals are translated, so a German page explains why a password was
+refused in German — a rule nobody can read is a rule that just looks broken.
+
+Five deliberate breaks were watched failing, including the one that matters:
+adding a composition rule fails five passphrase cases at once.
+
 ## Live: browser tests for the two untested pages
 
 **Deployed on run #37** (`ddf6840`) — all 17 steps green. There is nothing to
@@ -131,6 +173,11 @@ Everything below except the first is an **accepted trade-off** rather than
 queued work: it is written down so nobody rediscovers it as a surprise, and
 each says why it stays. The first one is a real gap.
 
+- [ ] **Passwords are not checked against a breach corpus.** The bundled 10,000
+      is the offline half; the other half is Have I Been Pwned's range API,
+      which is the most valuable check there is and a network call per sign-up
+      on an app that must work with no outbound access. Reconsider only if that
+      constraint ever changes. (§14)
 - [ ] **Recurring rules and the lists index still have no browser tests.** The
       two that mattered most — the expenses dashboard and the Household page —
       are covered now. What is left is smaller: pause/resume and the next-due
@@ -171,6 +218,11 @@ each says why it stays. The first one is a real gap.
 
 ## Done
 
+- [x] **Password rules brought up to current guidance** — 12 characters, the
+      commonest 10,000 and their padded stems, runs and keyboard walks, and
+      your own address; deliberately no composition rules and no expiry, both
+      of which make passwords worse. Refusals are translated. Five deliberate
+      breaks watched failing. (merged, **not yet deployed**)
 - [x] **Browser tests for the expenses dashboard and the Household page** —
       eight of them, each watched failing against a deliberate break. Turned up
       a real defect on the way: every icon-only button was announced as "✕" to a

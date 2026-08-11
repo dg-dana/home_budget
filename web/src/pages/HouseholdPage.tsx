@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { api, type Category, type Invite, type Member, type Notice } from '../api';
 import { formatMoney } from '../format';
 import { useI18n } from '../i18n';
+import { MIN_PASSWORD_LENGTH } from '../passwordRules';
 import { useSession } from '../session';
 
 const CURRENCIES = ['USD', 'EUR', 'GBP', 'ILS', 'CAD', 'AUD', 'CHF', 'SEK', 'PLN', 'INR'];
@@ -547,7 +548,7 @@ export default function HouseholdPage() {
                 id="newPassword"
                 type="password"
                 required
-                minLength={8}
+                minLength={MIN_PASSWORD_LENGTH}
                 autoComplete="new-password"
                 value={passwords.next}
                 onChange={(event) => setPasswords({ ...passwords, next: event.target.value })}
@@ -558,6 +559,9 @@ export default function HouseholdPage() {
                 {t('household.changePassword')}
               </button>
             </div>
+            <p className="small muted" style={{ margin: 0 }}>
+              {t('common.minPassword', { min: MIN_PASSWORD_LENGTH })}
+            </p>
             <p className="small muted" style={{ margin: 0 }}>
               {t('household.passwordHelp')}
             </p>

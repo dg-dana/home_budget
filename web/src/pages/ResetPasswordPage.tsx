@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, type SessionPayload } from '../api';
 import { useI18n } from '../i18n';
+import { MIN_PASSWORD_LENGTH } from '../passwordRules';
 import { useSession } from '../session';
 import AuthPage from '../components/AuthPage';
 
@@ -83,13 +84,13 @@ export default function ResetPasswordPage() {
             id="password"
             type="password"
             required
-            minLength={8}
+            minLength={MIN_PASSWORD_LENGTH}
             autoComplete="new-password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
           />
           <p className="small muted" style={{ margin: '0.3rem 0 0' }}>
-            {t('common.minPassword')}
+            {t('common.minPassword', { min: MIN_PASSWORD_LENGTH })}
           </p>
         </div>
 

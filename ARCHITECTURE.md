@@ -258,6 +258,62 @@ the person receiving it rather than of the request that caused it.
 - **The link is language-independent.** It is a URL, appended the same way in
   either language, and `APP_URL` knows nothing about any of this.
 
+### 4.3 What counts as a usable password
+
+Written to current guidance (NIST SP 800-63B, and the UK NCSC), which is worth
+stating because it is close to the **opposite** of the rules most people
+picture. `server/src/passwords.ts` is the whole of it, and it runs only where a
+password is **set** — registering, changing, redeeming a recovery link.
+
+- **Length is the requirement: 12 characters.** Nothing else moves the cost of
+  guessing anywhere near as much.
+- **There are deliberately no composition rules.** No "must contain an uppercase
+  letter, a digit and a symbol". Those do not produce strong passwords, they
+  produce `Password1!` — everybody satisfies them the same predictable way, so
+  an attacker learns the shape and the search space barely grows. 800-63B says
+  verifiers SHOULD NOT impose them. **There are tests whose entire job is to
+  fail if one is ever added**, because this is the rule a well-meaning
+  "tighten the passwords up" change breaks first.
+- **No forced expiry**, for the same reason: rotation produces `Password2!`.
+  Nothing here makes an existing password stop working, and nothing is checked
+  at sign-in — an account whose password predates a rule keeps working. Checking
+  at the door would lock people out over a rule change and would say something
+  about a password to whoever is guessing at it.
+- **Everything is allowed** — spaces, punctuation, emoji, any language. A
+  passphrase is the best thing somebody can choose and must not be fought.
+- **The ceiling is 72 bytes, because that is what bcrypt reads.** Past it the
+  tail is silently ignored, so a longer password would be stored weaker than it
+  was typed. Refusing is honest; truncating is not. It still clears the 64
+  characters 800-63B requires be allowed.
+
+Three things are checked beyond length, and each exists because of *how people
+reach a minimum*:
+
+1. **The commonest 10,000 passwords, and their stems.** The stem check is the
+   one that earns its place: **only ten entries in that list are 12 characters
+   or longer**, so at this minimum an exact-match lookup is very close to
+   decoration. What people actually do when told to type twelve is pad the
+   password they already use, so `password1234` fails for the same reason
+   `password` does.
+2. **Runs and walks** — `aaaaaaaaaaaa`, `123456789012`, `abcdefghijkl`,
+   `qwertyuiopas`. Every one clears a length rule, none is in any top-10,000
+   list (those are full of *short* passwords), and every one is exactly what
+   gets typed when a length minimum is in the way.
+3. **The obvious personal words** — the local part of the person's own address,
+   and the name of this app. The domain is not checked: it is shared by
+   everybody at it, so refusing "gmail" would be noise.
+
+The list is bundled as a **`.ts` file** (`commonPasswords.ts`), not a `.txt`
+one: `tsc` copies no data files, so a runtime read relative to the source tree
+would work in development and fail inside the image. It is **not** in a
+`src/data/` directory, because `.gitignore` carries a broad `data/` rule for the
+SQLite files that silently swallowed it there — it built locally and CI could
+not find the module. The ignore rule is right to be broad; the file moved.
+
+**Refusals carry codes** (§8), which is why the Zod rule on `password` was
+reduced to "present": a Zod failure has no code, and a rule somebody cannot read
+in their own language is a rule that just looks broken.
+
 ### Passwords and session invalidation
 
 - Three ways to change a password: **self-service change** (`POST /auth/password`, requires the current one), **asking for your own recovery link** (`POST /auth/forgot` → `/reset/:token`), and an **owner-issued recovery link** (`POST /household/members/:id/reset-password` → the same page) — which now exists **only where the app cannot send email**.
@@ -382,6 +438,7 @@ so the UI can badge them.
 - `notificationStrings.ts` — every word the app sends, in both languages, one entry per string (§4.2).
 - `http.ts` — `HttpError` + status helpers, `asyncHandler`, `parseBody`, error middleware.
 - `errorCodes.ts` — the catalogue of refusals the API can return, as codes the frontend translates (§8, "Refusals").
+- `passwords.ts` — what counts as a usable password, and the only place that decides (§4.3). `commonPasswords.ts` is the bundled blocklist.
 - `rateLimit.ts` — in-process fixed-window limiter, keyed by client IP unless the caller supplies a `key` (recovery is counted per address, §13).
 - `backup.ts` — consistent snapshots via SQLite's online backup API.
 - `shoppingItems.ts` — **item operations shared by both the member and guest routes.** Both paths call the same functions with a different `actorName`, so guest and member edits can never diverge in behaviour.
@@ -777,7 +834,7 @@ Two suites, run together with `npm run test:all`.
 
 ### Server integration suite — Vitest, `server/test/`
 
-- 255 tests, run with `npm test` from the repo root.
+- 268 tests, run with `npm test` from the repo root.
 - They are **integration tests over real HTTP**, not unit tests: each file boots the actual app on an ephemeral port and drives it with a cookie-aware client. There is no mocking of the database, the router or the session.
 - `test/setup.ts` runs before any application module is imported and points `DATABASE_PATH` at a unique temp file. Vitest gives each test file its own module registry, so **every test file gets its own SQLite database** and files can run in parallel.
 - `resetDatabase()` truncates every table in `beforeEach`.
@@ -800,12 +857,13 @@ Two suites, run together with `npm run test:all`.
 - `forgotPassword.test.ts` — the other half of that: a provider **is** configured, and asking for your own link works end to end from the emailed message rather than from the database. The two that matter are indistinguishability (an address with no account gets the same status, the same body and no mail) and that the token never appears in the response; then retiring earlier links of either kind, address normalisation, an unconfirmed address, an account with no household, that the owner-issued route is refused here (for a member and for the owner's own account alike) and that `ownerRecovery` says so, and — in a second `describe`, the one place in the suite that runs with `enableRateLimits: true` — the five-an-hour per-address budget, with a bystander's address proving the bucket is not the IP.
 - `compression.test.ts` — measures **raw wire bytes** with `node:http`, because `fetch` transparently decompresses and would compare a number with itself.
 - `notificationsSending.test.ts` — the other half: a provider **is** configured, and every route that changes a household has to reach the right people and nobody else — joins, removals, role changes, renames, both deletions, password changes and invites. It also holds the **language** cases (§4.2): one household with an English and a German member hearing the same rename in two languages, a sign-up confirmed in the language it was made in, a client that says nothing still getting English, an account changing its mind, and the two rules for an invited address. Only calls to the provider are intercepted; requests to the app are real HTTP. The environment is set before `config.ts` loads, which is what the file's top-level `await import` is for.
+- `passwords.test.ts` — what a usable password is (§4.3). Its most important cases are the **negative** ones: that a passphrase of lowercase words and spaces is accepted, and that nothing demands a capital, a digit or a symbol. Those are what a future "tighten this up" change breaks first, and they are the whole point.
 - `errorCodes.test.ts` — the only test that reads across the workspace boundary: every code the API can return has a sentence in `web/src/strings.ts`, and every `error.…` entry there has a code behind it. Nothing else can catch a refusal that ships untranslated, because the frontend falls back to English rather than failing.
 - `notifications.test.ts` — email (§4.1) with `fetch` stubbed, including that a notice is composed in the recipient's language with the link appended unchanged (§4.2),, so the suite never touches a provider: nothing sent and nothing claimed when no key is configured, the exact request made when one is, the address and link base derived from `DOMAIN`, a relative link refusing to go out without `APP_URL`, and a refusal, a network failure and an addressless invite all degrading to the link rather than throwing. `config.ts` reads the environment once at import, so each case sets its variables behind `vi.resetModules()`.
 
 ### Browser tests — Playwright, `e2e/`
 
-- 35 tests, run with `npm run test:e2e`. Config is `playwright.config.ts` at the repo root.
+- 36 tests, run with `npm run test:e2e`. Config is `playwright.config.ts` at the repo root.
 - **Six areas: the guest flow, the statistics page, multiple households, the language switch, the Household page and the expenses dashboard.** The guest flow is the riskiest path — the one surface reachable without an account — and was the only coverage for a long time. (The theme test lives there because the toggle is on the guest header too.)
 - `statistics.spec.ts` exists because **every bug that page has had was invisible to the server suite**: a fold bucket that borrowed a real category's name, a one-month range drawing a lone dot, a stale response overwriting a newer one. Those are questions about what is on the screen. It reaches the page through the header link, never a direct URL — a page nobody can navigate to is a page nobody has.
 - `seedStatsHousehold()` builds a household through the API, giving **each joining member its own request context**: joining sets a session cookie, and a shared jar would sign the owner out halfway through.
@@ -835,7 +893,7 @@ What it asserts: a member creates and shares a list through the UI; a guest with
 
 ### Both suites were verified by breaking the code
 
-Sixty-four deliberate regressions were introduced, and each was caught by a failing test:
+Sixty-nine deliberate regressions were introduced, and each was caught by a failing test:
 
 1. Removing the `household_id` filter from the expenses list query → `isolation` failed.
 2. Adding `householdId` to the guest share response → `share` failed.
@@ -901,6 +959,11 @@ Sixty-four deliberate regressions were introduced, and each was caught by a fail
 62. Never marking a category over budget → `expenses` failed, the one number that page exists to surface.
 63. Making "← Previous" shift by zero months → `expenses` failed, the month buttons rendering but doing nothing.
 64. Taking the `aria-label` back off an icon button → `household` failed, the control reachable by sight and by nothing else.
+65. Dropping the password minimum back to 8 → `passwords` failed in three places, including the one that reads the refusal's `vars`.
+66. Removing the stem check, leaving an exact-match blocklist → `passwords` failed, `password1234` accepted; the check that made the list worth bundling at all.
+67. Weakening the run-and-walk check to an `&&` → `passwords` failed, `123456789012` accepted.
+68. **Adding a composition rule** ("needs a capital and a digit") → five `passwords` cases failed at once, every one of them a passphrase. This is the regression the file exists to prevent.
+69. Not applying the rules at registration → `passwords` and the `language` browser test failed, the sign-up form accepting anything.
 
 The statistics suite also earned its place on the way in: the one-month test failed against the unguarded fetch, which is how the stale-response race in §9.2 was found.
 
@@ -984,6 +1047,16 @@ Honest list — these are real, and none is currently blocking.
 - **Self-service recovery needs a mail provider, so on an unconfigured deployment there is none.** `POST /auth/forgot` refuses with a 503 pointing at the household owner, since the alternative — showing the link the way every other flow does — would let anybody into any account by typing its address. Local runs and the suite therefore exercise it only with `RESEND_API_KEY` set.
 - **Nothing proves an address on an unconfigured deployment.** Without `RESEND_API_KEY` the confirmation link is handed straight to whoever registered, so it is a step in the flow rather than a check. That is the right trade for the suite and for local work, but it means "confirmed" only means "verified" where a provider is actually configured.
 - **An owner can still reach any account in their household on a deployment with no mail provider.** This was the general case and is now the exception: with email configured the route is refused (§4). Where it is not, an owner minting a link for somebody who belongs to households they have never heard of remains possible, because the alternative is a locked-out member with no way back in. Removing someone retires their outstanding links (§3), which closes the worst of it. The real fix is configuring email, which is one secret.
+- **Passwords are not checked against a breach corpus.** The bundled list of
+  10,000 (§4.3) is the offline half of it; the other half is Have I Been Pwned's
+  range API, which is the single most valuable check available and is a network
+  call per sign-up on an app that has to keep working with no outbound access at
+  all (§4.1). If that constraint is ever dropped, this is the first thing to
+  reconsider.
+- **Accounts created before the 12-character minimum still have shorter
+  passwords.** Nothing forces them to change, deliberately (§4.3) — forced
+  rotation produces worse passwords, not better ones. The rule applies the next
+  time one is set.
 - **Schema failures answer in English, in both languages.** Everything else the
   API refuses now carries a code the page translates (§8, "Refusals"), but a Zod
   failure deliberately does not: it names a field, and that beats a translated

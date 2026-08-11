@@ -124,6 +124,15 @@ export interface Household extends Account {
 const tokenFromLink = (link: string) => link.split('/').pop()!;
 
 /**
+ * What every seeded account is registered with.
+ *
+ * A passphrase rather than a jumble, because that is what the password rules
+ * now ask for and what they advise (`server/src/passwords.ts`): long, ordinary
+ * words, no capital-digit-symbol theatre.
+ */
+export const PASSWORD = 'correct-horse-battery';
+
+/**
  * Registers an account and confirms its address — the two steps that now come
  * before anybody can have a household at all. Leaves the client signed in with
  * no household selected.
@@ -141,7 +150,7 @@ export async function registerAccount(
   const email = overrides.email ?? uniqueEmail('account');
   const registered = await client.post('/api/auth/register', {
     email,
-    password: overrides.password ?? 'password123',
+    password: overrides.password ?? PASSWORD,
     ...(overrides.language ? { language: overrides.language } : {}),
   });
   if (registered.status !== 201) {

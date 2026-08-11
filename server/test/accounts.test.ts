@@ -30,7 +30,7 @@ describe('accounts and households', () => {
     const client = createClient();
     const registered = await client.post('/api/auth/register', {
       email: uniqueEmail('fresh'),
-      password: 'password123',
+      password: 'correct-horse-battery',
     });
 
     expect(registered.status).toBe(201);
@@ -52,7 +52,7 @@ describe('accounts and households', () => {
       householdName: 'Sneaky',
       name: 'Sneaky',
       email,
-      password: 'password123',
+      password: 'correct-horse-battery',
     });
 
     expect(registered.status).toBe(201);
@@ -64,7 +64,7 @@ describe('accounts and households', () => {
   it('refuses a second account on the same address', async () => {
     const email = uniqueEmail('taken');
     await registerAccount({ email });
-    const again = await createClient().post('/api/auth/register', { email, password: 'password123' });
+    const again = await createClient().post('/api/auth/register', { email, password: 'correct-horse-battery' });
     expect(again.status).toBe(409);
   });
 
@@ -74,8 +74,8 @@ describe('accounts and households', () => {
     // must get the same answer as if it had simply arrived second.
     const email = uniqueEmail('race');
     const [first, second] = await Promise.all([
-      createClient().post('/api/auth/register', { email, password: 'password123' }),
-      createClient().post('/api/auth/register', { email, password: 'password123' }),
+      createClient().post('/api/auth/register', { email, password: 'correct-horse-battery' }),
+      createClient().post('/api/auth/register', { email, password: 'correct-horse-battery' }),
     ]);
 
     const statuses = [first.status, second.status].sort();
@@ -308,7 +308,7 @@ describe('accounts and households', () => {
       await owner.client.post(`/api/households/${owner.householdId}/switch`);
 
       const returning = createClient();
-      const signedIn = await returning.post('/api/auth/login', { email, password: 'password123' });
+      const signedIn = await returning.post('/api/auth/login', { email, password: 'correct-horse-battery' });
       expect(signedIn.body.household.name).toBe('Home');
       // Never an access decision on its own: the membership still governs.
       expect((await returning.get('/api/expenses')).status).toBe(200);
@@ -319,10 +319,10 @@ describe('accounts and households', () => {
       const owner = await registerHousehold({ email, householdName: 'Home' });
       await createHousehold(owner, { name: 'Beach flat', displayName: 'Me' });
       await owner.client.post(`/api/households/${owner.householdId}/switch`);
-      await owner.client.delete('/api/household', { password: 'password123' });
+      await owner.client.delete('/api/household', { password: 'correct-horse-battery' });
 
       const returning = createClient();
-      const signedIn = await returning.post('/api/auth/login', { email, password: 'password123' });
+      const signedIn = await returning.post('/api/auth/login', { email, password: 'correct-horse-battery' });
       // One household left, so it opens that rather than asking pointlessly.
       expect(signedIn.body.household.name).toBe('Beach flat');
     });
@@ -332,7 +332,7 @@ describe('accounts and households', () => {
       const owner = await registerHousehold({ email, householdName: 'Home' });
 
       const one = createClient();
-      expect((await one.post('/api/auth/login', { email, password: 'password123' })).body.household.name)
+      expect((await one.post('/api/auth/login', { email, password: 'correct-horse-battery' })).body.household.name)
         .toBe('Home');
 
       await createHousehold(owner, { name: 'Beach flat', displayName: 'Me' });
@@ -340,7 +340,7 @@ describe('accounts and households', () => {
       db.prepare('UPDATE users SET last_household_id = NULL WHERE email = ?').run(email);
 
       const two = createClient();
-      const signedIn = await two.post('/api/auth/login', { email, password: 'password123' });
+      const signedIn = await two.post('/api/auth/login', { email, password: 'correct-horse-battery' });
       expect(signedIn.body.household).toBeNull();
       expect(signedIn.body.households).toHaveLength(2);
       // Nothing is open, so the scoped routes wait for a choice.
@@ -371,7 +371,7 @@ describe('accounts and households', () => {
       const account = await registerAccount({ email: uniqueEmail('nowhere') });
       expect((await account.client.get('/api/auth/me')).body.households).toEqual([]);
 
-      const deleted = await account.client.delete('/api/auth/account', { password: 'password123' });
+      const deleted = await account.client.delete('/api/auth/account', { password: 'correct-horse-battery' });
       expect(deleted.status).toBe(204);
       expect((await account.client.get('/api/auth/me')).status).toBe(401);
 

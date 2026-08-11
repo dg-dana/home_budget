@@ -193,6 +193,27 @@ test.describe('language', () => {
     await expect(page.locator('.alert')).toHaveText('Incorrect email or password');
   });
 
+  test('a password refusal explains itself, in German', async ({ page }) => {
+    // A rule nobody can read is a rule that just looks broken. These land on
+    // the sign-up form, which is where somebody meets the app for the first
+    // time, so they are the refusals most worth having in the right language.
+    await page.goto('/register');
+    await page.getByRole('button', { name: 'Deutsch' }).click();
+    await expect(page.getByRole('heading', { name: 'Erstelle dein Konto' })).toBeVisible();
+
+    // The rule is stated before anything is typed, not only after a refusal.
+    await expect(page.getByText(/Mindestens 12 Zeichen/)).toBeVisible();
+
+    await page.getByLabel('E-Mail').fill(uniqueEmail('schwach'));
+    // Long enough to clear the browser's own minLength, so the server answers.
+    await page.getByLabel('Passwort').fill('password1234');
+    await page.getByRole('button', { name: 'Konto erstellen' }).click();
+
+    await expect(page.locator('.alert')).toHaveText(
+      'Das ist eines der meistbenutzten Passwörter',
+    );
+  });
+
   test('German moves the decimal point, not only the labels', async ({ page, request }) => {
     const email = uniqueEmail('lang');
     await seedAccountWithHousehold(request, { email, currency: 'EUR' });

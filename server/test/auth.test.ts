@@ -51,7 +51,7 @@ describe('authentication', () => {
       householdName: 'Another',
       name: 'Someone',
       email,
-      password: 'password123',
+      password: 'correct-horse-battery',
     });
     expect(second.status).toBe(409);
   });
@@ -64,13 +64,13 @@ describe('authentication', () => {
       password: 'short',
     });
     expect(short.status).toBe(400);
-    expect(short.body.error).toMatch(/8 characters/);
+    expect(short.body.code).toBe('error.passwordTooShort');
 
     const badEmail = await createClient().post('/api/auth/register', {
       householdName: 'Home',
       name: 'A',
       email: 'not-an-email',
-      password: 'password123',
+      password: 'correct-horse-battery',
     });
     expect(badEmail.status).toBe(400);
   });
@@ -80,7 +80,7 @@ describe('authentication', () => {
     await registerHousehold({ email: email.toUpperCase() });
 
     const client = createClient();
-    const login = await client.post('/api/auth/login', { email, password: 'password123' });
+    const login = await client.post('/api/auth/login', { email, password: 'correct-horse-battery' });
     expect(login.status).toBe(200);
   });
 
@@ -309,7 +309,7 @@ describe('refusals carry a code the frontend can translate', () => {
     const client = createClient();
     const refused = await client.post('/api/auth/login', {
       email: 'nobody@example.test',
-      password: 'password123',
+      password: 'correct-horse-battery',
     });
 
     expect(refused.status).toBe(401);
