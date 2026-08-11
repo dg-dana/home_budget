@@ -29,8 +29,8 @@ invokes it, and this has to hold from the first message of every session.
 ```bash
 npm install
 npm run dev        # API :4000 + Vite :5173
-npm test           # vitest, server integration suite (255 tests)
-npm run test:e2e   # playwright, guest flow + statistics + households + language + household page + expenses (35 tests)
+npm test           # vitest, server integration suite (268 tests)
+npm run test:e2e   # playwright, guest flow + statistics + households + language + household page + expenses (36 tests)
 npm run test:all   # both
 npm run typecheck  # both workspaces + e2e/
 npm run build      # server/dist + web/dist
@@ -98,6 +98,8 @@ they stop being true.
 - **Every shopping page polls, and none of the others do** (`web/src/usePoll.ts`, live as of run #29). The lists index, a member's list and the guest's all refetch every 15 s through one hook; it **skips a hidden tab** and refetches the instant one becomes visible, so a phone in a pocket costs nothing and taking it out is immediate. Expenses deliberately do not poll. `load` must be a `useCallback` or the effect restarts each render and the interval never fires. The browser test for it is the only one where waiting *is* the assertion, and it carries its own 90-second timeout.
 
 - **Shopping items show their comment** (PR #17, live). No migration was needed: `note` was already a column, just never on screen. **Photos were built alongside it and deliberately removed** before it was ever merged — the bytes would have grown a database sized in single-digit MB after ten years, and the nightly backup artifact with it. Do not re-add them without an answer to storage first (`ARCHITECTURE.md` §8, "Item comments").
+
+Passwords follow **current guidance, not the folk version** (`ARCHITECTURE.md` §4.3): the rule is **length — 12 characters** — and there are deliberately **no composition rules**, because "must contain a capital, a digit and a symbol" produces `Password1!` rather than a strong password. `server/src/passwords.ts` is the only place that decides, and it runs only where a password is **set**, never at sign-in. Three checks sit beyond length, each aimed at how people reach a minimum: the commonest 10,000 **and their stems** (`password1234` must fail because `password` does — only ten entries in that list are 12+ characters, so exact-match alone is nearly decoration), runs and keyboard walks (`123456789012` is in no top-10,000 list and is exactly what gets typed), and the person's own address or the app's name. The ceiling is **72 bytes because that is what bcrypt reads** — past it the tail is silently ignored, so refusing is honest and truncating is not. **`passwords.test.ts` has cases whose whole job is to fail if a composition rule is ever added.** The test-suite password is a passphrase (`correct-horse-battery`) so the suite demonstrates the rule rather than working around it.
 
 ## Schema changes
 

@@ -73,7 +73,7 @@ describe('what language it goes out in', () => {
     const email = uniqueEmail('anmeldung');
     const registered = await client.post('/api/auth/register', {
       email,
-      password: 'password123',
+      password: 'correct-horse-battery',
       language: 'de',
     });
 
@@ -84,7 +84,7 @@ describe('what language it goes out in', () => {
   it('is English when the client says nothing, which is every old build', async () => {
     const client = createClient();
     const email = uniqueEmail('silent');
-    await client.post('/api/auth/register', { email, password: 'password123' });
+    await client.post('/api/auth/register', { email, password: 'correct-horse-battery' });
 
     expect(to(email)).toEqual(['Confirm your email address']);
   });
@@ -158,7 +158,7 @@ describe('who hears about what', () => {
   it('emails the confirmation link rather than only showing it', async () => {
     const client = createClient();
     const email = uniqueEmail('signup');
-    const registered = await client.post('/api/auth/register', { email, password: 'password123' });
+    const registered = await client.post('/api/auth/register', { email, password: 'correct-horse-battery' });
 
     expect(registered.body.verification.delivered).toBe(true);
     expect(to(email)).toEqual(['Confirm your email address']);
@@ -218,11 +218,11 @@ describe('who hears about what', () => {
   });
 
   it('tells everyone a household was deleted, the owner who did it included', async () => {
-    const owner = await registerHousehold({ householdName: 'The Flat', password: 'password123' });
+    const owner = await registerHousehold({ householdName: 'The Flat', password: 'correct-horse-battery' });
     const member = await addMember(owner, 'Noa');
     sent = [];
 
-    const deleted = await owner.client.delete('/api/household', { password: 'password123' });
+    const deleted = await owner.client.delete('/api/household', { password: 'correct-horse-battery' });
     expect(deleted.status).toBe(204);
 
     expect(recipients()).toEqual([member.email, owner.email].sort());
@@ -249,7 +249,7 @@ describe('who hears about what', () => {
     const member = await addMember(owner, 'Noa');
     sent = [];
 
-    const deleted = await member.client.delete('/api/auth/account', { password: 'password123' });
+    const deleted = await member.client.delete('/api/auth/account', { password: 'correct-horse-battery' });
     expect(deleted.status).toBe(204);
 
     expect(to(member.email)).toEqual(['Your Home Budget account was deleted']);
@@ -260,7 +260,7 @@ describe('who hears about what', () => {
     const solo = await registerHousehold({ householdName: 'Just Me' });
     sent = [];
 
-    await solo.client.delete('/api/auth/account', { password: 'password123' });
+    await solo.client.delete('/api/auth/account', { password: 'correct-horse-battery' });
 
     expect(recipients()).toEqual([solo.email]);
   });
@@ -270,7 +270,7 @@ describe('who hears about what', () => {
     sent = [];
 
     await owner.client.post('/api/auth/password', {
-      currentPassword: 'password123',
+      currentPassword: 'correct-horse-battery',
       newPassword: 'a-longer-password',
     });
     expect(to(owner.email)).toEqual(['Your Home Budget password was changed']);

@@ -69,7 +69,7 @@ async function sessionCookie(email: string): Promise<string> {
   const response = await fetch(`${getBaseUrl()}/api/auth/login`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ email, password: 'password123' }),
+    body: JSON.stringify({ email, password: 'correct-horse-battery' }),
   });
   const raw = response.headers.getSetCookie()[0] ?? '';
   return raw.split(';')[0] ?? '';

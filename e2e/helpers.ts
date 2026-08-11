@@ -11,7 +11,7 @@ let counter = 0;
 export const uniqueEmail = (prefix = 'owner') =>
   `${prefix}-${Date.now()}-${++counter}-${Math.random().toString(36).slice(2, 8)}@example.com`;
 
-export const PASSWORD = 'password123';
+export const PASSWORD = 'correct-horse-battery';
 
 /**
  * Registers an account, confirms its address, and creates a household to own —

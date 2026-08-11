@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { api, type Notice, type SessionPayload } from '../api';
 import { useI18n } from '../i18n';
+import { MIN_PASSWORD_LENGTH } from '../passwordRules';
 import { useTheme } from '../theme';
 import { useSession } from '../session';
 import AuthPage from '../components/AuthPage';
@@ -121,13 +122,13 @@ export default function RegisterPage() {
             id="password"
             type="password"
             required
-            minLength={8}
+            minLength={MIN_PASSWORD_LENGTH}
             autoComplete="new-password"
             value={form.password}
             onChange={update('password')}
           />
           <p className="small muted" style={{ margin: '0.3rem 0 0' }}>
-            {t('common.minPassword')}
+            {t('common.minPassword', { min: MIN_PASSWORD_LENGTH })}
           </p>
         </div>
 

@@ -44,7 +44,12 @@ export const STRINGS = {
   'common.email': ['Email', 'E-Mail'],
   'common.password': ['Password', 'Passwort'],
   'common.currency': ['Currency', 'Währung'],
-  'common.minPassword': ['At least 8 characters.', 'Mindestens 8 Zeichen.'],
+  /* Length is the rule, and a phrase is the advice — see `server/passwords.ts`
+     for why there are deliberately no "must contain a symbol" requirements. */
+  'common.minPassword': [
+    'At least {min} characters. A few words you will remember beat a short jumble.',
+    'Mindestens {min} Zeichen. Ein paar Wörter, die du dir merken kannst, sind besser als ein kurzes Kauderwelsch.',
+  ],
   'common.confirmPassword': ['Confirm with your password', 'Mit deinem Passwort bestätigen'],
   'common.examplePerson': ['Dana', 'Dana'],
   'common.role.owner': ['owner', 'Eigentümer'],
@@ -726,6 +731,26 @@ export const STRINGS = {
   'error.emailTaken': [
     'An account with that email already exists',
     'Mit dieser E-Mail-Adresse gibt es bereits ein Konto',
+  ],
+  'error.passwordTooShort': [
+    'Password must be at least {min} characters',
+    'Das Passwort muss mindestens {min} Zeichen lang sein',
+  ],
+  'error.passwordTooLong': [
+    'Password must be {max} bytes or fewer',
+    'Das Passwort darf höchstens {max} Bytes lang sein',
+  ],
+  'error.passwordCommon': [
+    'That is one of the most commonly used passwords',
+    'Das ist eines der meistbenutzten Passwörter',
+  ],
+  'error.passwordTooSimple': [
+    'That is too easy to guess — it is a single repeated character or a run off the keyboard',
+    'Das ist zu leicht zu erraten — es ist ein einzelnes wiederholtes Zeichen oder eine Reihe von der Tastatur',
+  ],
+  'error.passwordPersonal': [
+    'Do not use your email address or the name of this app in your password',
+    'Verwende in deinem Passwort nicht deine E-Mail-Adresse oder den Namen dieser App',
   ],
   'error.wrongCurrentPassword': [
     'That is not your current password',

@@ -23,6 +23,7 @@ import {
 } from '../auth.js';
 import { db } from '../db.js';
 import { asyncHandler, badRequest, conflict, parseBody, unauthorized, unavailable } from '../http.js';
+import { assertUsablePassword } from '../passwords.js';
 import {
   accountDeletedNotice,
   memberRemovedNotice,
@@ -42,7 +43,13 @@ import type {
 export const authRouter = Router();
 
 const email = z.string().trim().toLowerCase().email('Enter a valid email address');
-const password = z.string().min(8, 'Password must be at least 8 characters');
+/**
+ * Deliberately only "present" here. What makes a password usable is decided by
+ * `assertUsablePassword`, which throws a **coded** refusal — a Zod failure
+ * carries no code, and so is the one kind of refusal the frontend cannot put in
+ * front of somebody in their own language (`ARCHITECTURE.md` §8).
+ */
+const password = z.string().min(1, 'Enter a password');
 
 /**
  * Registration is an **account**, nothing more — no household name, no display
@@ -160,6 +167,8 @@ authRouter.post(
     if (findUserByEmail(input.email)) {
       throw conflict('An account with that email already exists', 'error.emailTaken');
     }
+
+    assertUsablePassword(input.password, { email: input.email });
 
     const passwordHash = await hashPassword(input.password);
     const userId = newId();
@@ -369,6 +378,8 @@ authRouter.post(
       throw badRequest('That is not your current password', 'error.wrongCurrentPassword');
     }
 
+    assertUsablePassword(input.newPassword, { email: user.email });
+
     await setPassword(user.id, input.newPassword);
     // Told, not asked: a password changing without the owner's knowledge is
     // the one thing worth an unprompted message.
@@ -462,6 +473,8 @@ authRouter.post(
     if (!reset || reset.used_at || new Date(reset.expires_at) < new Date()) {
       throw badRequest('This reset link is invalid or has expired', 'error.resetLinkBad');
     }
+
+    assertUsablePassword(input.password, { email: getUser(reset.user_id).email });
 
     await setPassword(reset.user_id, input.password);
     db.prepare('UPDATE password_resets SET used_at = ? WHERE token = ?').run(nowIso(), reset.token);

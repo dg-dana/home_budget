@@ -114,7 +114,7 @@ describe('owner-only permissions', () => {
     // new person, because a role was fixed when the membership was created.
     await owner.client.put(`/api/household/members/${member.userId}/role`, { role: 'owner' });
 
-    expect((await owner.client.delete('/api/auth/account', { password: 'password123' })).status).toBe(204);
+    expect((await owner.client.delete('/api/auth/account', { password: 'correct-horse-battery' })).status).toBe(204);
     expect((await member.client.get('/api/household')).body.name).toBe('The Cohens');
     expect((await member.client.get('/api/household/members')).body).toHaveLength(1);
   });
@@ -209,7 +209,7 @@ describe('deleting a household', () => {
     });
     await owner.client.post('/api/household/invites', { role: 'member' });
 
-    expect((await owner.client.delete('/api/household', { password: 'password123' })).status).toBe(204);
+    expect((await owner.client.delete('/api/household', { password: 'correct-horse-battery' })).status).toBe(204);
 
     const { db } = await import('../src/db.js');
     for (const table of [
@@ -244,7 +244,7 @@ describe('deleting a household', () => {
     const guest = createClient();
     expect((await guest.get(`/api/share/${token}`)).status).toBe(200);
 
-    await owner.client.delete('/api/household', { password: 'password123' });
+    await owner.client.delete('/api/household', { password: 'correct-horse-battery' });
     expect((await guest.get(`/api/share/${token}`)).status).toBe(404);
   });
 
@@ -257,7 +257,7 @@ describe('deleting a household', () => {
   });
 
   it('refuses a member, even with their own password', async () => {
-    const response = await member.client.delete('/api/household', { password: 'password123' });
+    const response = await member.client.delete('/api/household', { password: 'correct-horse-battery' });
     expect(response.status).toBe(403);
     expect((await owner.client.get('/api/household')).status).toBe(200);
   });
@@ -285,7 +285,7 @@ describe('deleting your own account', () => {
       spentOn: '2026-04-10',
     });
 
-    expect((await member.client.delete('/api/auth/account', { password: 'password123' })).status).toBe(204);
+    expect((await member.client.delete('/api/auth/account', { password: 'correct-horse-battery' })).status).toBe(204);
     expect((await member.client.get('/api/auth/me')).status).toBe(401);
     expect((await owner.client.get('/api/household/members')).body).toHaveLength(1);
 
@@ -298,7 +298,7 @@ describe('deleting your own account', () => {
   });
 
   it('frees the email address for a fresh account', async () => {
-    await member.client.delete('/api/auth/account', { password: 'password123' });
+    await member.client.delete('/api/auth/account', { password: 'correct-horse-battery' });
     const again = await addMember(owner, 'Yossi');
     expect((await again.client.get('/api/auth/me')).status).toBe(200);
   });
@@ -310,7 +310,7 @@ describe('deleting your own account', () => {
   });
 
   it('refuses the only owner while anyone else is still here', async () => {
-    const response = await owner.client.delete('/api/auth/account', { password: 'password123' });
+    const response = await owner.client.delete('/api/auth/account', { password: 'correct-horse-battery' });
     expect(response.status).toBe(400);
     expect(response.body.error).toMatch(/only owner/i);
     expect((await owner.client.get('/api/auth/me')).status).toBe(200);
@@ -321,7 +321,7 @@ describe('deleting your own account', () => {
     await owner.client.post('/api/expenses', { amount: 5, spentOn: '2026-04-10' });
     expect((await owner.client.delete(`/api/household/members/${member.userId}`)).status).toBe(204);
 
-    expect((await owner.client.delete('/api/auth/account', { password: 'password123' })).status).toBe(204);
+    expect((await owner.client.delete('/api/auth/account', { password: 'correct-horse-battery' })).status).toBe(204);
     expect((await owner.client.get('/api/auth/me')).status).toBe(401);
 
     const { db } = await import('../src/db.js');
@@ -340,7 +340,7 @@ describe('deleting your own account', () => {
     const heir = await registerAccount({ email: uniqueEmail('heir') });
     expect((await joinHousehold(heir, invite.body.token, 'Heir')).status).toBe(201);
 
-    expect((await owner.client.delete('/api/auth/account', { password: 'password123' })).status).toBe(204);
+    expect((await owner.client.delete('/api/auth/account', { password: 'correct-horse-battery' })).status).toBe(204);
     expect((await heir.client.get('/api/household')).body.name).toBe('The Cohens');
     expect((await heir.client.get('/api/household/members')).body).toHaveLength(2);
   });
