@@ -3,15 +3,15 @@
 The running state of this project. **Updated after every step** — see the
 "Working agreement" in `CLAUDE.md`.
 
-Last updated: 2026-08-09 · live: deploy run #37 (`ddf6840`)
+Last updated: 2026-08-11 · live: deploy run #38 (`e33a4d6`)
 
 German emails are live and **confirmed arriving**.
 
 ---
 
-## Next: deploy the new password rules
+## Live: the new password rules
 
-**Merged but not deployed.** Passwords now follow **current guidance rather
+**Deployed on run #38** (`e33a4d6`) — all 17 steps green. Passwords now follow **current guidance rather
 than the folk version of it**, which is worth saying plainly because the two
 point in opposite directions.
 
@@ -143,6 +143,12 @@ is a script or a stale client.
 None of these can be done from an agent sandbox: the egress proxy refuses the
 live domain by policy, so anything about the real site is yours.
 
+- [ ] **Try setting a weak password once, to see what it says.** On the live
+      site, "Change password" on the Household page with something short — the
+      refusal should explain itself, in whichever language you are reading. The
+      rules only apply when a password is *set*, so your existing one keeps
+      working and nothing needs doing.
+
 - [ ] **Are the emails the right amount?** The app writes to you when something
       happens in a household: somebody joins, somebody is removed, a role
       changes, the household is renamed or deleted, a password changes. Nobody
@@ -222,7 +228,7 @@ each says why it stays. The first one is a real gap.
       commonest 10,000 and their padded stems, runs and keyboard walks, and
       your own address; deliberately no composition rules and no expiry, both
       of which make passwords worse. Refusals are translated. Five deliberate
-      breaks watched failing. (merged, **not yet deployed**)
+      breaks watched failing. (PR #73, live on run #38)
 - [x] **Browser tests for the expenses dashboard and the Household page** —
       eight of them, each watched failing against a deliberate break. Turned up
       a real defect on the way: every icon-only button was announced as "✕" to a
