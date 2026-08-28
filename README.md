@@ -1,5 +1,7 @@
 # Home Budget
 
+The live site: **[home-budget-dg.app](https://home-budget-dg.app)**
+
 A web application for tracking domestic expenses and running shared shopping lists.
 
 Two kinds of people use it:
