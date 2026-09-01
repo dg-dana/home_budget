@@ -213,7 +213,6 @@ export default function ExpensesPage() {
                   id="amount"
                   type="text"
                   inputMode="decimal"
-                  pattern="[0-9]*[.,]?[0-9]*"
                   required
                   placeholder={t('common.amountPlaceholder')}
                   value={form.amount}
