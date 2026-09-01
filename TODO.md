@@ -3,7 +3,7 @@
 The running state of this project. **Updated after every step** — see the
 "Working agreement" in `CLAUDE.md`.
 
-Last updated: 2026-09-01 · live: deploy run #40 (`88bc8d0`)
+Last updated: 2026-09-01 · live: deploy run #41 (`2018d81`)
 
 German emails are live and **confirmed arriving**.
 
@@ -234,7 +234,9 @@ each says why it stays. The first one is a real gap.
       `styles.css`. Added `.field-row > div { min-width: 0; }`. Confirmed
       with `preview-ui` at 390px — the two columns now sit with a clear gap.
       `.field-row` is shared with the expenses and households pages;
-      typecheck and all 36 e2e tests still pass. (No PR opened yet.)
+      typecheck and all 36 e2e tests still pass. (PR #80, live on run #41 —
+      all 17 steps green, "Verify the public URL works" included. Not yet
+      confirmed by hand on a phone.)
 - [x] **Adding a recurring expense silently did nothing.** The `pattern`
       attribute PR #75 added to the amount field (`[0-9]*[.,]?[0-9]*`, meant
       as a hint) is enforced by the browser's own constraint validation —
