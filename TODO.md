@@ -224,6 +224,21 @@ each says why it stays. The first one is a real gap.
 
 ## Done
 
+- [x] **The date boxes are pinned to a fixed width now, and that is the
+      whole fix.** Run #43's `min-width: 0` on the input didn't work either
+      — a fourth phone screenshot, this one with the problem circled, still
+      showed both date boxes hanging off the right edge of the card. Three
+      attempts (runs #41, #42, #43) all tried to make the control shrink to
+      the space it was given, and iOS Safari simply does not: it sizes a
+      native date control from its own internals and paints it at that size
+      whatever `width` says. So: `input[type='date'] { width: 8.5rem }` —
+      an absolute width, which it *does* honour, plus `max-width: 100%` for
+      columns narrower than that. A date needs nowhere near a full column,
+      so this is what it should always have been. Applies to the expenses
+      page's date field too, which looks right in the preview. Chromium was
+      never able to reproduce any of this, which is exactly why it took four
+      rounds — **only a phone check counts here**. Typecheck, server suite
+      and all 36 e2e tests pass. (No PR opened yet.)
 - [x] **Run #42's date-stacking fix moved the overflow, didn't fix it.**
       Stacking the two date fields into single-column rows (run #42) was
       diagnosed wrong: a phone screenshot after that deploy showed the date
