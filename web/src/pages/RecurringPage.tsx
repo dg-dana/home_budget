@@ -238,7 +238,7 @@ export default function RecurringPage() {
           </div>
         </div>
 
-        <div className="field-row">
+        <div className="field-row dates">
           <div>
             <label htmlFor="startsOn">{t('recurring.firstCharge')}</label>
             <input id="startsOn" type="date" required value={form.startsOn} onChange={update('startsOn')} />

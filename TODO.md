@@ -224,6 +224,25 @@ each says why it stays. The first one is a real gap.
 
 ## Done
 
+- [x] **Run #41's date-overlap fix wasn't enough on a real phone.** `min-width: 0`
+      stops a grid item overflowing its track, but on iOS Safari a date input
+      still won't render below roughly 170px — it just eats the gap rather
+      than shrinking further, confirmed from a phone screenshot: the two date
+      columns sat ~3px apart against ~40px on the Category/Paid-by row right
+      above them, using the same grid. The chromium preview looked fine
+      because chromium's date control shrinks further than Safari's does —
+      a reminder that `preview-ui` cannot stand in for the real device
+      Safari-specific behaviour needs. Fix: `.field-row.dates` raises the
+      `auto-fit` minimum to 170px for just the start/end date row, so
+      `auto-fit` stacks the two fields into their own full-width rows on a
+      phone instead of squeezing both into one neither fits — same grid
+      mechanism, just a higher floor, no media query. Only applied to the
+      recurring page's date pair; the expenses page's amount+date row pairs
+      a date field with a short text field, not a second date, so it wasn't
+      touched — worth checking by hand if it turns out to have the same
+      issue. Confirmed with `preview-ui`: stacked at 390px, still side by
+      side at 1100px. Typecheck, server suite and all 36 e2e tests pass.
+      (No PR opened yet.)
 - [x] **"First charge" and "Stops after" were bumping into each other on a
       phone.** `.field-row`'s grid tracks are pinned to a 140px minimum, but
       the plain `<div>` wrapping each label+input defaults to

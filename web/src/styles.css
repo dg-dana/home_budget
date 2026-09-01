@@ -286,6 +286,14 @@ input[type='checkbox'] {
 .field-row > div {
   min-width: 0;
 }
+/* min-width:0 stops the item overflowing its track, but on iOS Safari a date
+   input still won't render below roughly 170px — it just eats the gap rather
+   than shrinking further. Two of them side by side need that higher floor
+   before auto-fit will stack them on a phone instead of squeezing both into
+   a row neither actually fits. */
+.field-row.dates {
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+}
 
 .button {
   border: 1px solid transparent;
