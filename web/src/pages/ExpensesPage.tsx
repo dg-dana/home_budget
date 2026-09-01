@@ -6,6 +6,7 @@ import {
   dayLabel,
   formatMoney,
   monthLabel,
+  normalizeAmountInput,
   shiftMonth,
   shortMonthLabel,
   today,
@@ -65,6 +66,9 @@ export default function ExpensesPage() {
     (key: keyof ExpenseForm) =>
     (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
       setForm((previous) => ({ ...previous, [key]: event.target.value }));
+
+  const updateAmount = (event: React.ChangeEvent<HTMLInputElement>) =>
+    setForm((previous) => ({ ...previous, amount: normalizeAmountInput(event.target.value) }));
 
   const resetForm = () => {
     setForm(emptyForm(user?.id ?? ''));
@@ -207,14 +211,13 @@ export default function ExpensesPage() {
                 <label htmlFor="amount">{t('common.amount')}</label>
                 <input
                   id="amount"
-                  type="number"
-                  step="0.01"
-                  min="0.01"
-                  required
+                  type="text"
                   inputMode="decimal"
+                  pattern="[0-9]*[.,]?[0-9]*"
+                  required
                   placeholder={t('common.amountPlaceholder')}
                   value={form.amount}
-                  onChange={update('amount')}
+                  onChange={updateAmount}
                 />
               </div>
               <div>

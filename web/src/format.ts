@@ -19,6 +19,11 @@ export function formatMoney(cents: number, currency: string): string {
 
 export const centsToAmount = (cents: number) => (cents / 100).toFixed(2);
 
+/** A German keypad's decimal key sends ",", but `Number()` only reads ".". */
+export function normalizeAmountInput(raw: string): string {
+  return raw.replace(',', '.');
+}
+
 /** Current month as YYYY-MM in the viewer's local time, not UTC. */
 export function currentMonth(): string {
   const now = new Date();
