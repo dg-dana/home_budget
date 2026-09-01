@@ -239,10 +239,9 @@ each says why it stays. The first one is a real gap.
       never able to reproduce any of this, which is exactly why it took four
       rounds — **only a phone check counts here**. Typecheck, server suite
       and all 36 e2e tests pass. (PR #86, live on run #44 — all 17 steps
-      green, "Verify the public URL works" included. **Not confirmed by
-      hand. Three previous attempts at this same bug were all green here
-      and all still broken on the phone, so this one is worth nothing until
-      somebody looks at it.**)
+      green, "Verify the public URL works" included, and **confirmed by hand
+      on the phone** — the fourth attempt is the one that worked, and the
+      only evidence that counted was somebody looking at it.)
 - [x] **Run #42's date-stacking fix moved the overflow, didn't fix it.**
       Stacking the two date fields into single-column rows (run #42) was
       diagnosed wrong: a phone screenshot after that deploy showed the date
