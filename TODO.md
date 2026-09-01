@@ -231,8 +231,8 @@ each says why it stays. The first one is a real gap.
       with `inputMode="decimal"`, and `normalizeAmountInput()` in `format.ts`
       reads the comma back as a period before it hits `Number()`. Typecheck,
       the full server suite and all 36 e2e tests pass. (PR #75, live on run
-      #39 — all 17 steps green, "Verify the public URL works" included. Not
-      yet confirmed by hand on a phone.)
+      #39 — all 17 steps green, "Verify the public URL works" included, and
+      **confirmed by hand on a phone**.)
 - [x] **Password rules brought up to current guidance** — 12 characters, the
       commonest 10,000 and their padded stems, runs and keyboard walks, and
       your own address; deliberately no composition rules and no expiry, both
