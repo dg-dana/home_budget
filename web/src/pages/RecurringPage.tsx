@@ -6,7 +6,7 @@ import {
   type Member,
   type RecurringExpense,
 } from '../api';
-import { centsToAmount, dayLabel, formatMoney, today } from '../format';
+import { centsToAmount, dayLabel, formatMoney, normalizeAmountInput, today } from '../format';
 import { useI18n } from '../i18n';
 import { useSession } from '../session';
 import type { StringKey } from '../strings';
@@ -86,6 +86,9 @@ export default function RecurringPage() {
     (key: keyof RuleForm) =>
     (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
       setForm((previous) => ({ ...previous, [key]: event.target.value }));
+
+  const updateAmount = (event: React.ChangeEvent<HTMLInputElement>) =>
+    setForm((previous) => ({ ...previous, amount: normalizeAmountInput(event.target.value) }));
 
   const resetForm = () => {
     setForm(emptyForm(user?.id ?? ''));
@@ -180,14 +183,13 @@ export default function RecurringPage() {
             <label htmlFor="amount">{t('common.amount')}</label>
             <input
               id="amount"
-              type="number"
-              step="0.01"
-              min="0.01"
-              required
+              type="text"
               inputMode="decimal"
+              pattern="[0-9]*[.,]?[0-9]*"
+              required
               placeholder={t('common.amountPlaceholder')}
               value={form.amount}
-              onChange={update('amount')}
+              onChange={updateAmount}
             />
           </div>
           <div>

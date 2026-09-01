@@ -224,6 +224,14 @@ each says why it stays. The first one is a real gap.
 
 ## Done
 
+- [x] **The amount field now takes a German comma.** `type="number"` only
+      ever reads a decimal point, locale or not — a phone keyboard set to
+      German sends "," and the browser silently drops it, so "3,37" landed as
+      "337". Both amount fields (expenses, recurring) are now `type="text"`
+      with `inputMode="decimal"`, and `normalizeAmountInput()` in `format.ts`
+      reads the comma back as a period before it hits `Number()`. Typecheck,
+      the full server suite and all 36 e2e tests pass. **Not yet deployed —
+      no PR opened.**
 - [x] **Password rules brought up to current guidance** — 12 characters, the
       commonest 10,000 and their padded stems, runs and keyboard walks, and
       your own address; deliberately no composition rules and no expiry, both

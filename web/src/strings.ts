@@ -34,7 +34,8 @@ export const STRINGS = {
   'common.total': ['Total', 'Gesamt'],
   'common.amount': ['Amount', 'Betrag'],
   /* A hint about the shape of the number, so it follows the decimal separator
-     the browser will actually render in a `type="number"` field. */
+     the German keyboard actually sends — normalizeAmountInput() in format.ts
+     reads that comma back as a period. */
   'common.amountPlaceholder': ['0.00', '0,00'],
   'common.date': ['Date', 'Datum'],
   'common.description': ['Description', 'Beschreibung'],
