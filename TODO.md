@@ -3,7 +3,7 @@
 The running state of this project. **Updated after every step** — see the
 "Working agreement" in `CLAUDE.md`.
 
-Last updated: 2026-09-01 · live: deploy run #41 (`2018d81`)
+Last updated: 2026-09-01 · live: deploy run #42 (`6ffd03c`)
 
 German emails are live and **confirmed arriving**.
 
@@ -242,7 +242,8 @@ each says why it stays. The first one is a real gap.
       touched — worth checking by hand if it turns out to have the same
       issue. Confirmed with `preview-ui`: stacked at 390px, still side by
       side at 1100px. Typecheck, server suite and all 36 e2e tests pass.
-      (No PR opened yet.)
+      (PR #82, live on run #42 — all 17 steps green, "Verify the public URL
+      works" included. Not yet confirmed by hand on a phone.)
 - [x] **"First charge" and "Stops after" were bumping into each other on a
       phone.** `.field-row`'s grid tracks are pinned to a 140px minimum, but
       the plain `<div>` wrapping each label+input defaults to
