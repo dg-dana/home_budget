@@ -224,6 +224,24 @@ each says why it stays. The first one is a real gap.
 
 ## Done
 
+- [x] **Run #42's date-stacking fix moved the overflow, didn't fix it.**
+      Stacking the two date fields into single-column rows (run #42) was
+      diagnosed wrong: a phone screenshot after that deploy showed the date
+      box itself running off the right edge of the card even at full row
+      width, well past the ~170px it needed — proving the problem was never
+      "not enough track width." `<input type="date">`, though a normal block
+      child and not a grid or flex item, still doesn't respect a percentage
+      `width` below its own preferred size on iOS Safari unless `min-width`
+      is reset on the *input itself*. Real fix: `min-width: 0` on the base
+      `input, select, textarea` rule. Reverted the run #42 stacking
+      (`.field-row.dates`, the 170px `auto-fit` floor) since it wasn't the
+      actual cause — the two date fields are side by side again, matching
+      the original design, and should now genuinely fit. Chromium's date
+      control never showed this bug either time, so `preview-ui` can only
+      confirm no regression, not that this is fixed — **this needs a real
+      phone check before it's trusted**, the same way the run #42 attempt
+      looked right here and wasn't. Typecheck, server suite and all 36 e2e
+      tests pass. (No PR opened yet.)
 - [x] **Run #41's date-overlap fix wasn't enough on a real phone.** `min-width: 0`
       stops a grid item overflowing its track, but on iOS Safari a date input
       still won't render below roughly 170px — it just eats the gap rather
