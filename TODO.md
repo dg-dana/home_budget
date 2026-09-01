@@ -3,7 +3,7 @@
 The running state of this project. **Updated after every step** — see the
 "Working agreement" in `CLAUDE.md`.
 
-Last updated: 2026-08-11 · live: deploy run #38 (`e33a4d6`)
+Last updated: 2026-09-01 · live: deploy run #39 (`ea3d61c`)
 
 German emails are live and **confirmed arriving**.
 
@@ -230,8 +230,9 @@ each says why it stays. The first one is a real gap.
       "337". Both amount fields (expenses, recurring) are now `type="text"`
       with `inputMode="decimal"`, and `normalizeAmountInput()` in `format.ts`
       reads the comma back as a period before it hits `Number()`. Typecheck,
-      the full server suite and all 36 e2e tests pass. **Not yet deployed —
-      no PR opened.**
+      the full server suite and all 36 e2e tests pass. (PR #75, live on run
+      #39 — all 17 steps green, "Verify the public URL works" included. Not
+      yet confirmed by hand on a phone.)
 - [x] **Password rules brought up to current guidance** — 12 characters, the
       commonest 10,000 and their padded stems, runs and keyboard walks, and
       your own address; deliberately no composition rules and no expiry, both
