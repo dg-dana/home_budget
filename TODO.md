@@ -3,7 +3,7 @@
 The running state of this project. **Updated after every step** — see the
 "Working agreement" in `CLAUDE.md`.
 
-Last updated: 2026-09-01 · live: deploy run #42 (`6ffd03c`)
+Last updated: 2026-09-01 · live: deploy run #43 (`5abad32`)
 
 German emails are live and **confirmed arriving**.
 
@@ -241,7 +241,10 @@ each says why it stays. The first one is a real gap.
       confirm no regression, not that this is fixed — **this needs a real
       phone check before it's trusted**, the same way the run #42 attempt
       looked right here and wasn't. Typecheck, server suite and all 36 e2e
-      tests pass. (No PR opened yet.)
+      tests pass. (PR #84, live on run #43 — all 17 steps green, "Verify the
+      public URL works" included. **Not yet confirmed by hand — two prior
+      attempts on this same bug looked fixed here and weren't, so this one
+      is not to be trusted until someone actually checks it on a phone.**)
 - [x] **Run #41's date-overlap fix wasn't enough on a real phone.** `min-width: 0`
       stops a grid item overflowing its track, but on iOS Safari a date input
       still won't render below roughly 170px — it just eats the gap rather
