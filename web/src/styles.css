@@ -255,6 +255,13 @@ label {
 
 input, select, textarea {
   width: 100%;
+  /* Safari's native <input type="date"> ignores a percentage width below its
+     own intrinsic content size unless min-width is reset — it isn't a grid
+     or flex item here, so this isn't the usual min-width:auto story; it's
+     specific to how WebKit sizes this one replaced control. Without it, the
+     date input renders at its preferred width and overflows its container
+     outright rather than shrinking, no matter how much room the box gets. */
+  min-width: 0;
   padding: 0.55rem 0.7rem;
   border: 1px solid var(--border);
   border-radius: 9px;
@@ -280,19 +287,10 @@ input[type='checkbox'] {
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 0.75rem;
 }
-/* Grid items default to min-width:auto, so a native date input's own intrinsic
-   minimum (wider than 140px on mobile) pushes past its track into the next
-   column instead of shrinking to fit it. */
+/* Grid items default to min-width:auto, which lets a wide child push its
+   track past the row instead of shrinking to fit it. */
 .field-row > div {
   min-width: 0;
-}
-/* min-width:0 stops the item overflowing its track, but on iOS Safari a date
-   input still won't render below roughly 170px — it just eats the gap rather
-   than shrinking further. Two of them side by side need that higher floor
-   before auto-fit will stack them on a phone instead of squeezing both into
-   a row neither actually fits. */
-.field-row.dates {
-  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
 }
 
 .button {
