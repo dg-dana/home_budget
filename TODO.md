@@ -3,7 +3,7 @@
 The running state of this project. **Updated after every step** — see the
 "Working agreement" in `CLAUDE.md`.
 
-Last updated: 2026-09-01 · live: deploy run #39 (`ea3d61c`)
+Last updated: 2026-09-01 · live: deploy run #40 (`88bc8d0`)
 
 German emails are live and **confirmed arriving**.
 
@@ -236,8 +236,9 @@ each says why it stays. The first one is a real gap.
       `Number.isFinite(amount) && amount > 0` check in `handleSubmit` already
       covers correctness, with a proper translated error message. Confirmed
       the same input that silently blocked before now submits. Typecheck,
-      the full server suite and all 36 e2e tests pass. **Not yet deployed —
-      no PR opened.**
+      the full server suite and all 36 e2e tests pass. (PR #78, live on run
+      #40 — all 17 steps green, "Verify the public URL works" included, and
+      **confirmed by hand**.)
 - [x] **The amount field now takes a German comma.** `type="number"` only
       ever reads a decimal point, locale or not — a phone keyboard set to
       German sends "," and the browser silently drops it, so "3,37" landed as
