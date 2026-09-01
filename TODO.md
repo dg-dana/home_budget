@@ -224,6 +224,20 @@ each says why it stays. The first one is a real gap.
 
 ## Done
 
+- [x] **Adding a recurring expense silently did nothing.** The `pattern`
+      attribute PR #75 added to the amount field (`[0-9]*[.,]?[0-9]*`, meant
+      as a hint) is enforced by the browser's own constraint validation —
+      before React's `onSubmit` ever runs. Any value that fails to match it
+      (a stray space, autocorrect, an IME quirk) blocks the request entirely
+      with no console error and no visible feedback beyond a native tooltip
+      mobile browsers routinely fail to show. Reproduced directly:
+      `checkValidity()` false, no POST fired, no alert shown. Removed
+      `pattern` from both amount fields (expenses, recurring) — the app's own
+      `Number.isFinite(amount) && amount > 0` check in `handleSubmit` already
+      covers correctness, with a proper translated error message. Confirmed
+      the same input that silently blocked before now submits. Typecheck,
+      the full server suite and all 36 e2e tests pass. **Not yet deployed —
+      no PR opened.**
 - [x] **The amount field now takes a German comma.** `type="number"` only
       ever reads a decimal point, locale or not — a phone keyboard set to
       German sends "," and the browser silently drops it, so "3,37" landed as
