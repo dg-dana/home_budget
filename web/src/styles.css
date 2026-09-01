@@ -255,12 +255,6 @@ label {
 
 input, select, textarea {
   width: 100%;
-  /* Safari's native <input type="date"> ignores a percentage width below its
-     own intrinsic content size unless min-width is reset — it isn't a grid
-     or flex item here, so this isn't the usual min-width:auto story; it's
-     specific to how WebKit sizes this one replaced control. Without it, the
-     date input renders at its preferred width and overflows its container
-     outright rather than shrinking, no matter how much room the box gets. */
   min-width: 0;
   padding: 0.55rem 0.7rem;
   border: 1px solid var(--border);
@@ -268,6 +262,21 @@ input, select, textarea {
   background: var(--surface);
   color: var(--text);
   font: inherit;
+}
+
+/* iOS Safari sizes a native date control from its own internals and paints it
+   at that size whatever `width` says — three attempts at coaxing it to shrink
+   to its column (runs #41-#43) all ended with the box hanging off the right
+   edge of the card on a real phone, while Chromium showed it fitting neatly
+   every time. So stop asking it to shrink and pin it: an explicit width in
+   absolute units is a size it does honour, and a date needs nowhere near a
+   full column anyway. `max-width` keeps it inside a column narrower than
+   this, and `min-width` is what lets it get there. */
+input[type='date'] {
+  width: 8.5rem;
+  max-width: 100%;
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
 }
 input:focus, select:focus, textarea:focus {
   outline: 2px solid var(--accent);
