@@ -224,6 +224,17 @@ each says why it stays. The first one is a real gap.
 
 ## Done
 
+- [x] **"First charge" and "Stops after" were bumping into each other on a
+      phone.** `.field-row`'s grid tracks are pinned to a 140px minimum, but
+      the plain `<div>` wrapping each label+input defaults to
+      `min-width: auto` — so a native date input's own intrinsic minimum
+      (wider than 140px on mobile) pushed past its track into the next
+      column instead of shrinking to fit it, the same class of overflow
+      `.card` and `.item-main` already guard against elsewhere in
+      `styles.css`. Added `.field-row > div { min-width: 0; }`. Confirmed
+      with `preview-ui` at 390px — the two columns now sit with a clear gap.
+      `.field-row` is shared with the expenses and households pages;
+      typecheck and all 36 e2e tests still pass. (No PR opened yet.)
 - [x] **Adding a recurring expense silently did nothing.** The `pattern`
       attribute PR #75 added to the amount field (`[0-9]*[.,]?[0-9]*`, meant
       as a hint) is enforced by the browser's own constraint validation —
