@@ -54,11 +54,12 @@ failing: dropping the `household_id` filter, handing the credit to whoever last
 saved a finished job, removing the header link, and sorting finished jobs
 first.
 
-**Needs your hands**: open `/todo` on a real phone. It has been looked at in
-`preview-ui` at 1100px and 390px, which is a Chromium screenshot and not a
-phone; nothing here touches a native date or number control, so the usual iOS
-trap does not apply, but the phone check is the only one that counts — an agent
-sandbox cannot load the site.
+**Confirmed by hand on a phone** — the check that actually settles it, since an
+agent sandbox cannot load the site and the `preview-ui` screenshots at 1100px
+and 390px are Chromium rather than a real browser on a real screen. Nothing
+here touches a native date or number control, so the iOS trap that cost four
+deploys did not apply, but the phone was still the only thing that could say
+so.
 
 ---
 
