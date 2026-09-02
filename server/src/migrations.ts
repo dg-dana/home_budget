@@ -278,4 +278,34 @@ ALTER TABLE users ADD COLUMN preferences_saved_at TEXT;
 `);
     },
   },
+
+  {
+    id: '007-todos',
+    up: exec(`
+-- The household's shared to-do list: jobs, not groceries.
+--
+-- A separate table rather than another kind of shopping list, because the two
+-- differ in exactly the place that matters. A shopping item is a thing to buy,
+-- carries a quantity, and — via a share link — may be ticked off by somebody
+-- with no account at all, which is why \`shopping_items\` records names as plain
+-- text (\`ARCHITECTURE.md\` §3). A to-do is a job somebody in the household took
+-- on, so it points at the **account** that added it and the one that finished
+-- it, and it is never guest-reachable. Sharing one table would have meant a
+-- nullable half of each shape and a \`kind\` column deciding which half is real.
+CREATE TABLE IF NOT EXISTS todos (
+  id            TEXT PRIMARY KEY,
+  household_id  TEXT NOT NULL REFERENCES households(id) ON DELETE CASCADE,
+  title         TEXT NOT NULL,
+  is_done       INTEGER NOT NULL DEFAULT 0,
+  -- SET NULL, like every other authored row here: closing an account must not
+  -- take the household's jobs with it.
+  created_by    TEXT REFERENCES users(id) ON DELETE SET NULL,
+  done_by       TEXT REFERENCES users(id) ON DELETE SET NULL,
+  done_at       TEXT,
+  created_at    TEXT NOT NULL,
+  updated_at    TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_todos_household ON todos(household_id);
+`),
+  },
 ];

@@ -35,6 +35,7 @@ export default function Layout() {
             <NavLink to="/stats">{t('nav.statistics')}</NavLink>
             <NavLink to="/recurring">{t('nav.recurring')}</NavLink>
             <NavLink to="/lists">{t('nav.shopping')}</NavLink>
+            <NavLink to="/todo">{t('nav.todo')}</NavLink>
             <NavLink to="/household">{t('nav.household')}</NavLink>
           </nav>
 

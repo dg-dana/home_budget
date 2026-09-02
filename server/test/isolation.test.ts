@@ -131,6 +131,27 @@ describe('cross-household isolation', () => {
     expect(aliceItem.note).toBe('The one in the glass bottle');
   });
 
+  it("hides another household's to-do list", async () => {
+    const todo = await alice.client.post('/api/todos', { title: 'Alice job' });
+    expect(todo.status).toBe(201);
+
+    expect((await bob.client.get('/api/todos')).body).toEqual([]);
+    expect((await bob.client.patch(`/api/todos/${todo.body.id}`, { isDone: true })).status).toBe(404);
+    expect((await bob.client.patch(`/api/todos/${todo.body.id}`, { title: 'Mine now' })).status).toBe(404);
+    expect((await bob.client.delete(`/api/todos/${todo.body.id}`)).status).toBe(404);
+
+    // Bob clearing his own finished jobs must not reach into Alice's list.
+    await bob.client.post('/api/todos', { title: 'Bob job' });
+    const bobTodo = (await bob.client.get('/api/todos')).body[0];
+    await bob.client.patch(`/api/todos/${bobTodo.id}`, { isDone: true });
+    expect((await bob.client.post('/api/todos/clear-done')).body.removed).toBe(1);
+
+    const aliceView = await alice.client.get('/api/todos');
+    expect(aliceView.body).toHaveLength(1);
+    expect(aliceView.body[0].title).toBe('Alice job');
+    expect(aliceView.body[0].is_done).toBe(0);
+  });
+
   it('never lists another household members', async () => {
     await addMember(alice, 'Alice partner');
     const bobMembers = await bob.client.get('/api/household/members');

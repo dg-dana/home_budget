@@ -276,6 +276,24 @@ export interface ShoppingListDetail {
   items: ShoppingItem[];
 }
 
+/**
+ * One job on the household's to-do list.
+ *
+ * The two names are read through the household's memberships, so somebody who
+ * has left reads as nobody — the row survives, the credit does not follow them
+ * out (`ARCHITECTURE.md` §3).
+ */
+export interface Todo {
+  id: string;
+  title: string;
+  is_done: number;
+  created_by: string | null;
+  done_by: string | null;
+  done_at: string | null;
+  added_by_name: string | null;
+  done_by_name: string | null;
+}
+
 export interface SharedListView {
   name: string;
   canEdit: boolean;

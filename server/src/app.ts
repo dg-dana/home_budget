@@ -15,6 +15,7 @@ import { householdsRouter } from './routes/households.js';
 import { listsRouter } from './routes/lists.js';
 import { recurringRouter } from './routes/recurring.js';
 import { shareRouter } from './routes/share.js';
+import { todosRouter } from './routes/todos.js';
 
 export interface CreateAppOptions {
   /**
@@ -82,6 +83,7 @@ export function createApp({ enableRateLimits = true }: CreateAppOptions = {}): E
   app.use('/api/expenses', expensesRouter);
   app.use('/api/recurring', recurringRouter);
   app.use('/api/lists', listsRouter);
+  app.use('/api/todos', todosRouter);
   app.use('/api/share', ...shareLimiter, shareRouter);
 
   app.use('/api', (_req, _res, next) => next(notFound('Unknown API endpoint', 'error.unknownEndpoint')));

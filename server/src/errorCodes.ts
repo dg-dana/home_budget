@@ -77,6 +77,9 @@ export const ERROR_CODES = [
   'error.itemNotFound',
   'error.shareInactive',
   'error.shareViewOnly',
+
+  // ----------------------------------------------------------------- to-do
+  'error.todoNotFound',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];
