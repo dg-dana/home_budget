@@ -51,6 +51,7 @@ export async function stopServer(): Promise<void> {
 /** Wipes every table. Order matters only for readability; FKs cascade anyway. */
 export function resetDatabase(): void {
   for (const table of [
+    'todos',
     'shopping_items',
     'shopping_lists',
     'expenses',

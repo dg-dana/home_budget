@@ -149,6 +149,25 @@ export interface ShoppingItemRow {
 }
 
 /**
+ * One job on the household's to-do list.
+ *
+ * Unlike a shopping item, both "who" columns are FKs to accounts rather than
+ * plain text: a to-do is never reachable through a share link, so there is no
+ * guest whose name is only ever a label (`ARCHITECTURE.md` §3, §6).
+ */
+export interface TodoRow {
+  id: string;
+  household_id: string;
+  title: string;
+  is_done: number;
+  created_by: string | null;
+  done_by: string | null;
+  done_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
  * The signed-in account, attached by `requireAuth`.
  *
  * The household-shaped fields are nullable because a freshly registered

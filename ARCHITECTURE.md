@@ -54,6 +54,7 @@ Reference for how this app is put together and why. Read this before extending i
 - `recurring_expenses` — per household. A rule (amount, frequency, start/end) plus `last_generated_on`, the marker that makes generation idempotent.
 - `shopping_lists` — per household. Holds the nullable `share_token` and the `share_can_edit` flag.
 - `shopping_items` — per list. Records `added_by_name` and `checked_by_name` as **plain text, not FKs** — because a guest with no account may have set them. `note` is the item's comment.
+- `todos` — per household. The shared to-do list: a `title`, `is_done`, and FKs to the accounts that added it (`created_by`) and finished it (`done_by`). **FKs, not the plain text `shopping_items` uses**, because a to-do is never guest-reachable — there is no visitor here whose name is only ever a label (§6).
 - `password_resets` — single-use recovery tokens. Cascades with the user, so a link cannot resurrect a deleted account.
 
 ### Deletion behaviour (deliberate)
@@ -64,6 +65,7 @@ Reference for how this app is put together and why. Read this before extending i
 - Delete an **account** → `paid_by` / `created_by` go `NULL` via the FKs. History is never destroyed by someone leaving.
 - Delete a **category** → its expenses survive and show as "Uncategorised".
 - Delete a **recurring rule** → the expenses it already generated survive and lose their `recurring_id`. They record money that really was spent.
+- Remove a **member**, or delete their account → their to-dos stay on the household's list; the **credit** for them does not follow them out. The names come from a join on `memberships`, so a job added by somebody who has left reads with no name rather than with a name from a household they are no longer in — the same rule as `PAYER_IF_STILL_HERE`.
 
 ### Leaving, and closing an account or a household
 
@@ -442,7 +444,7 @@ so the UI can badge them.
 - `rateLimit.ts` — in-process fixed-window limiter, keyed by client IP unless the caller supplies a `key` (recovery is counted per address, §13).
 - `backup.ts` — consistent snapshots via SQLite's online backup API.
 - `shoppingItems.ts` — **item operations shared by both the member and guest routes.** Both paths call the same functions with a different `actorName`, so guest and member edits can never diverge in behaviour.
-- `routes/` — `auth`, `households`, `household`, `categories`, `expenses`, `recurring`, `lists`, `share`.
+- `routes/` — `auth`, `households`, `household`, `categories`, `expenses`, `recurring`, `lists`, `todos`, `share`.
   - **`GET /households/invitations`** lists invites pinned to the signed-in account's address, so the picker can show them. Invites travel by email and an email is easy to lose: registering *from* an invite and never opening the link again used to leave no trace of it anywhere in the app. **Open invites — those with no address on them — are never listed**, since they are links to hand over rather than something to advertise to whoever is signed in.
 - **`households` (plural) vs `household` (singular)** is a real distinction, not a naming accident. The plural router is the *only* place allowed to talk about a household the caller is not currently in — listing them, creating one, joining by invite, switching. The singular router administers the one that is open and therefore sits behind `requireHousehold`. Mounting order matters: `/api/households` must be registered before `/api/household`, and must not inherit that guard.
 
@@ -464,6 +466,27 @@ member or by a guest.
   and inflates the nightly backup artifact along with it. It is worth doing
   only alongside an answer to storage — object storage off the box, or a
   retention policy — not before.
+
+### The to-do list
+
+The household's shared jobs (`GET/POST /todos`, `PATCH`/`DELETE /todos/:id`,
+`POST /todos/clear-done`). It reads like a shopping list and is deliberately
+**not** one:
+
+- **A table of its own, not a kind of shopping list.** The two differ exactly
+  where it matters. A shopping item has a quantity and may be ticked off
+  through a share link by somebody with no account, which is why its two
+  "who" columns are plain text (§3, §6). A to-do is a job somebody in the
+  household took on, so its columns are FKs to accounts, and it is not
+  guest-reachable at all. One table would have meant a nullable half of each
+  shape and a `kind` column deciding which half is real.
+- **Ticking one off credits whoever ticked it**, and un-ticking clears the
+  credit and the time — the same bookkeeping `shoppingItems.ts` does with
+  `checked_by_name`. Editing the wording of a job that is already done leaves
+  both alone: rewriting the words is not doing the job.
+- **No notice is sent.** A to-do is a routine edit, like an expense or a
+  shopping item, and a household that emails on every chore trains everyone to
+  ignore it (§4.1).
 
 ### The two reporting endpoints
 
@@ -538,7 +561,7 @@ the sentence** rather than only a sentence (`errorCodes.ts`).
 - Per-page pattern: `useState` + a `load()` callback + `useEffect`. Mutations call the API then re-run `load()`. **Refetch rather than mutate local state** — it keeps guest/member concurrency honest at the cost of an extra request.
 - **A refusal belongs next to the form that caused it.** The Household page has one alert at the top for anything general, but inviting, the danger zone and changing a password each keep their own — on a phone that page is several screens long, so an error at the top of it is an error nobody sees. The rule of thumb: if the page can scroll the form out of sight, the form owns its error. Failed submissions also keep what was typed, since "that address is already in this household" is answered by editing it, not retyping it.
 - `api.ts` — thin typed `fetch` wrapper; unwraps `{error}` bodies into `ApiError` carrying the status. Also the single home for all response type definitions. `delete` takes an optional body, which is how the two deletions in §3 send their password confirmation.
-- `usePoll.ts` — the shopping pages' refetch loop: every 15 s, **skipped while the tab is hidden**, and immediate when it becomes visible again. All three shopping screens use it (the lists index, a member's list, the guest's), which is what stopped the member pages going stale while a guest shopped (§14). It is deliberately not on the expenses pages: two people do not edit the same month at the same minute, and the request costs the same either way. `load` must be a `useCallback`, or the effect restarts every render and the interval never fires.
+- `usePoll.ts` — the shared-list refetch loop: every 15 s, **skipped while the tab is hidden**, and immediate when it becomes visible again. All three shopping screens use it (the lists index, a member's list, the guest's), which is what stopped the member pages going stale while a guest shopped (§14), and so does the to-do page, for the same reason: it is a list several people touch within the same hour. It is deliberately not on the expenses pages: two people do not edit the same month at the same minute, and the request costs the same either way. `load` must be a `useCallback`, or the effect restarts every render and the interval never fires.
 - `session.tsx` — the only global state. Also `useAccountPreferences()`, which adopts an account's saved language and theme on sign-in and writes changes back (§9.1b). Holds `user`, the `household` currently open, the full `households` list, and `ownerRecovery` (whether an owner can still mint a recovery link, §4 — it defaults to false so a page cannot flash a control that is about to vanish); hydrates from `GET /auth/me` on mount, treats a 401 as "signed out" rather than an error. `switchHousehold` posts and then **refetches** rather than patching local state: the server decides what the new household contains.
 - **Two guards, not one.** `RequireAuth` sends the signed-out to `/login`; `RequireHousehold` sends an account with no household open to `/households`. The second is the client half of the server's `requireHousehold` — without it every page would render and then fill with 403s.
 - **`Layout` keys its `<main>` on the household id.** Every page loads its data once on mount, so switching household while already on a page would otherwise leave the previous household's money sitting under the new household's name — the route does not change, so nothing refetches. One key remounts whichever page is on screen, and beats adding a household-changed effect to each of six pages. A browser test covers exactly this.
@@ -822,7 +845,7 @@ charting library — and follow a few rules that are easy to undo by accident:
 
 - Public: `/login`, `/register`, `/forgot`, `/verify/:token`, `/reset/:token`, and `/s/:token`. The three that only make sense signed out — `/login`, `/register`, `/forgot` — sit behind `RedirectIfSignedIn`; the two token pages do not, since the link is the proof and whoever follows one ends up signed in as that account anyway.
 - Account pages: `/households` (behind `RequireAuth` but **not** `RequireHousehold` — it is how you get one) and `/join/:token`.
-- Member pages: `/` (expenses), `/stats`, `/recurring`, `/lists`, `/lists/:id`, `/household`.
+- Member pages: `/` (expenses), `/stats`, `/recurring`, `/lists`, `/lists/:id`, `/todo`, `/household`.
 - `/s/:token` (the guest list) sits **outside the `RequireAuth` layout entirely** — it renders its own header and never touches session state. Keep it that way; it must work for someone with no cookie.
 - Everything else is nested under `RequireAuth` → `Layout`.
 
@@ -834,7 +857,7 @@ Two suites, run together with `npm run test:all`.
 
 ### Server integration suite — Vitest, `server/test/`
 
-- 268 tests, run with `npm test` from the repo root.
+- 279 tests, run with `npm test` from the repo root.
 - They are **integration tests over real HTTP**, not unit tests: each file boots the actual app on an ephemeral port and drives it with a cookie-aware client. There is no mocking of the database, the router or the session.
 - `test/setup.ts` runs before any application module is imported and points `DATABASE_PATH` at a unique temp file. Vitest gives each test file its own module registry, so **every test file gets its own SQLite database** and files can run in parallel.
 - `resetDatabase()` truncates every table in `beforeEach`.
@@ -849,6 +872,7 @@ Two suites, run together with `npm run test:all`.
 - `auth.test.ts` — registration, login, forged/expired/tampered cookies, and the full invite lifecycle: including that the preview tells a member they are already in before the page asks them anything, that the id it carries appears only for them, and that an address already in the household cannot be invited at all.
 - `accounts.test.ts` — the two-step sign-up and multi-household behaviour: invitations waiting for an address (listed, hidden once redeemed, never another account's and never an open one, dropped when expired or revoked); that registering creates an account with no household and no household name is accepted there; that an unconfirmed address cannot create or join one; the confirmation link being single-use, expiring, and retired when a new one is issued; one account owning several households with their data provably apart and their categories seeded separately; a different display name in each; switching, and refusing to switch into one you are not in; where a returning sign-in lands.
 - `itemComments.test.ts` — the comment on a shopping item: set on add, edited, cleared, and the length cap.
+- `todos.test.ts` — the household's to-do list, and mostly the bookkeeping around finishing a job: who is credited for it, that editing the wording of a finished job leaves that credit and its timestamp alone, that un-ticking clears both, that outstanding jobs sort above finished ones, and that a job outlives the member who added it while their name stops appearing on it.
 - `expenses.test.ts` — cents arithmetic, month-boundary maths, summary aggregation, and what survives a category or member deletion. Also the statistics endpoint: the per-member and per-category splits, the member/category cross-tab adding up to the same money as the totals, months with no spending, the name ordering that pins each member's colour, and the range validation.
 - `household.test.ts` — owner vs member permissions, list mechanics, and the two irreversible deletions (§3): the cascade taking the memberships and share links but **leaving the accounts standing**, the password confirmation, the refusal of a sole owner with company, the last owner taking the household with them, and a member leaving without moving anybody's totals. Also leaving on your own (§3): the money staying put, the two refusals, an owner going once somebody else owns the place, the route not being owners-only despite living next to one that is, and an invite bringing you back.
 - `recurring.test.ts` — recurrence date maths as a pure function (month-end clamping, leap years, rollovers), then catch-up, idempotency, pause/resume.
@@ -863,8 +887,8 @@ Two suites, run together with `npm run test:all`.
 
 ### Browser tests — Playwright, `e2e/`
 
-- 36 tests, run with `npm run test:e2e`. Config is `playwright.config.ts` at the repo root.
-- **Six areas: the guest flow, the statistics page, multiple households, the language switch, the Household page and the expenses dashboard.** The guest flow is the riskiest path — the one surface reachable without an account — and was the only coverage for a long time. (The theme test lives there because the toggle is on the guest header too.)
+- 38 tests, run with `npm run test:e2e`. Config is `playwright.config.ts` at the repo root.
+- **Seven areas: the guest flow, the statistics page, multiple households, the language switch, the Household page, the expenses dashboard and the to-do page.** The guest flow is the riskiest path — the one surface reachable without an account — and was the only coverage for a long time. (The theme test lives there because the toggle is on the guest header too.)
 - `statistics.spec.ts` exists because **every bug that page has had was invisible to the server suite**: a fold bucket that borrowed a real category's name, a one-month range drawing a lone dot, a stale response overwriting a newer one. Those are questions about what is on the screen. It reaches the page through the header link, never a direct URL — a page nobody can navigate to is a page nobody has.
 - `seedStatsHousehold()` builds a household through the API, giving **each joining member its own request context**: joining sets a session cookie, and a shared jar would sign the owner out halfway through.
 - `language.spec.ts` covers the English/German switch (§9.1a) **and the
@@ -885,6 +909,7 @@ Two suites, run together with `npm run test:all`.
 - Every guest gets `browser.newContext()` — a guest is *defined* by having no cookies and no carried-over storage, so sharing a context would defeat the point.
 - Tests create their own household, so they share nothing but the server and can run in parallel.
 - `household.spec.ts` and `expenses.spec.ts` close the biggest hole this suite had: the page where the money is entered, and the page where the irreversible buttons live, neither of which had any browser coverage. What they ask is what only a browser can see — **who is shown which control** (the Danger zone card was briefly owner-only, which hid "Leave this household" from exactly the people it exists for, and the server was perfectly happy); **where a refusal appears** (the invite error must land under the form, since the page is several screens long on a phone — that is a claim about pixels); whether a control the server would refuse is **offered at all**; whether the summary beside the expense form moves when the form is used; and whether editing a row arrives holding that row's values. Writing them turned up a real defect: every icon-only button was announced as "✕" or "✎", because the accessible name comes from the glyph and never from `title`. They carry an `aria-label` now.
+- `todo.spec.ts` — the to-do page: that it is reachable **from the header** rather than only by URL, that ticking a box moves the job into the finished group on screen rather than only in a row, that outstanding jobs stay above finished ones, and that the icon-only buttons carry an `aria-label` — the defect the other two page suites turned up, which a glyph alone reproduces every time.
 - `households.spec.ts` asks the questions only a browser can: that the switcher exists as a real control, that using it actually repaints the page (it did not, at first — see the `<main>` key in §9), that the choice survives a reload, that a single-household account can still reach `/households` (it could not, at first), what a brand new account is shown before it has a household at all, that an invitation waiting for that address can be joined without the email, and that such an account can still delete itself — the Household page carrying the same action needs a household open, so without a control here there was no way out (§3).
 
 What it asserts: a member creates and shares a list through the UI; a guest with no account opens the link, names themselves, adds an item and ticks one off; the member sees those changes. A second journey covers the comment: a guest adds an item carrying one, the household reads it and rewrites it, and the guest sees the new wording. A third covers "Copy list" on all three screens it appears on: the clipboard is read back and compared to the exact expected text, and asserted not to contain the share token. The index case also asserts the page did not navigate, since that button lives inside a row that is otherwise a link. One case is about **waiting** rather than clicking: a member leaves a list page open, a guest adds an item and ticks another off, and the member's page catches up on its own. It carries its own 90-second timeout because two poll intervals do not fit in the suite's 30, and it is the only proof `usePoll` works — the invariant is precisely that nobody touched anything. Plus view-only enforcement — including that a view-only guest can read a comment but is offered no control to change it — instant revocation, the name prompt appearing only once, a dead token, that a guest is bounced off every private route, that a chosen theme survives a reload without a flash, and that the sign-in page carries the toggle at all — the one signed-out screen everybody sees.
@@ -893,7 +918,7 @@ What it asserts: a member creates and shares a list through the UI; a guest with
 
 ### Both suites were verified by breaking the code
 
-Sixty-nine deliberate regressions were introduced, and each was caught by a failing test:
+Seventy-three deliberate regressions were introduced, and each was caught by a failing test:
 
 1. Removing the `household_id` filter from the expenses list query → `isolation` failed.
 2. Adding `householdId` to the guest share response → `share` failed.
@@ -964,6 +989,10 @@ Sixty-nine deliberate regressions were introduced, and each was caught by a fail
 67. Weakening the run-and-walk check to an `&&` → `passwords` failed, `123456789012` accepted.
 68. **Adding a composition rule** ("needs a capital and a digit") → five `passwords` cases failed at once, every one of them a passphrase. This is the regression the file exists to prevent.
 69. Not applying the rules at registration → `passwords` and the `language` browser test failed, the sign-up form accepting anything.
+70. Dropping the `household_id` filter from the to-do list query → `isolation` failed, one household reading another's jobs.
+71. Crediting whoever last saved a finished to-do, rather than whoever finished it → `todos` failed: editing the wording handed the credit to the editor.
+72. Removing the "To-do" link from the header → `todo` failed; the page was still there, reachable only by typing the URL.
+73. Listing finished to-dos above outstanding ones → `todo` failed on the order of the rows.
 
 The statistics suite also earned its place on the way in: the one-month test failed against the unguarded fetch, which is how the stale-response race in §9.2 was found.
 
@@ -981,7 +1010,7 @@ It matches on method and path shape, so it proves a suite *reaches* a route and 
 
 ### Looking at the pages the suites do not cover
 
-What is left in `web/` with no browser test — recurring rules, the lists index, and the signed-out screens beyond sign-in — is unproven, so a change there has to be looked at. `.claude/skills/preview-ui/` is the tool for that: it builds, runs the production build on a spare port against a throwaway database, seeds a three-person household with three months of expenses **plus a second household on the owner's account** (so the header's switcher has something to switch between — with one it deliberately renders as plain text), signs in, and screenshots the routes you name in both themes at 1100px and 390px.
+What is left in `web/` with no browser test — recurring rules, the lists index, and the signed-out screens beyond sign-in — is unproven, so a change there has to be looked at. `.claude/skills/preview-ui/` is the tool for that: it builds, runs the production build on a spare port against a throwaway database, seeds a three-person household with three months of expenses, two shopping lists and a to-do or two **plus a second household on the owner's account** (so the header's switcher has something to switch between — with one it deliberately renders as plain text), signs in, and screenshots the routes you name in both themes at 1100px and 390px.
 
 ```bash
 node .claude/skills/preview-ui/preview.mjs /            # the expenses dashboard

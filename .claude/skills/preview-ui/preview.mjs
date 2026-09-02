@@ -70,7 +70,7 @@ function parseArgs(argv) {
 const HELP = `
 Usage: node .claude/skills/preview-ui/preview.mjs [routes...] [options]
 
-Routes are app paths: /  /stats  /recurring  /lists  /lists/:id  /household
+Routes are app paths: /  /stats  /recurring  /lists  /lists/:id  /todo  /household
   /lists/:id   the seeded list's id is substituted
   /s/:token    the seeded share link; captured as a guest, with no sign-in
 
@@ -202,7 +202,7 @@ async function post(api, url, data) {
 
 /**
  * A household with three people, three months of expenses across several
- * categories, a recurring rule and two lists — one of them shared.
+ * categories, a recurring rule, two lists — one of them shared — and a to-do or two.
  *
  * Built through the API rather than the UI: this is a tool for looking at
  * pages, and how the data got in is not what is being looked at. It is also
@@ -309,6 +309,16 @@ async function seed(baseURL) {
   for (const name of ['Light bulbs', 'Picture hooks']) {
     await post(api, `/api/lists/${hardware.id}/items`, { name });
   }
+
+  // The to-do page wants one job still open, one already done and one added by
+  // somebody else, so `/todo` is looked at with all three states on screen.
+  const todos = {};
+  for (const title of ['Call the plumber about the boiler', 'Take out the recycling']) {
+    todos[title] = await post(api, '/api/todos', { title });
+  }
+  await api.patch(`/api/todos/${todos['Take out the recycling'].id}`, {
+    data: { isDone: true },
+  });
 
   const shared = await post(api, `/api/lists/${groceries.id}/share`, { canEdit: true });
   // One invite left unredeemed, so `/join/:token` can be looked at. Opened as

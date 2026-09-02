@@ -13,6 +13,7 @@ import RegisterPage from './pages/RegisterPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 import SharedListPage from './pages/SharedListPage';
 import StatsPage from './pages/StatsPage';
+import TodosPage from './pages/TodosPage';
 import VerifyEmailPage from './pages/VerifyEmailPage';
 import { useI18n } from './i18n';
 import { useAccountPreferences, useSession } from './session';
@@ -129,6 +130,7 @@ export default function App() {
         <Route path="/recurring" element={<RecurringPage />} />
         <Route path="/lists" element={<ListsPage />} />
         <Route path="/lists/:id" element={<ListDetailPage />} />
+        <Route path="/todo" element={<TodosPage />} />
         <Route path="/household" element={<HouseholdPage />} />
       </Route>
 

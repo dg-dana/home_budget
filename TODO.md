@@ -3,9 +3,61 @@
 The running state of this project. **Updated after every step** — see the
 "Working agreement" in `CLAUDE.md`.
 
-Last updated: 2026-09-01 · live: deploy run #44 (`af95db5`)
+Last updated: 2026-09-02 · live: deploy run #44 (`af95db5`)
 
 German emails are live and **confirmed arriving**.
+
+---
+
+## Built, not yet merged: the to-do section
+
+On `claude/add-todo-section-xv779f`. A sixth section in the header, between
+Shopping and Household: **`/todo`**, the household's shared list of jobs.
+
+**What it does.** Add a job, tick it off, edit the wording, remove one, and
+"Clear N done" to sweep the finished ones away. Outstanding jobs sit above
+finished ones. Each row says who added it and, once it is done, who did it.
+Everyone in the household sees the same list, and the page **polls every 15
+seconds** like the shopping pages, so two phones do not disagree about whether
+the plumber has been called.
+
+**Why it is a table of its own** rather than another kind of shopping list —
+the question worth having an answer to, since the two look alike on screen. A
+shopping item has a quantity and can be ticked off through a share link by
+somebody with **no account**, which is exactly why `shopping_items` records the
+two names as plain text. A to-do is a job somebody in the household took on: it
+points at the **accounts** that added and finished it, and it is never
+guest-reachable. Sharing one table would have meant a nullable half of each
+shape and a `kind` column deciding which half is real.
+
+Two behaviours are less obvious than they look, and both have tests:
+
+- **Editing the wording of a job already done does not steal the credit.**
+  Rewriting "take out the bins" as "take out the bins and the recycling" leaves
+  the name and the timestamp of whoever actually did it alone. Un-ticking a job
+  clears both.
+- **A job outlives the member who added it, but their name stops appearing on
+  it.** The names are read through a join on `memberships`, so somebody who has
+  left reads as nobody rather than as a name from a household they are no
+  longer in — the same rule the expense breakdowns follow.
+
+It **emails nobody**, deliberately. A to-do is a routine edit like an expense
+or a shopping item, and a household that mails on every chore trains everyone
+to ignore its post.
+
+**Tested**: migration `007`, ten cases in `todos.test.ts`, a cross-household
+case in `isolation.test.ts`, and two browser tests in `todo.spec.ts` — the
+header link, the tick moving a job into the finished group, the ordering, and
+the `aria-label` on the icon-only buttons. Four deliberate breaks were watched
+failing: dropping the `household_id` filter, handing the credit to whoever last
+saved a finished job, removing the header link, and sorting finished jobs
+first.
+
+**What is left**: merge, then run **Deploy to Lightsail** — merging does not
+deploy. It has been looked at in `preview-ui` at 1100px and 390px, which is a
+Chromium screenshot and not a phone; nothing here touches a native date or
+number control, so the usual iOS trap does not apply, but the phone check is
+still the one that counts.
 
 ---
 

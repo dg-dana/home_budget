@@ -68,6 +68,7 @@ export const STRINGS = {
   'nav.statistics': ['Statistics', 'Statistik'],
   'nav.recurring': ['Recurring', 'Wiederkehrend'],
   'nav.shopping': ['Shopping', 'Einkaufen'],
+  'nav.todo': ['To-do', 'Aufgaben'],
   'nav.household': ['Household', 'Haushalt'],
   'nav.signOut': ['Sign out', 'Abmelden'],
   'switcher.label': ['Household', 'Haushalt'],
@@ -609,6 +610,33 @@ export const STRINGS = {
   ],
   'list.createShareLink': ['Create share link', 'Link zum Teilen erstellen'],
 
+  // ---------------------------------------------------------------- to-do
+  'todo.title': ['To-do', 'Aufgaben'],
+  'todo.subtitle': [
+    'What still needs doing around the house. Everyone in the household sees the same list.',
+    'Was im Haushalt noch zu tun ist. Alle im Haushalt sehen dieselbe Liste.',
+  ],
+  'todo.label': ['What needs doing', 'Was zu tun ist'],
+  'todo.placeholder': ['Call the plumber, take out the bins…', 'Klempner anrufen, Müll rausbringen…'],
+  'todo.add': ['Add', 'Hinzufügen'],
+  'todo.addFailed': [
+    'Could not add that to-do',
+    'Die Aufgabe konnte nicht hinzugefügt werden',
+  ],
+  'todo.summary': ['{open} to do · {done} done', '{open} zu erledigen · {done} erledigt'],
+  'todo.open': ['Still to do', 'Noch zu erledigen'],
+  'todo.clearDone': ['Clear {count} done', '{count} Erledigte entfernen'],
+  'todo.empty': [
+    'Nothing to do. Add the first job above.',
+    'Nichts zu tun. Trag oben die erste Aufgabe ein.',
+  ],
+  'todo.addedBy': ['added by {name}', 'hinzugefügt von {name}'],
+  'todo.doneBy': ['done by {name}', 'erledigt von {name}'],
+  'todo.markDone': ['Mark "{title}" as done', '„{title}“ als erledigt markieren'],
+  'todo.editTitle': ['Edit "{title}"', '„{title}“ bearbeiten'],
+  'todo.editPrompt': ['What needs doing?', 'Was ist zu tun?'],
+  'todo.removeTitle': ['Remove "{title}"', '„{title}“ entfernen'],
+
   // -------------------------------------------------------- guest sharing
   'share.linkNotActive': ['Link not active', 'Link nicht aktiv'],
   'share.linkNotActiveHelp': [
@@ -854,6 +882,8 @@ export const STRINGS = {
     'This list is shared as view-only',
     'Diese Liste ist nur zum Ansehen freigegeben',
   ],
+
+  'error.todoNotFound': ['That to-do does not exist', 'Diese Aufgabe gibt es nicht'],
 
   // ----------------------------------------------------------- statistics
   'stats.title': ['Statistics', 'Statistik'],
