@@ -3,16 +3,17 @@
 The running state of this project. **Updated after every step** — see the
 "Working agreement" in `CLAUDE.md`.
 
-Last updated: 2026-09-02 · live: deploy run #44 (`af95db5`)
+Last updated: 2026-09-02 · live: deploy run #45 (`2672903`)
 
 German emails are live and **confirmed arriving**.
 
 ---
 
-## Built, not yet merged: the to-do section
+## Live: the to-do section
 
-On `claude/add-todo-section-xv779f`. A sixth section in the header, between
-Shopping and Household: **`/todo`**, the household's shared list of jobs.
+**Deployed on run #45** (`2672903`, PR #89) — all 17 steps green, "Verify the
+public URL works" included. A sixth section in the header, between Shopping and
+Household: **`/todo`**, the household's shared list of jobs.
 
 **What it does.** Add a job, tick it off, edit the wording, remove one, and
 "Clear N done" to sweep the finished ones away. Outstanding jobs sit above
@@ -53,11 +54,11 @@ failing: dropping the `household_id` filter, handing the credit to whoever last
 saved a finished job, removing the header link, and sorting finished jobs
 first.
 
-**What is left**: merge, then run **Deploy to Lightsail** — merging does not
-deploy. It has been looked at in `preview-ui` at 1100px and 390px, which is a
-Chromium screenshot and not a phone; nothing here touches a native date or
-number control, so the usual iOS trap does not apply, but the phone check is
-still the one that counts.
+**Needs your hands**: open `/todo` on a real phone. It has been looked at in
+`preview-ui` at 1100px and 390px, which is a Chromium screenshot and not a
+phone; nothing here touches a native date or number control, so the usual iOS
+trap does not apply, but the phone check is the only one that counts — an agent
+sandbox cannot load the site.
 
 ---
 
